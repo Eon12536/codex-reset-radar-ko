@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.playwright-cli/
+coverage/

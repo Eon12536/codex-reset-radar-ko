@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codex Reset Radar</title>
+    <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
+          <strong>Codex Reset Radar</strong>
+        </div>
+        <div class="top-actions">
+          <span id="healthDot" class="health-dot" title="状态"></span>
+          <button id="openSettings" class="icon-button" type="button" aria-label="打开设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.3 4.6v-2.4l-2.2-.7a7 7 0 0 0-.6-1.4l1.1-2-1.7-1.7-2 1.1a7 7 0 0 0-1.4-.6L12.8 3h-2.4l-.7 2.2a7 7 0 0 0-1.4.6L6.3 4.7 4.6 6.4l1.1 2a7 7 0 0 0-.6 1.4l-2.2.7v2.4l2.2.7a7 7 0 0 0 .6 1.4l-1.1 2 1.7 1.7 2-1.1a7 7 0 0 0 1.4.6l.7 2.2h2.4l.7-2.2a7 7 0 0 0 1.4-.6l2 1.1 1.7-1.7-1.1-2a7 7 0 0 0 .6-1.4l2.2-.7Z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="signal-panel" aria-labelledby="signalTitle">
+        <div class="section-label" id="signalTitle">官方重置信号</div>
+        <div class="signal-layout">
+          <div class="large-radar" aria-hidden="true">
+            <span class="ring ring-1"></span>
+            <span class="ring ring-2"></span>
+            <span class="ring ring-3"></span>
+            <span class="axis axis-x"></span>
+            <span class="axis axis-y"></span>
+            <span class="sweep"></span>
+            <i class="blip one"></i><i class="blip two"></i><i class="blip three"></i>
+          </div>
+          <div class="signal-copy">
+            <strong id="signalHeadline">正在扫描公开动态</strong>
+            <span id="confidenceBadge" class="confidence neutral">等待数据</span>
+            <p id="signalMeta">首次检查可能需要几秒钟</p>
+            <button id="viewEvidence" class="text-action" type="button" disabled>查看证据 <span>›</span></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="quota-panel" aria-labelledby="quotaTitle">
+        <div class="section-label" id="quotaTitle">当前额度</div>
+        <div id="fiveHourRow" class="quota-row">
+          <div class="quota-line"><span class="quota-name">5 小时</span><span id="fiveHourMeta">等待 ChatGPT 数据</span></div>
+          <div class="meter"><span id="fiveHourBar"></span></div>
+        </div>
+        <div id="weeklyRow" class="quota-row">
+          <div class="quota-line"><span class="quota-name">每周</span><span id="weeklyMeta">等待 ChatGPT 数据</span></div>
+          <div class="meter"><span id="weeklyBar"></span></div>
+        </div>
+      </section>
+
+      <section class="credits-panel" aria-labelledby="creditsTitle">
+        <div>
+          <div class="section-label" id="creditsTitle">可用重置券</div>
+          <strong id="creditsCount">--</strong>
+        </div>
+        <p id="creditsExpiry">过期时间未知</p>
+      </section>
+
+      <section id="advicePanel" class="advice-panel" aria-labelledby="adviceTitle">
+        <span class="advice-icon" aria-hidden="true">☆</span>
+        <div>
+          <strong id="adviceTitle">建议：等待完整数据</strong>
+          <p id="adviceMessage">插件不会在额度或重置券数据缺失时猜测。</p>
+          <small id="adviceDetail">只读建议，不会自动兑换重置券</small>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <button id="refreshButton" class="refresh-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg>
+          <span>立即刷新</span>
+        </button>
+        <span id="notificationState" class="notification-state">通知已开启</span>
+        <span id="lastChecked" class="last-checked">尚未检查</span>
+      </footer>
+    </main>
+
+    <script src="../core/settings.js"></script>
+    <script src="../core/time.js"></script>
+    <script src="../core/usage.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

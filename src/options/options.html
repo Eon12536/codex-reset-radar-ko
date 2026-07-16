@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codex Reset Radar 设置</title>
+    <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <div class="options-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
+          <div><strong>Codex Reset Radar</strong><small>通知与监控设置</small></div>
+        </div>
+        <nav aria-label="设置分类">
+          <button class="nav-item selected" data-target="monitor" type="button">◎ <span>监控</span></button>
+          <button class="nav-item" data-target="notifications" type="button">♧ <span>通知</span></button>
+          <button class="nav-item" data-target="privacy" type="button">▢ <span>隐私</span></button>
+          <button class="nav-item" data-target="about" type="button">ⓘ <span>关于</span></button>
+        </nav>
+      </aside>
+
+      <main class="settings-main">
+        <header>
+          <div>
+            <h1>通知与监控设置</h1>
+            <p>所有账户建议都在本地计算，时间按所选 IANA 时区显示。</p>
+          </div>
+          <span id="saveState">已保存</span>
+        </header>
+
+        <form id="settingsForm">
+          <section id="monitor" class="settings-section">
+            <h2>监控目标</h2>
+            <div class="setting-row">
+              <div><strong>官方重置信号</strong><small>监控公开信号，评估官方可能重置的时间窗口</small></div>
+              <label class="switch"><input id="monitorSignals" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>个人额度与重置券</strong><small>监控我的额度使用情况与重置券状态（本地计算）</small></div>
+              <label class="switch"><input id="monitorAccount" type="checkbox"><span></span></label>
+            </div>
+
+            <h2>监控策略</h2>
+            <label class="setting-row field-row">
+              <div><strong>轮询间隔</strong><small>浏览器运行时定期检查</small></div>
+              <select id="pollMinutes">
+                <option value="15">每 15 分钟</option>
+                <option value="30">每 30 分钟</option>
+                <option value="60">每 60 分钟</option>
+                <option value="120">每 2 小时</option>
+              </select>
+            </label>
+            <div class="setting-row field-row">
+              <div><strong>可信度阈值</strong><small>决定哪些公开信号会触发通知</small></div>
+              <div class="segments" role="radiogroup" aria-label="可信度阈值">
+                <label><input id="confidenceThresholdHigh" type="radio" name="confidenceThreshold" value="high"><span>仅高可信</span></label>
+                <label><input id="confidenceThresholdMedium" type="radio" name="confidenceThreshold" value="medium"><span>中高可信</span></label>
+                <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span>全部</span></label>
+              </div>
+            </div>
+            <label class="setting-row field-row">
+              <div><strong>公开动态账号</strong><small>默认监控 Codex 负责人公开账号</small></div>
+              <div class="input-prefix"><span>@</span><input id="targetHandle" type="text" autocomplete="off"></div>
+            </label>
+
+            <h2>时区</h2>
+            <div class="setting-row field-row">
+              <div><strong>时间显示</strong><small id="systemTimezoneLabel">系统时区</small></div>
+              <div class="segments">
+                <label><input id="timezoneModeSystem" type="radio" name="timezoneMode" value="system"><span>跟随系统</span></label>
+                <label><input id="timezoneModeManual" type="radio" name="timezoneMode" value="manual"><span>手动指定</span></label>
+              </div>
+            </div>
+            <label id="timezoneOverrideRow" class="setting-row field-row">
+              <div><strong>IANA 时区</strong><small>例如 Asia/Shanghai、America/Los_Angeles</small></div>
+              <input id="timezoneOverride" type="text" list="timezoneList" autocomplete="off" placeholder="Asia/Shanghai">
+              <datalist id="timezoneList">
+                <option value="Asia/Shanghai"></option>
+                <option value="Asia/Tokyo"></option>
+                <option value="Europe/London"></option>
+                <option value="Europe/Berlin"></option>
+                <option value="America/Los_Angeles"></option>
+                <option value="America/New_York"></option>
+                <option value="UTC"></option>
+              </datalist>
+            </label>
+          </section>
+
+          <section id="notifications" class="settings-section">
+            <h2>通知设置</h2>
+            <div class="setting-row">
+              <div><strong>可能即将官方重置</strong><small>发现符合可信度阈值的新信号时提醒</small></div>
+              <label class="switch"><input id="notifyOfficialReset" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>重置券即将过期</strong><small>过期前显示使用建议</small></div>
+              <label class="switch"><input id="notifyCreditExpiry" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>额度不足时给出建议</strong><small>只在被限制或额度明显偏低时通知</small></div>
+              <label class="switch"><input id="notifyAdvice" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row field-row">
+              <div><strong>勿扰时段</strong><small>在设定时间内，减少非紧急通知打扰</small></div>
+              <div class="quiet-fields">
+                <label class="switch compact"><input id="quietHoursEnabled" type="checkbox"><span></span></label>
+                <input id="quietStart" type="time">
+                <span>—</span>
+                <input id="quietEnd" type="time">
+              </div>
+            </div>
+          </section>
+
+          <section id="privacy" class="settings-section">
+            <h2>数据源</h2>
+            <div class="source-row"><span class="source-icon">◎</span><div><strong>公开动态源</strong><small id="publicSourceText">api.dayclaw.com 公开数据</small></div></div>
+            <div class="source-row"><span class="source-icon">▢</span><div><strong>ChatGPT 登录会话（仅本地读取）</strong><small>读取本地会话数据以计算额度与重置券状态，不联网上传</small></div></div>
+            <div class="privacy-note">♢ 不上传令牌、账户标识或使用记录。访问令牌只保存在浏览器会话级存储中，关闭浏览器后失效。</div>
+            <button id="clearData" class="danger-button" type="button">清除本地数据</button>
+          </section>
+
+          <section id="about" class="settings-section">
+            <h2>关于</h2>
+            <div class="about-block">
+              <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
+              <div>
+                <h3>Codex Reset Radar <span>v0.1.0</span></h3>
+                <p>MIT 开源的非官方浏览器扩展。只读监控，不会自动重置额度或兑换重置券。</p>
+                <p>项目灵感来自 codex-reset-watchdog 与 codex-reset-watcher。</p>
+              </div>
+            </div>
+          </section>
+        </form>
+      </main>
+    </div>
+
+    <script src="../core/settings.js"></script>
+    <script src="../core/time.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

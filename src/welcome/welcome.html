@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>欢迎使用 Codex Reset Radar</title>
+    <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="welcome.css">
+  </head>
+  <body>
+    <main>
+      <div class="radar-mark hero-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
+      <p class="eyebrow">MIT OPEN SOURCE · LOCAL FIRST</p>
+      <h1>在额度重置前，先看清信号。</h1>
+      <p class="intro">Codex Reset Radar 监控可能的官方重置信号，并结合你的额度和重置券过期时间给出只读建议。</p>
+      <ol>
+        <li><span>1</span><div><strong>保持 ChatGPT 登录</strong><p>插件复用当前浏览器会话读取 Codex 额度，不要求 API Key。</p></div></li>
+        <li><span>2</span><div><strong>允许系统通知</strong><p>高可信信号、重置券即将过期或额度受限时才提醒。</p></div></li>
+        <li><span>3</span><div><strong>确认你的时区</strong><p>所有 UTC 时间戳都会按系统时区换算，也可以手动指定 IANA 时区。</p></div></li>
+      </ol>
+      <div class="actions">
+        <button id="openUsage" type="button">打开 Codex 用量页</button>
+        <button id="openOptions" class="secondary" type="button">检查设置</button>
+      </div>
+      <p class="privacy">不上传令牌、账户标识或使用记录。不会自动兑换重置券。</p>
+    </main>
+    <script src="welcome.js"></script>
+  </body>
+</html>
