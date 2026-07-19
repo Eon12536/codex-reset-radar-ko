@@ -57,6 +57,15 @@ responses. Public milestone dates are processed locally to derive a
 community-experience forecast. The extension never redeems a reset credit or
 mutates the user's account.
 
+## Chrome Web Store limited use
+
+Codex Reset Radar's use and transfer of information received from Chrome APIs
+will adhere to the Chrome Web Store User Data Policy, including the Limited Use
+requirements. User data is used only to provide the extension's disclosed
+features. It is not sold, used for advertising or creditworthiness decisions,
+or made available for humans to read except when required for security, legal
+compliance, or user-requested support with explicit consent.
+
 ## Time zones
 
 All timestamps are stored as UTC/Unix values. Display and notification times
