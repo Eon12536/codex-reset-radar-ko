@@ -6,10 +6,10 @@ body {
 .popup-shell {
   width: 420px;
   min-height: 600px;
-  padding: 10px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   background: radial-gradient(circle at 15% -10%, rgba(231, 169, 59, 0.06), transparent 30%), var(--bg);
 }
 
@@ -82,8 +82,8 @@ body {
 }
 
 .signal-panel {
-  padding: 10px;
-  min-height: 214px;
+  padding: 7px;
+  min-height: 206px;
 }
 
 .section-label {
@@ -94,9 +94,9 @@ body {
 }
 
 .signal-layout {
-  height: 112px;
+  height: 108px;
   display: grid;
-  grid-template-columns: 112px 1fr;
+  grid-template-columns: 106px 1fr;
   align-items: center;
   gap: 12px;
 }
@@ -155,9 +155,9 @@ body {
 .signal-copy > strong {
   display: block;
   color: var(--amber);
-  font-size: 21px;
+  font-size: 18px;
   line-height: 1.25;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .confidence {
@@ -178,7 +178,7 @@ body {
 }
 
 .signal-copy p {
-  margin: 10px 0 4px;
+  margin: 6px 0 2px;
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
@@ -187,7 +187,7 @@ body {
 }
 
 .text-action {
-  padding: 5px 0;
+  padding: 2px 0;
   border: 0;
   color: var(--amber);
   background: none;
@@ -204,7 +204,7 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin: 2px 1px 6px;
+  margin: 0 1px 4px;
   color: var(--muted);
   font-size: 10px;
 }
@@ -229,7 +229,7 @@ body {
 
 .forecast-slot {
   min-width: 0;
-  padding: 6px 7px;
+  padding: 5px 7px;
   display: grid;
   gap: 3px;
   border: 1px solid rgba(231, 169, 59, 0.2);

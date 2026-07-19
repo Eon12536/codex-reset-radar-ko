@@ -26,7 +26,7 @@
         <header>
           <div>
             <h1>通知与监控设置</h1>
-            <p>所有账户建议都在本地计算，时间按所选 IANA 时区显示。</p>
+            <p>公开信号监控无需登录；可选的账户建议在本地计算。</p>
           </div>
           <span id="saveState">已保存</span>
         </header>
@@ -39,7 +39,7 @@
               <label class="switch"><input id="monitorSignals" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>个人额度与重置券</strong><small>监控我的额度使用情况与重置券状态（本地计算）</small></div>
+              <div><strong>个人额度与重置券（可选）</strong><small>登录 ChatGPT 后显示额度、重置券与个性化建议；不影响公开信号监控</small></div>
               <label class="switch"><input id="monitorAccount" type="checkbox"><span></span></label>
             </div>
 
@@ -61,10 +61,23 @@
                 <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span>全部</span></label>
               </div>
             </div>
-            <label class="setting-row field-row">
-              <div><strong>公开动态账号</strong><small>默认监控 Codex 负责人公开账号</small></div>
-              <div class="input-prefix"><span>@</span><input id="targetHandle" type="text" autocomplete="off"></div>
-            </label>
+            <h2>信息源与权重</h2>
+            <div class="setting-row">
+              <div><strong>Codex 负责人动态 · 1.00</strong><small>社区经验中的主要提前预告源</small></div>
+              <label class="switch"><input id="monitorLeadSource" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>OpenAI Status · 0.70</strong><small>官方故障、限流异常与恢复进度</small></div>
+              <label class="switch"><input id="monitorStatusSource" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>社区重置历史 · 0.58</strong><small>依据已验证的百万用户里程碑与重置节奏预测</small></div>
+              <label class="switch"><input id="monitorHistorySource" type="checkbox"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>OpenAI/Codex GitHub · 0.35</strong><small>社区额度反馈，仅作低权重辅助</small></div>
+              <label class="switch"><input id="monitorCommunitySource" type="checkbox"><span></span></label>
+            </div>
 
             <h2>时区</h2>
             <div class="setting-row field-row">
@@ -116,8 +129,8 @@
 
           <section id="privacy" class="settings-section">
             <h2>数据源</h2>
-            <div class="source-row"><span class="source-icon">◎</span><div><strong>公开动态源</strong><small id="publicSourceText">api.dayclaw.com 公开数据</small></div></div>
-            <div class="source-row"><span class="source-icon">▢</span><div><strong>ChatGPT 登录会话（仅本地读取）</strong><small>读取本地会话数据以计算额度与重置券状态，不联网上传</small></div></div>
+            <div class="source-row"><span class="source-icon">◎</span><div><strong>公开信息源</strong><small id="publicSourceText">4 个加权公开来源</small></div></div>
+            <div class="source-row"><span class="source-icon">▢</span><div><strong>ChatGPT 登录会话（可选，仅本地读取）</strong><small>仅用于计算个人额度与重置券建议；未登录时公开信号雷达仍正常运行</small></div></div>
             <div class="privacy-note">♢ 不上传令牌、账户标识或使用记录。访问令牌只保存在浏览器会话级存储中，关闭浏览器后失效。</div>
             <button id="clearData" class="danger-button" type="button">清除本地数据</button>
           </section>
@@ -139,6 +152,8 @@
 
     <script src="../core/settings.js"></script>
     <script src="../core/time.js"></script>
+    <script src="../core/signals.js"></script>
+    <script src="../core/sources.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

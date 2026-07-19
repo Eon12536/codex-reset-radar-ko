@@ -3,6 +3,7 @@ importScripts(
   "core/time.js",
   "core/usage.js",
   "core/signals.js",
+  "core/sources.js",
   "core/forecast.js",
   "core/advice.js"
 );
@@ -16,11 +17,6 @@ const SESSION_URLS = [
 ];
 const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
-
-function sourceUrl(settings) {
-  if (settings.sourceUrl) return settings.sourceUrl;
-  return `https://api.dayclaw.com/api/source/public/x/${encodeURIComponent(settings.targetHandle)}/items`;
-}
 
 async function loadSettings() {
   const { settings } = await chrome.storage.local.get("settings");
@@ -101,7 +97,11 @@ async function trustedChatGptFetch(url, token) {
   const headers = { accept: "application/json", "oai-language": chrome.i18n.getUILanguage() || "zh-CN" };
   if (token) headers.authorization = `Bearer ${token}`;
   const response = await fetch(parsed.href, { credentials: "include", headers, redirect: "error" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   if (!String(response.headers.get("content-type") || "").includes("application/json")) {
     throw new Error("Unexpected content type");
   }
@@ -123,19 +123,48 @@ async function refreshAccount({ quiet = false } = {}) {
     const credits = creditsResult.status === "fulfilled"
       ? RadarUsage.normalizeCredits(creditsResult.value)
       : null;
-    if (!usage && !credits) throw new Error("Account data unavailable");
+    if (!usage && !credits) {
+      const signedOut = [usageResult, creditsResult].some((result) =>
+        result.status === "rejected" && [401, 403].includes(result.reason?.status)
+      );
+      if (signedOut) {
+        const { signalSnapshot } = await chrome.storage.local.get("signalSnapshot");
+        const activeSignal = RadarSignals.isActive(signalSnapshot?.signal) ? signalSnapshot.signal : null;
+        const advice = RadarAdvice.make({
+          usage: null,
+          credits: null,
+          signal: activeSignal
+        });
+        await chrome.storage.local.remove("accountSnapshot");
+        await chrome.storage.local.set({
+          accountState: { status: "signedOut", at: Date.now() },
+          adviceSnapshot: advice,
+          accountError: null
+        });
+        await updateBadge(null, activeSignal, advice);
+        return { ok: true, unavailable: true, reason: "signedOut" };
+      }
+      throw new Error("Account data unavailable");
+    }
     await storeAccountSnapshot(usage, credits);
     return { ok: true, source: "background" };
   } catch (error) {
-    if (!quiet) await chrome.storage.local.set({
-      accountError: { message: String(error?.message || error), at: Date.now() }
-    });
+    if (!quiet) {
+      const at = Date.now();
+      await chrome.storage.local.set({
+        accountState: { status: "error", at },
+        accountError: { message: String(error?.message || error), at }
+      });
+    }
     return { ok: false, error: String(error?.message || error) };
   }
 }
 
 async function storeAccountSnapshot(usage, credits) {
   const current = await chrome.storage.local.get(["accountSnapshot", "signalSnapshot"]);
+  const activeSignal = RadarSignals.isActive(current.signalSnapshot?.signal)
+    ? current.signalSnapshot.signal
+    : null;
   const snapshot = {
     usage: usage || current.accountSnapshot?.usage || null,
     credits: credits || current.accountSnapshot?.credits || null,
@@ -144,34 +173,73 @@ async function storeAccountSnapshot(usage, credits) {
   const advice = RadarAdvice.make({
     usage: snapshot.usage,
     credits: snapshot.credits,
-    signal: current.signalSnapshot?.signal || null
+    signal: activeSignal
   });
-  await chrome.storage.local.set({ accountSnapshot: snapshot, adviceSnapshot: advice, accountError: null });
-  await updateBadge(snapshot, current.signalSnapshot?.signal || null, advice);
+  await chrome.storage.local.set({
+    accountSnapshot: snapshot,
+    accountState: { status: "connected", at: Date.now() },
+    adviceSnapshot: advice,
+    accountError: null
+  });
+  await updateBadge(snapshot, activeSignal, advice);
   await maybeNotifyAdvice(advice, snapshot);
+}
+
+async function clearSignalState() {
+  const { accountSnapshot } = await chrome.storage.local.get("accountSnapshot");
+  const snapshot = { signal: null, activeSignals: [], checkedAt: Date.now(), sources: [], itemCount: 0 };
+  const advice = RadarAdvice.make({
+    usage: accountSnapshot?.usage || null,
+    credits: accountSnapshot?.credits || null,
+    signal: null
+  });
+  await chrome.storage.local.set({ signalSnapshot: snapshot, adviceSnapshot: advice, signalError: null });
+  await updateBadge(accountSnapshot, null, advice);
+  return { ok: true, skipped: true };
 }
 
 async function refreshSignals({ quiet = false } = {}) {
   const settings = await loadSettings();
-  if (!settings.monitorSignals) return { ok: true, skipped: true };
+  if (!settings.monitorSignals) return clearSignalState();
   try {
-    const response = await fetch(sourceUrl(settings), {
-      headers: { accept: "application/json" },
-      redirect: "error"
-    });
-    if (!response.ok) throw new Error(`Source HTTP ${response.status}`);
-    const payload = await response.json();
-    const items = RadarSignals.extractItems(payload);
+    const sources = RadarSources.enabled(settings);
+    if (!sources.length) return clearSignalState();
+    const results = await Promise.allSettled(sources.map(async (source) => {
+      const response = await fetch(source.url, {
+        headers: { accept: "application/json" },
+        redirect: "error"
+      });
+      if (!response.ok) throw new Error(`${source.label} HTTP ${response.status}`);
+      const contentType = String(response.headers.get("content-type") || "");
+      const expectsHtml = source.kind === "reset-tracker-html";
+      if (expectsHtml && !contentType.includes("text/html")) throw new Error(`${source.label} returned non-HTML data`);
+      if (!expectsHtml && !contentType.includes("application/json")) throw new Error(`${source.label} returned non-JSON data`);
+      const payload = expectsHtml ? await response.text() : await response.json();
+      return { source, items: RadarSources.normalize(payload, source) };
+    }));
+    const successful = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+    if (!successful.length) throw new Error("All public signal sources are unavailable");
+    const items = successful.flatMap((result) => result.items);
     const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot"]);
     const seen = new Set(state.seenSignalIds || []);
     const newItems = items.filter((item) => !seen.has(item.id));
-    const incomingSignal = RadarSignals.strongest(newItems);
-    const signal = RadarSignals.preferActive(incomingSignal, state.signalSnapshot?.signal);
+    const incomingSignals = RadarSignals.actionable(newItems);
+    const existingSignals = state.signalSnapshot?.activeSignals ||
+      (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : []);
+    const activeSignals = RadarSignals.mergeActive(incomingSignals, existingSignals);
+    const signal = activeSignals[0] || null;
     const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);
     const snapshot = {
       signal,
+      activeSignals,
       checkedAt: Date.now(),
-      source: sourceUrl(settings),
+      sources: results.map((result, index) => ({
+        id: sources[index].id,
+        label: sources[index].label,
+        weight: sources[index].weight,
+        ok: result.status === "fulfilled",
+        itemCount: result.status === "fulfilled" ? result.value.items.length : 0
+      })),
       itemCount: items.length
     };
     const advice = RadarAdvice.make({

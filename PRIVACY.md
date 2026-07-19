@@ -7,13 +7,18 @@ Codex Reset Radar is local-first and read-only.
 When enabled, the extension reads:
 
 - public items from `https://api.dayclaw.com/`
+- public incident data from `https://status.openai.com/`
+- public reset-history and user-milestone data from `https://codex-resets.com/`
+- public rate-limit issues from `https://api.github.com/repos/openai/codex/`
 - Codex usage metadata from
   `https://chatgpt.com/backend-api/wham/usage`
 - banked reset-credit metadata from
   `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`
 
-The two ChatGPT requests reuse the user's existing browser login. The
-extension does not ask for an OpenAI API key.
+The two ChatGPT requests are optional and reuse the user's existing browser
+login. Without a ChatGPT login, the public-signal radar, forecast, and signal
+notifications continue to work. The extension does not ask for an OpenAI API
+key.
 
 ## Data it stores
 
@@ -45,9 +50,12 @@ The extension does not persist:
 Codex Reset Radar does not operate a server and does not include analytics,
 advertising, telemetry, or crash reporting.
 
-Requests are sent only to the public signal source and the two exact ChatGPT
-endpoints listed above. The extension never redeems a reset credit or mutates
-the user's account.
+Requests are sent only to the four public sources and the two exact ChatGPT
+endpoints listed above. GitHub issue authors and public incident text are
+processed locally as weighted signal context and are not persisted as raw
+responses. Public milestone dates are processed locally to derive a
+community-experience forecast. The extension never redeems a reset credit or
+mutates the user's account.
 
 ## Time zones
 

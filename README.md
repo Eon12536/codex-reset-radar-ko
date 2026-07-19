@@ -35,8 +35,9 @@ Codex Reset Radar puts both decisions in one compact browser surface.
 
 ## Features
 
-- **Public-signal radar** — checks a public Dayclaw source for new posts and
-  applies a deterministic, testable reset-signal classifier.
+- **Weighted multi-source radar** — checks the Codex lead's public posts,
+  OpenAI Status, community reset history, and public rate-limit reports in the
+  OpenAI/Codex repository.
 - **Date/time forecast** — converts an active public signal into heuristic
   probabilities for six-hour slots over the next 72 hours.
 - **Quota monitor** — shows known 5-hour and weekly windows without guessing
@@ -66,7 +67,10 @@ Codex Reset Radar puts both decisions in one compact browser surface.
 4. Enable **Developer mode**.
 5. Choose **Load unpacked**.
 6. Select the repository directory.
-7. Sign in to ChatGPT in the same browser.
+
+The public-signal radar, time forecast, and signal notifications work without
+signing in. Sign in to ChatGPT in the same browser only if you also want
+personal quota, reset-credit status, and personalized advice.
 
 The build command also creates a distributable zip under `dist/`.
 
@@ -80,6 +84,9 @@ The build command also creates a distributable zip under `dist/`.
 | `tabs` | Open evidence/settings and ask an existing ChatGPT tab for a fresh read |
 | `https://chatgpt.com/*` | Read Codex usage and reset-credit metadata from the existing login |
 | `https://api.dayclaw.com/*` | Read the configured public reset-signal source |
+| `https://status.openai.com/*` | Read official OpenAI incident and recovery updates |
+| `https://codex-resets.com/*` | Read public reset history and user-milestone records |
+| `https://api.github.com/*` | Read public rate-limit issues in the OpenAI/Codex repository |
 
 See [PRIVACY.md](PRIVACY.md) for the complete data boundary.
 
@@ -103,9 +110,14 @@ Invalid manual time zones are rejected and never silently used.
 ## Forecast boundary
 
 The popup shows a 72-hour reset forecast in six-hour slots. It derives the
-estimate from the public post's classifier score, confidence, and approximate
-event time, rendered in the user's time zone. With no active signal it shows
-only a low baseline. This is a deterministic heuristic—not a statistical
+estimate from classifier score, source weight, corroborating source count,
+recent milestone cadence, and approximate event time, rendered in the user's
+time zone. The default weights are `1.00` for the Codex lead's public feed,
+`0.70` for OpenAI Status, `0.58` for community reset history, and `0.35` for
+GitHub community reports. A recent sequence of million-user milestones can
+produce a medium-confidence forecast, but remains labeled as community
+experience rather than an official announcement. With no active signal it
+shows only a low baseline. This is a deterministic heuristic—not a statistical
 model, private OpenAI information, or an official commitment.
 
 ## Advice priority
@@ -138,8 +150,8 @@ there is no runtime framework and no remotely hosted code.
 ## Architecture
 
 ```text
-Public Dayclaw items ──> signal classifier ─> time-slot forecast ─┐
-                                                                 ├─> popup / badge / notifications
+Weighted public sources ─> signal classifier ─> time-slot forecast ─┐
+                                                                   ├─> popup / badge / notifications
 ChatGPT usage + reset credits ─> tolerant normalization ─┘
 ```
 

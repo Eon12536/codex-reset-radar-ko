@@ -25,6 +25,21 @@ test("official high-confidence signal tells user to hold credits", () => {
   assert.equal(advice.tier, "signal");
 });
 
+test("public signal advice works without a ChatGPT login", () => {
+  const advice = Advice.make({
+    usage: null,
+    credits: null,
+    signal: { assessment: { actionable: true, confidence: "high", eventAt: Date.now() + 8 * 3600000 } }
+  });
+  assert.equal(advice.tier, "signal");
+});
+
+test("signed-out users remain in a usable public-radar mode", () => {
+  const advice = Advice.make({ usage: null, credits: null, signal: null });
+  assert.equal(advice.tier, "guest");
+  assert.match(advice.message, /无需登录/);
+});
+
 test("expiring credit overrides conservative hold advice", () => {
   const advice = Advice.make({
     usage: usage(80, 8),

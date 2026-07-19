@@ -88,15 +88,23 @@
     });
   }
 
-  function totalProbability(signal, now) {
+  function totalProbability(signal, now, sourceCount = 1) {
     if (!signal?.assessment?.actionable) return { probability: 8, basis: "baseline" };
     const eventAt = root.RadarTime?.parseTimestamp?.(signal.assessment.eventAt);
     if (!eventAt || eventAt < now - 12 * 60 * 60 * 1000) return { probability: 8, basis: "baseline" };
-    const score = clamp(Number(signal.assessment.score) || 0, 6, 9);
-    const confidenceBase = signal.assessment.confidence === "high" ? 76 : 52;
+    const effectiveScore = clamp(
+      Number(signal.assessment.weightedScore ?? signal.assessment.score) || 0,
+      1,
+      9
+    );
+    let probability;
+    if (signal.assessment.confidence === "high") probability = 70 + effectiveScore * 2;
+    else if (signal.assessment.confidence === "medium") probability = 45 + effectiveScore * 3;
+    else probability = 18 + effectiveScore * 2;
+    const corroborationBoost = Math.min(10, Math.max(0, sourceCount - 1) * 4);
     return {
-      probability: clamp(confidenceBase + (score - 6) * 4, 8, 88),
-      basis: "public-signal"
+      probability: Math.round(clamp(probability + corroborationBoost, 8, 94)),
+      basis: signal.prediction?.kind === "milestone" ? "community-experience" : "public-signal"
     };
   }
 
@@ -123,10 +131,22 @@
   function build(options = {}) {
     const now = options.now ?? Date.now();
     const timeZone = root.RadarTime?.isValidTimeZone?.(options.timeZone) ? options.timeZone : "UTC";
-    const activeSignal = root.RadarSignals?.isActive
-      ? (root.RadarSignals.isActive(options.signal, { now }) ? options.signal : null)
-      : options.signal;
-    const total = totalProbability(activeSignal, now);
+    const suppliedSignals = Array.isArray(options.signals) ? options.signals : [options.signal].filter(Boolean);
+    const activeSignals = root.RadarSignals?.isActive
+      ? suppliedSignals.filter((signal) => root.RadarSignals.isActive(signal, { now }))
+      : suppliedSignals;
+    const activeSignal = [...activeSignals].sort((a, b) => {
+      const bScore = b.assessment?.weightedScore ?? b.assessment?.score ?? 0;
+      const aScore = a.assessment?.weightedScore ?? a.assessment?.score ?? 0;
+      return bScore - aScore;
+    })[0] || null;
+    const primaryEventAt = root.RadarTime?.parseTimestamp?.(activeSignal?.assessment?.eventAt);
+    const corroborating = activeSignals.filter((signal) => {
+      const eventAt = root.RadarTime?.parseTimestamp?.(signal.assessment?.eventAt);
+      return primaryEventAt && eventAt && Math.abs(eventAt - primaryEventAt) <= 18 * 60 * 60 * 1000;
+    });
+    const sourceCount = new Set(corroborating.map((signal) => signal.source?.id || signal.author || signal.id)).size;
+    const total = totalProbability(activeSignal, now, sourceCount);
     const boundaries = slotBoundaries(now, timeZone, options.horizonHours || HORIZON_HOURS);
     const eventAt = root.RadarTime?.parseTimestamp?.(activeSignal?.assessment?.eventAt);
     return {
@@ -135,6 +155,7 @@
       timeZone,
       totalProbability: total.probability,
       basis: total.basis,
+      sourceCount,
       slots: distribute(total.probability, boundaries, eventAt)
     };
   }

@@ -18,7 +18,10 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://api.dayclaw.com/*"
+    "https://api.dayclaw.com/*",
+    "https://status.openai.com/*",
+    "https://codex-resets.com/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "service_worker": "src/background.js"

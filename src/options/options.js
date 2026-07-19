@@ -25,15 +25,16 @@ async function load() {
   const value = RadarSettings.sanitize(settings);
   for (const key of [
     "monitorSignals", "monitorAccount", "notifyOfficialReset", "notifyCreditExpiry",
-    "notifyAdvice", "quietHoursEnabled"
+    "notifyAdvice", "quietHoursEnabled", "monitorLeadSource", "monitorStatusSource",
+    "monitorHistorySource", "monitorCommunitySource"
   ]) control(key).checked = Boolean(value[key]);
-  for (const key of ["pollMinutes", "targetHandle", "timezoneOverride", "quietStart", "quietEnd"]) {
+  for (const key of ["pollMinutes", "timezoneOverride", "quietStart", "quietEnd"]) {
     control(key).value = value[key];
   }
   setRadio("confidenceThreshold", value.confidenceThreshold);
   setRadio("timezoneMode", value.timezoneMode);
   control("systemTimezoneLabel").textContent = `当前系统时区：${RadarTime.systemTimeZone()}`;
-  control("publicSourceText").textContent = value.sourceUrl || `api.dayclaw.com · @${value.targetHandle}`;
+  control("publicSourceText").textContent = value.sourceUrl || `${RadarSources.enabled(value).length} 个加权公开来源`;
   renderTimezoneMode();
 }
 
@@ -41,6 +42,10 @@ function readSettings() {
   return RadarSettings.sanitize({
     monitorSignals: control("monitorSignals").checked,
     monitorAccount: control("monitorAccount").checked,
+    monitorLeadSource: control("monitorLeadSource").checked,
+    monitorStatusSource: control("monitorStatusSource").checked,
+    monitorHistorySource: control("monitorHistorySource").checked,
+    monitorCommunitySource: control("monitorCommunitySource").checked,
     pollMinutes: Number(control("pollMinutes").value),
     confidenceThreshold: radioValue("confidenceThreshold"),
     notifyOfficialReset: control("notifyOfficialReset").checked,
@@ -50,8 +55,7 @@ function readSettings() {
     quietStart: control("quietStart").value,
     quietEnd: control("quietEnd").value,
     timezoneMode: radioValue("timezoneMode"),
-    timezoneOverride: control("timezoneOverride").value,
-    targetHandle: control("targetHandle").value
+    timezoneOverride: control("timezoneOverride").value
   });
 }
 
@@ -65,7 +69,7 @@ async function save() {
   saveState.textContent = "保存中…";
   saveState.style.color = "var(--muted)";
   await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings });
-  control("publicSourceText").textContent = settings.sourceUrl || `api.dayclaw.com · @${settings.targetHandle}`;
+  control("publicSourceText").textContent = settings.sourceUrl || `${RadarSources.enabled(settings).length} 个加权公开来源`;
   saveState.textContent = "已保存";
   saveState.style.color = "var(--teal)";
 }

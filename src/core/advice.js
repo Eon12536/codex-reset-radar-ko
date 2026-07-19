@@ -1,7 +1,7 @@
 (function initAdvice(root) {
   // The decision order and thresholds are a JavaScript port of the MIT-licensed
   // UsageNudge model from jordan-edai/codex-reset-watcher, adapted for a
-  // browser extension and combined with official-reset signal awareness.
+  // browser extension and combined with public reset-signal awareness.
   function result(tier, title, message, detail) {
     return { tier, title, message, detail };
   }
@@ -33,7 +33,16 @@
     }
 
     if (signal?.assessment?.actionable && signal.assessment.confidence === "high") {
-      return result("signal", "优先使用剩余额度，暂缓使用重置券", "检测到高可信的未来官方重置信号。除非已经被限制，否则先保留重置券。", signal.assessment.eventAt ? root.RadarTime.relativeDuration(signal.assessment.eventAt, now) : "时间窗口待确认");
+      return result("signal", "优先使用剩余额度，暂缓使用重置券", "检测到高可信的未来公开重置信号。除非已经被限制，否则先保留重置券。", signal.assessment.eventAt ? root.RadarTime.relativeDuration(signal.assessment.eventAt, now) : "时间窗口待确认");
+    }
+
+    if (!usage) {
+      return result(
+        "guest",
+        "公开信号雷达运行中",
+        "无需登录即可监控公开重置信号和时间预测；登录 ChatGPT 仅用于补充个人额度与重置券建议。",
+        "基础模式"
+      );
     }
 
     if (!weekly) {
