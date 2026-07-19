@@ -51,3 +51,14 @@ test("expires a retained signal after the event grace period", () => {
   };
   assert.equal(Signals.isActive(existing, { now: eventAt + 13 * 60 * 60 * 1000 }), false);
 });
+
+test("reduces confidence for an unverified community source", () => {
+  const assessment = Signals.classify({
+    text: "We will reset Codex usage limits later today.",
+    createdAt: "2026-07-16T10:00:00Z",
+    source: { id: "community", weight: 0.35 }
+  }, { now: Date.parse("2026-07-16T10:05:00Z") });
+  assert.equal(assessment.actionable, true);
+  assert.equal(assessment.confidence, "low");
+  assert.equal(assessment.weightedScore, 3.15);
+});

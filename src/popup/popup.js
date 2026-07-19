@@ -6,14 +6,21 @@ function meterColor(remaining) {
   return "var(--teal)";
 }
 
-function renderWindow(kind, usage, settings) {
+function accountPlaceholder(settings, accountState) {
+  if (!settings.monitorAccount) return "账户功能已关闭";
+  if (accountState?.status === "signedOut") return "可选：登录后显示";
+  if (accountState?.status === "error") return "个人数据暂时不可用";
+  return "可选：登录后显示";
+}
+
+function renderWindow(kind, usage, settings, accountState) {
   const windowData = RadarUsage.findWindow(usage, kind);
   const prefix = kind === "fiveHour" ? "fiveHour" : "weekly";
   const bar = $(`${prefix}Bar`);
   const meta = $(`${prefix}Meta`);
   if (!windowData) {
     bar.style.width = "0";
-    meta.textContent = "数据不可用";
+    meta.textContent = accountPlaceholder(settings, accountState);
     return;
   }
   const timeZone = RadarTime.resolveTimeZone(settings);
@@ -26,7 +33,7 @@ function renderWindow(kind, usage, settings) {
 }
 
 function renderSignal(signalSnapshot, settings) {
-  const signal = signalSnapshot?.signal;
+  const signal = RadarSignals.isActive(signalSnapshot?.signal) ? signalSnapshot.signal : null;
   if (!signal) {
     $("signalHeadline").textContent = signalSnapshot?.checkedAt ? "暂无可执行信号" : "正在扫描公开动态";
     $("confidenceBadge").textContent = signalSnapshot?.checkedAt ? "监控中" : "等待数据";
@@ -38,13 +45,23 @@ function renderSignal(signalSnapshot, settings) {
     return;
   }
   const timeZone = RadarTime.resolveTimeZone(settings);
+  const compactEventTime = signal.assessment.eventAt ? new Intl.DateTimeFormat(
+    globalThis.navigator?.language || "zh-CN",
+    { timeZone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
+  ).format(new Date(signal.assessment.eventAt)) : null;
+  const communityPrediction = signal.prediction?.kind === "milestone";
   $("signalHeadline").textContent = signal.assessment.eventAt
-    ? `可能在 ${RadarTime.formatDateTime(signal.assessment.eventAt, timeZone)} 重置`
+    ? `${communityPrediction ? "社区经验预计" : "可能"} ${compactEventTime}${communityPrediction ? " 前后" : ""}重置`
     : "公开信号显示可能即将重置";
-  $("confidenceBadge").textContent = signal.assessment.confidence === "high" ? "高可信" : "中可信";
+  $("confidenceBadge").textContent = {
+    high: "高可信",
+    medium: "中可信",
+    low: "低可信"
+  }[signal.assessment.confidence] || "待评估";
   $("confidenceBadge").className = "confidence";
   const age = signal.createdAt ? RadarTime.relativeDuration(Date.now() + Math.max(0, Date.now() - RadarTime.parseTimestamp(signal.createdAt))) : "刚刚";
-  $("signalMeta").textContent = `来自 @${signal.author || "公开动态"} · ${age.replace("后", "前")}`;
+  const sourceLabel = signal.source?.label || signal.author || "公开动态";
+  $("signalMeta").textContent = `${communityPrediction ? "经验模型" : "来自"} ${sourceLabel} · ${age.replace("后", "前")}`;
   $("viewEvidence").disabled = false;
 }
 
@@ -57,16 +74,18 @@ function forecastDate(value, timeZone) {
   }).format(new Date(value));
 }
 
-function renderForecast(signal, settings) {
+function renderForecast(signals, settings) {
   const timeZone = RadarTime.resolveTimeZone(settings);
-  const forecast = RadarForecast.build({ signal, timeZone });
+  const forecast = RadarForecast.build({ signals, timeZone });
   const highlighted = [...forecast.slots]
     .sort((a, b) => b.probability - a.probability || a.startAt - b.startAt)
     .slice(0, 3)
     .sort((a, b) => a.startAt - b.startAt);
-  $("forecastSummary").textContent = forecast.basis === "public-signal"
-    ? `未来 72 小时约 ${forecast.totalProbability}% · 公开信号估算`
-    : `未来 72 小时约 ${forecast.totalProbability}% · 暂无有效信号`;
+  $("forecastSummary").textContent = forecast.basis === "community-experience"
+    ? `未来 72 小时约 ${forecast.totalProbability}% · 社区经验预测`
+    : forecast.basis === "public-signal"
+      ? `未来 72 小时约 ${forecast.totalProbability}% · ${forecast.sourceCount} 源加权`
+      : `未来 72 小时约 ${forecast.totalProbability}% · 暂无有效信号`;
   $("forecastSummary").title = "启发式概率，不代表 OpenAI 的计划或承诺";
   $("forecastSlots").replaceChildren(...highlighted.map((slot) => {
     const item = document.createElement("div");
@@ -82,10 +101,10 @@ function renderForecast(signal, settings) {
   }));
 }
 
-function renderCredits(credits, settings) {
+function renderCredits(credits, settings, accountState) {
   if (!credits) {
     $("creditsCount").textContent = "--";
-    $("creditsExpiry").textContent = "打开 ChatGPT/Codex 页面后刷新";
+    $("creditsExpiry").textContent = accountPlaceholder(settings, accountState);
     return;
   }
   $("creditsCount").textContent = String(credits.availableCount);
@@ -100,13 +119,13 @@ function renderCredits(credits, settings) {
 
 function renderAdvice(advice) {
   const value = advice || {
-    tier: "unavailable",
-    title: "等待完整数据",
-    message: "插件不会在额度或重置券数据缺失时猜测。",
-    detail: "只读建议"
+    tier: "guest",
+    title: "公开信号雷达运行中",
+    message: "无需登录即可监控公开重置信号；登录后会补充个人额度与重置券建议。",
+    detail: "基础模式"
   };
   $("advicePanel").dataset.tier = value.tier;
-  $("adviceTitle").textContent = `建议：${value.title}`;
+  $("adviceTitle").textContent = value.tier === "guest" ? value.title : `建议：${value.title}`;
   $("adviceMessage").textContent = value.message;
   $("adviceDetail").textContent = value.detail;
 }
@@ -118,18 +137,24 @@ async function render() {
     "signalSnapshot",
     "adviceSnapshot",
     "lastCheckedAt",
+    "accountState",
     "accountError",
     "signalError"
   ]);
   const settings = RadarSettings.sanitize(data.settings);
   renderSignal(data.signalSnapshot, settings);
-  renderForecast(data.signalSnapshot?.signal || null, settings);
-  renderWindow("fiveHour", data.accountSnapshot?.usage, settings);
-  renderWindow("weekly", data.accountSnapshot?.usage, settings);
-  renderCredits(data.accountSnapshot?.credits, settings);
+  renderForecast(data.signalSnapshot?.activeSignals || [data.signalSnapshot?.signal].filter(Boolean), settings);
+  renderWindow("fiveHour", data.accountSnapshot?.usage, settings, data.accountState);
+  renderWindow("weekly", data.accountSnapshot?.usage, settings, data.accountState);
+  renderCredits(data.accountSnapshot?.credits, settings, data.accountState);
   renderAdvice(data.adviceSnapshot);
-  const hasError = Boolean(data.accountError && data.signalError);
-  $("healthDot").className = `health-dot ${hasError ? "warn" : data.lastCheckedAt ? "ok" : ""}`;
+  const radarHasError = Boolean(data.signalError);
+  $("healthDot").className = `health-dot ${radarHasError ? "warn" : data.lastCheckedAt ? "ok" : ""}`;
+  $("healthDot").title = radarHasError
+    ? "公开信号暂时不可用"
+    : data.accountState?.status === "signedOut"
+      ? "基础模式：公开信号监控正常"
+      : "监控正常";
   $("notificationState").textContent = settings.notifyOfficialReset || settings.notifyCreditExpiry || settings.notifyAdvice
     ? "通知已开启"
     : "通知已关闭";

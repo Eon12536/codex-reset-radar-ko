@@ -65,14 +65,18 @@
     if (/we|we'll|we will|i will|planning|计划|我们/.test(lower)) score += 1;
     if (completed) score -= 3;
     if (item?.isReply) score -= 1;
-    const eventAt = approximateEventTime(lower, createdAt, now);
+    const eventAt = root.RadarTime?.parseTimestamp?.(item?.eventAtHint) || approximateEventTime(lower, createdAt, now);
     const future = eventAt ? eventAt > now : hasFuture;
+    const sourceWeight = Math.min(1, Math.max(0.1, Number(item?.source?.weight) || 1));
+    const weightedScore = Number((score * sourceWeight).toFixed(2));
     const actionable = hasQuota && hasReset && !completed && future && score >= 7;
-    const confidence = score >= 8 ? "high" : score >= 6 ? "medium" : "low";
+    const confidence = weightedScore >= 8 ? "high" : weightedScore >= 5 ? "medium" : "low";
     return {
       actionable,
       confidence,
       score,
+      sourceWeight,
+      weightedScore,
       eventAt,
       reason: actionable ? "future-quota-reset-language" : completed ? "historical-complete" : "insufficient-signal"
     };
@@ -103,7 +107,14 @@
     return items
       .map((item) => ({ ...item, assessment: classify(item, options) }))
       .filter((item) => item.assessment.actionable)
-      .sort((a, b) => b.assessment.score - a.assessment.score || (b.assessment.eventAt || 0) - (a.assessment.eventAt || 0))[0] || null;
+      .sort((a, b) => b.assessment.weightedScore - a.assessment.weightedScore || (b.assessment.eventAt || 0) - (a.assessment.eventAt || 0))[0] || null;
+  }
+
+  function actionable(items, options = {}) {
+    return items
+      .map((item) => item?.assessment ? item : ({ ...item, assessment: classify(item, options) }))
+      .filter((item) => item.assessment.actionable)
+      .sort((a, b) => b.assessment.weightedScore - a.assessment.weightedScore || (b.assessment.eventAt || 0) - (a.assessment.eventAt || 0));
   }
 
   function isActive(signal, options = {}) {
@@ -120,7 +131,8 @@
   function preferActive(incoming, existing, options = {}) {
     const candidates = [incoming, existing].filter((signal) => isActive(signal, options));
     return candidates.sort((a, b) => {
-      const scoreDifference = (b.assessment?.score || 0) - (a.assessment?.score || 0);
+      const scoreDifference = (b.assessment?.weightedScore || b.assessment?.score || 0) -
+        (a.assessment?.weightedScore || a.assessment?.score || 0);
       if (scoreDifference) return scoreDifference;
       const bCreated = root.RadarTime?.parseTimestamp?.(b.createdAt) || 0;
       const aCreated = root.RadarTime?.parseTimestamp?.(a.createdAt) || 0;
@@ -128,13 +140,28 @@
     })[0] || null;
   }
 
+
+  function mergeActive(incoming = [], existing = [], options = {}) {
+    const byId = new Map();
+    for (const signal of [...existing, ...incoming]) {
+      if (signal?.id && isActive(signal, options)) byId.set(signal.entityId || signal.id, signal);
+    }
+    return [...byId.values()].sort((a, b) => {
+      const bScore = b.assessment?.weightedScore || b.assessment?.score || 0;
+      const aScore = a.assessment?.weightedScore || a.assessment?.score || 0;
+      return bScore - aScore || (b.assessment?.eventAt || 0) - (a.assessment?.eventAt || 0);
+    }).slice(0, 20);
+  }
+
   root.RadarSignals = Object.freeze({
     classify,
     normalizeItem,
     extractItems,
     strongest,
+    actionable,
     isActive,
-    preferActive
+    preferActive,
+    mergeActive
   });
   if (typeof module !== "undefined") module.exports = root.RadarSignals;
 })(globalThis);

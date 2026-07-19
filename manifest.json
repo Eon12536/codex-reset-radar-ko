@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Codex Reset Radar",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Analyze public Codex reset signals and get local advice about banked reset credits.",
   "minimum_chrome_version": "120",
   "icons": {
@@ -18,7 +18,10 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://api.dayclaw.com/*"
+    "https://api.dayclaw.com/*",
+    "https://status.openai.com/*",
+    "https://codex-resets.com/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "service_worker": "src/background.js"

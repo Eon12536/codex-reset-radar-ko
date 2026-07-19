@@ -2,6 +2,10 @@
   const DEFAULTS = Object.freeze({
     monitorSignals: true,
     monitorAccount: true,
+    monitorLeadSource: true,
+    monitorStatusSource: true,
+    monitorHistorySource: true,
+    monitorCommunitySource: true,
     pollMinutes: 30,
     confidenceThreshold: "high",
     notifyOfficialReset: true,
@@ -12,7 +16,6 @@
     quietEnd: "08:00",
     timezoneMode: "system",
     timezoneOverride: "",
-    targetHandle: "thsottiaux",
     sourceUrl: "",
     expiryWarningHours: 24
   });
@@ -30,10 +33,6 @@
       ? next.confidenceThreshold
       : DEFAULTS.confidenceThreshold;
     next.timezoneMode = next.timezoneMode === "manual" ? "manual" : "system";
-    next.targetHandle = String(next.targetHandle || DEFAULTS.targetHandle)
-      .trim()
-      .replace(/^@/, "")
-      .replace(/[^A-Za-z0-9_]/g, "") || DEFAULTS.targetHandle;
     next.sourceUrl = String(next.sourceUrl || "").trim();
     next.timezoneOverride = String(next.timezoneOverride || "").trim();
     next.expiryWarningHours = Math.min(168, Math.max(1, Number(next.expiryWarningHours) || 24));

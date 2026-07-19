@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## 0.2.1 - 2026-07-19
+
+- Add weighted Codex lead, OpenAI Status, community reset-history, and GitHub community sources.
+- Treat recent, repeated million-user reset milestones as a valid medium-confidence community forecast.
+- Make ChatGPT login an optional enhancement; signed-out users retain the public radar, forecast, and signal notifications.
+
 ## 0.2.0 - 2026-07-19
 
 - Add a time-zone-aware 72-hour reset forecast in six-hour slots.
