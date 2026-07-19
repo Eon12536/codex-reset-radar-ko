@@ -34,6 +34,9 @@ test("uses right-to-left layout for Arabic", () => {
 });
 
 test("interpolates localized runtime messages", () => {
+  global.chrome.i18n.getUILanguage = () => "en-US";
+  assert.equal(I18n.t("possibleResetAt", "10:30", "Possible reset at $1"), "Possible reset at 10:30");
+  assert.equal(I18n.t("missingMessage", undefined, ""), "");
   global.chrome.i18n.getUILanguage = () => "es";
   assert.equal(I18n.t("remainingWithReset", ["42", "mañana"]), "42% restante · mañana");
   global.chrome.i18n.getUILanguage = () => "ar";

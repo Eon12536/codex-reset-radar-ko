@@ -1,10 +1,11 @@
 (() => {
   const now = Date.now();
+  const previewLanguage = new URLSearchParams(globalThis.location?.search || "").get("lang") || "en-US";
   const messages = [];
   const state = {
     settings: {
       timezoneMode: "system",
-      timezoneOverride: "Asia/Shanghai",
+      timezoneOverride: "UTC",
       monitorSignals: true,
       monitorAccount: true,
       monitorLeadSource: true,
@@ -60,7 +61,7 @@
         text: "Codex usage limits will reset later today.",
         createdAt: now - 28 * 60 * 1000,
         author: "thsottiaux",
-        source: { id: "codex-lead", label: "Codex 负责人动态", weight: 1 },
+        source: { id: "codex-lead", label: "Codex lead updates", weight: 1 },
         url: "https://x.com/thsottiaux",
         assessment: {
           confidence: "high",
@@ -76,7 +77,7 @@
           text: "Codex usage limits will reset later today.",
           createdAt: now - 28 * 60 * 1000,
           author: "thsottiaux",
-          source: { id: "codex-lead", label: "Codex 负责人动态", weight: 1 },
+          source: { id: "codex-lead", label: "Codex lead updates", weight: 1 },
           assessment: {
             confidence: "high",
             actionable: true,
@@ -101,13 +102,7 @@
         },
       ],
     },
-    adviceSnapshot: {
-      tier: "wait",
-      title: "距离官方重置较近，建议先等待",
-      message: "5 小时额度只剩 18%，但高可信公开信号显示可能很快重置。",
-      detail: "重置券可保留给更紧急的工作",
-      generatedAt: now - 2 * 60 * 1000,
-    },
+    adviceSnapshot: null,
     lastCheckedAt: now - 2 * 60 * 1000,
   };
 
@@ -126,6 +121,10 @@
   };
 
   globalThis.chrome = {
+    i18n: {
+      getUILanguage: () => previewLanguage,
+      getMessage: () => "",
+    },
     storage: {
       local: {
         get: async (keys) => selectKeys(keys),

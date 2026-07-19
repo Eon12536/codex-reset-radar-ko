@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Privacy and control</title><link rel="stylesheet" href="store-global.css"></head>
+  <body>
+    <main class="frame wide-frame">
+      <section class="copy">
+        <div class="eyebrow">Private by design</div>
+        <h1>Your data stays in your browser.</h1>
+        <p class="lede">No project server, analytics, ads, telemetry, or automatic account changes. Sign-in features remain optional.</p>
+        <div class="chips"><span class="chip">Session-only token</span><span class="chip">No prompts or files</span><span class="chip">No automatic redemption</span></div>
+      </section>
+      <div class="settings-device"><iframe id="settingsFrame" src="/src/options/options.html?lang=en-US" title="Privacy settings"></iframe></div>
+    </main>
+    <script>document.getElementById('settingsFrame').addEventListener('load', (event) => event.target.contentWindow.document.getElementById('privacy')?.scrollIntoView());</script>
+  </body>
+</html>

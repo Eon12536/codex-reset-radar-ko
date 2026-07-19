@@ -18,11 +18,18 @@
     return String(template).replace(/\{(\d+)\}/g, (_match, index) => String(values[Number(index)] ?? ""));
   }
 
-  function t(key, substitutions, fallback = "") {
+  function interpolateFallback(template, substitutions) {
+    const values = Array.isArray(substitutions) ? substitutions : substitutions === undefined ? [] : [substitutions];
+    return String(template).replace(/\$(\d+)/g, (_match, index) => String(values[Number(index) - 1] ?? ""));
+  }
+
+  function t(key, substitutions, fallback) {
     const value = root.chrome?.i18n?.getMessage?.(key, substitutions);
     if (value) return value;
     const template = root.RadarTranslations?.[catalogLanguage()]?.[key];
-    return template ? interpolate(template, substitutions) : fallback || key;
+    if (template) return interpolate(template, substitutions);
+    if (fallback !== undefined) return fallback ? interpolateFallback(fallback, substitutions) : "";
+    return key;
   }
 
   function direction(language = uiLanguage()) {
