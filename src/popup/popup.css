@@ -83,7 +83,7 @@ body {
 
 .signal-panel {
   padding: 10px;
-  min-height: 182px;
+  min-height: 214px;
 }
 
 .section-label {
@@ -94,17 +94,17 @@ body {
 }
 
 .signal-layout {
-  height: 146px;
+  height: 112px;
   display: grid;
-  grid-template-columns: 145px 1fr;
+  grid-template-columns: 112px 1fr;
   align-items: center;
   gap: 12px;
 }
 
 .large-radar {
   position: relative;
-  width: 137px;
-  height: 137px;
+  width: 104px;
+  height: 104px;
   overflow: hidden;
   border: 1px solid rgba(231, 169, 59, 0.4);
   border-radius: 50%;
@@ -123,11 +123,11 @@ body {
   border-radius: 50%;
 }
 
-.ring-1 { inset: 22px; }
-.ring-2 { inset: 43px; }
-.ring-3 { inset: 63px; }
-.axis-x { left: 0; right: 0; top: 68px; height: 1px; background: rgba(231, 169, 59, 0.2); }
-.axis-y { top: 0; bottom: 0; left: 68px; width: 1px; background: rgba(231, 169, 59, 0.2); }
+.ring-1 { inset: 17px; }
+.ring-2 { inset: 33px; }
+.ring-3 { inset: 48px; }
+.axis-x { left: 0; right: 0; top: 51px; height: 1px; background: rgba(231, 169, 59, 0.2); }
+.axis-y { top: 0; bottom: 0; left: 51px; width: 1px; background: rgba(231, 169, 59, 0.2); }
 
 .large-radar .sweep {
   inset: -1px;
@@ -144,9 +144,9 @@ body {
   box-shadow: 0 0 10px 3px rgba(231, 169, 59, 0.5);
 }
 
-.blip.one { top: 43px; right: 27px; }
-.blip.two { bottom: 28px; left: 31px; }
-.blip.three { top: 28px; left: 47px; }
+.blip.one { top: 33px; right: 21px; }
+.blip.two { bottom: 22px; left: 24px; }
+.blip.three { top: 21px; left: 36px; }
 
 .signal-copy {
   min-width: 0;
@@ -197,6 +197,58 @@ body {
 .text-action:disabled {
   color: var(--dim);
   cursor: default;
+}
+
+.forecast-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 1px 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.forecast-heading span {
+  color: #d9ddd9;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.forecast-heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.forecast-slot {
+  min-width: 0;
+  padding: 6px 7px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(231, 169, 59, 0.2);
+  border-radius: 7px;
+  background: rgba(231, 169, 59, 0.055);
+}
+
+.forecast-slot span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-slot strong {
+  color: var(--amber);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .quota-panel {

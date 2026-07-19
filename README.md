@@ -35,8 +35,10 @@ Codex Reset Radar puts both decisions in one compact browser surface.
 
 ## Features
 
-- **Official-reset radar** — checks a public Dayclaw source for new posts and
+- **Public-signal radar** — checks a public Dayclaw source for new posts and
   applies a deterministic, testable reset-signal classifier.
+- **Date/time forecast** — converts an active public signal into heuristic
+  probabilities for six-hour slots over the next 72 hours.
 - **Quota monitor** — shows known 5-hour and weekly windows without guessing
   when the backend omits a trustworthy duration.
 - **Banked resets** — uses the authoritative available count and shows the
@@ -98,6 +100,14 @@ Manual examples:
 
 Invalid manual time zones are rejected and never silently used.
 
+## Forecast boundary
+
+The popup shows a 72-hour reset forecast in six-hour slots. It derives the
+estimate from the public post's classifier score, confidence, and approximate
+event time, rendered in the user's time zone. With no active signal it shows
+only a low baseline. This is a deterministic heuristic—not a statistical
+model, private OpenAI information, or an official commitment.
+
 ## Advice priority
 
 The engine evaluates in this order:
@@ -128,8 +138,8 @@ there is no runtime framework and no remotely hosted code.
 ## Architecture
 
 ```text
-Public Dayclaw items ──> deterministic signal classifier ─┐
-                                                         ├─> advice engine ─> popup / badge / notifications
+Public Dayclaw items ──> signal classifier ─> time-slot forecast ─┐
+                                                                 ├─> popup / badge / notifications
 ChatGPT usage + reset credits ─> tolerant normalization ─┘
 ```
 

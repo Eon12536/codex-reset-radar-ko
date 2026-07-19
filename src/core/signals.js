@@ -106,6 +106,35 @@
       .sort((a, b) => b.assessment.score - a.assessment.score || (b.assessment.eventAt || 0) - (a.assessment.eventAt || 0))[0] || null;
   }
 
-  root.RadarSignals = Object.freeze({ classify, normalizeItem, extractItems, strongest });
+  function isActive(signal, options = {}) {
+    const now = options.now ?? Date.now();
+    const graceMs = (options.graceHours ?? 12) * 60 * 60 * 1000;
+    const fallbackMs = (options.fallbackHours ?? 24) * 60 * 60 * 1000;
+    if (!signal?.assessment?.actionable) return false;
+    const eventAt = root.RadarTime?.parseTimestamp?.(signal.assessment.eventAt);
+    if (eventAt) return now <= eventAt + graceMs;
+    const createdAt = root.RadarTime?.parseTimestamp?.(signal.createdAt);
+    return Boolean(createdAt && now <= createdAt + fallbackMs);
+  }
+
+  function preferActive(incoming, existing, options = {}) {
+    const candidates = [incoming, existing].filter((signal) => isActive(signal, options));
+    return candidates.sort((a, b) => {
+      const scoreDifference = (b.assessment?.score || 0) - (a.assessment?.score || 0);
+      if (scoreDifference) return scoreDifference;
+      const bCreated = root.RadarTime?.parseTimestamp?.(b.createdAt) || 0;
+      const aCreated = root.RadarTime?.parseTimestamp?.(a.createdAt) || 0;
+      return bCreated - aCreated;
+    })[0] || null;
+  }
+
+  root.RadarSignals = Object.freeze({
+    classify,
+    normalizeItem,
+    extractItems,
+    strongest,
+    isActive,
+    preferActive
+  });
   if (typeof module !== "undefined") module.exports = root.RadarSignals;
 })(globalThis);
