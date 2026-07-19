@@ -1,4 +1,6 @@
 importScripts(
+  "core/translations.js",
+  "core/i18n.js",
   "core/settings.js",
   "core/time.js",
   "core/usage.js",
@@ -17,6 +19,7 @@ const SESSION_URLS = [
 ];
 const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
+const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 
 async function loadSettings() {
   const { settings } = await chrome.storage.local.get("settings");
@@ -297,11 +300,14 @@ async function maybeNotifySignal(signal) {
   const timeZone = RadarTime.resolveTimeZone(settings);
   const timing = signal.assessment.eventAt
     ? RadarTime.formatDateTime(signal.assessment.eventAt, timeZone)
-    : "时间待确认";
+    : msg("timePending", undefined, "time pending");
   await createNotification(dedupeKey, {
-    title: `Codex 可能在 ${timing} 重置额度`,
-    message: "检测到高可信公开信号。建议先使用剩余额度，暂缓消耗重置券。",
-    buttons: [{ title: "查看证据" }, { title: "稍后提醒" }]
+    title: msg("notificationPossibleResetTitle", timing, "Codex quota may reset at $1"),
+    message: msg("notificationPossibleResetMessage", undefined, "A high-confidence public signal was detected. Use remaining quota first and hold reset credits."),
+    buttons: [
+      { title: msg("viewEvidence", undefined, "View evidence") },
+      { title: msg("remindLater", undefined, "Remind me later") }
+    ]
   }, settings);
   notificationHistory[dedupeKey] = Date.now();
   await chrome.storage.local.set({ notificationHistory });
@@ -316,9 +322,12 @@ async function maybeNotifyAdvice(advice, snapshot) {
     const { notificationHistory = {} } = await chrome.storage.local.get("notificationHistory");
     if (!notificationHistory[key]) {
       await createNotification(key, {
-        title: `一张重置券将在 ${RadarTime.relativeDuration(nearest)} 过期`,
-        message: `${RadarUsage.findWindow(snapshot.usage, "weekly")?.remainingPercent ?? "--"}% 每周额度剩余；如果今天仍需长任务，可以考虑使用。`,
-        buttons: [{ title: "查看建议" }, { title: "忽略本次" }]
+        title: msg("notificationCreditExpiresTitle", RadarTime.relativeDuration(nearest), "A reset credit expires $1"),
+        message: msg("notificationCreditExpiresMessage", String(RadarUsage.findWindow(snapshot.usage, "weekly")?.remainingPercent ?? "--"), "$1% weekly quota remains. Consider using the credit if a long task still needs work today."),
+        buttons: [
+          { title: msg("viewAdvice", undefined, "View advice") },
+          { title: msg("dismissThisTime", undefined, "Dismiss this time") }
+        ]
       }, settings);
       notificationHistory[key] = Date.now();
       await chrome.storage.local.set({ notificationHistory });
@@ -331,7 +340,7 @@ async function maybeNotifyAdvice(advice, snapshot) {
       await createNotification(key, {
         title: advice.title,
         message: advice.message,
-        buttons: [{ title: "查看建议" }]
+        buttons: [{ title: msg("viewAdvice", undefined, "View advice") }]
       }, settings);
       notificationHistory[key] = Date.now();
       await chrome.storage.local.set({ notificationHistory });
@@ -392,10 +401,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     chrome.notifications.create(alarm.name.slice("snooze:".length), {
       type: "basic",
       iconUrl: "assets/icons/icon128.png",
-      title: "Codex 重置信号提醒",
-      message: "你在一小时前选择了稍后提醒。打开扩展查看最新证据与建议。",
+      title: msg("notificationReminderTitle", undefined, "Codex reset-signal reminder"),
+      message: msg("notificationReminderMessage", undefined, "You chose to be reminded an hour ago. Open the extension for the latest evidence and advice."),
       contextMessage: "Codex Reset Radar",
-      buttons: [{ title: "查看建议" }]
+      buttons: [{ title: msg("viewAdvice", undefined, "View advice") }]
     });
   }
 });

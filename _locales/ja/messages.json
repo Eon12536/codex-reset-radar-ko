@@ -1,0 +1,4 @@
+{
+  "extensionName": { "message": "Codex Reset Radar" },
+  "extensionDescription": { "message": "公開されている Codex リセット信号を分析し、保存済みリセットクレジットについてローカルでアドバイスします。" }
+}

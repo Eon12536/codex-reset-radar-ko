@@ -6,6 +6,13 @@
     return { tier, title, message, detail };
   }
 
+  function translated(key, substitutions, fallback) {
+    const localized = root.RadarI18n?.t?.(key, substitutions, "");
+    if (localized) return localized;
+    const values = Array.isArray(substitutions) ? substitutions : substitutions === undefined ? [] : [substitutions];
+    return String(fallback).replace(/\$(\d+)/g, (_match, index) => String(values[Number(index) - 1] ?? ""));
+  }
+
   function secondsUntil(timestamp, now) {
     return timestamp ? Math.max(0, Math.round((timestamp - now) / 1000)) : null;
   }
@@ -20,69 +27,94 @@
 
     if (blocked) {
       if (resetCount > 0) {
-        return result("blocked", "当前已受限", "如果仍需继续重要任务，可以在 Codex 中使用一张重置券。", `${resetCount} 张重置券可用`);
+        return result(
+          "blocked",
+          translated("adviceBlockedWithCreditsTitle", undefined, "Quota limit reached"),
+          translated("adviceBlockedWithCreditsMessage", undefined, "If important work must continue, you can use one reset credit in Codex."),
+          translated("resetCreditsAvailableCount", String(resetCount), "$1 reset credits available")
+        );
       }
-      return result("blocked", "等待额度恢复", "当前已受限且没有可用重置券，请等待最近的额度窗口恢复。", "没有可用重置券");
+      return result(
+        "blocked",
+        translated("adviceWaitForQuotaTitle", undefined, "Wait for quota recovery"),
+        translated("adviceWaitForQuotaMessage", undefined, "The quota limit is reached and no reset credits are available. Wait for the nearest quota window to recover."),
+        translated("noResetCredits", undefined, "No reset credits available")
+      );
     }
 
     if (expirySeconds !== null && expirySeconds <= 24 * 3600 && resetCount > 0) {
       if ((weekly?.remainingPercent ?? 100) <= 20) {
-        return result("expiring", "考虑使用即将过期的重置券", "重置券将在 24 小时内过期，而且每周额度偏低；若今天仍有长任务，可以考虑使用。", root.RadarTime.relativeDuration(nearestExpiry, now));
+        return result(
+          "expiring",
+          translated("adviceConsiderExpiringTitle", undefined, "Consider using the expiring reset credit"),
+          translated("adviceConsiderExpiringMessage", undefined, "The credit expires within 24 hours and weekly quota is low. Consider using it if you still have a long task today."),
+          root.RadarTime.relativeDuration(nearestExpiry, now)
+        );
       }
-      return result("expiring", "重置券即将过期", "它将在 24 小时内失效。仅在确有工作需要额外容量时使用。", root.RadarTime.relativeDuration(nearestExpiry, now));
+      return result(
+        "expiring",
+        translated("adviceCreditExpiringTitle", undefined, "Reset credit expiring soon"),
+        translated("adviceCreditExpiringMessage", undefined, "It expires within 24 hours. Use it only when real work requires extra capacity."),
+        root.RadarTime.relativeDuration(nearestExpiry, now)
+      );
     }
 
     if (signal?.assessment?.actionable && signal.assessment.confidence === "high") {
-      return result("signal", "优先使用剩余额度，暂缓使用重置券", "检测到高可信的未来公开重置信号。除非已经被限制，否则先保留重置券。", signal.assessment.eventAt ? root.RadarTime.relativeDuration(signal.assessment.eventAt, now) : "时间窗口待确认");
+      return result(
+        "signal",
+        translated("adviceHoldForSignalTitle", undefined, "Use remaining quota first; hold reset credits"),
+        translated("adviceHoldForSignalMessage", undefined, "A high-confidence future public reset signal was detected. Keep reset credits unless you are already blocked."),
+        signal.assessment.eventAt ? root.RadarTime.relativeDuration(signal.assessment.eventAt, now) : translated("timeWindowPending", undefined, "Time window pending")
+      );
     }
 
     if (!usage) {
       return result(
         "guest",
-        "公开信号雷达运行中",
-        "无需登录即可监控公开重置信号和时间预测；登录 ChatGPT 仅用于补充个人额度与重置券建议。",
-        "基础模式"
+        translated("adviceGuestTitle", undefined, "Public signal radar is running"),
+        translated("adviceGuestMessage", undefined, "Monitor public reset signals and time forecasts without signing in. ChatGPT sign-in only adds personal quota and reset-credit advice."),
+        translated("basicMode", undefined, "Basic mode")
       );
     }
 
     if (!weekly) {
-      return result("unavailable", "等待每周额度数据", "当前无法可靠识别每周额度，因此不会猜测是否应该使用重置券。", "刷新后重试");
+      return result("unavailable", translated("adviceWeeklyPendingTitle", undefined, "Waiting for weekly quota data"), translated("adviceWeeklyPendingMessage", undefined, "Weekly quota cannot be identified reliably, so the extension will not guess whether to use a reset credit."), translated("retryAfterRefresh", undefined, "Retry after refresh"));
     }
 
     if (resetCount === null) {
-      return result("unavailable", "重置券数据不可用", "额度已读取，但无法确认重置券数量。请在决定前打开 Codex 检查。", `${weekly.remainingPercent}% 每周额度剩余`);
+      return result("unavailable", translated("adviceCreditsUnavailableTitle", undefined, "Reset-credit data unavailable"), translated("adviceCreditsUnavailableMessage", undefined, "Quota was read, but the number of reset credits could not be confirmed. Check Codex before deciding."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
     }
 
     if (resetCount === 0) {
       if (fiveHour && fiveHour.remainingPercent <= 12) {
-        return result("wait", "等待 5 小时额度恢复", "当前没有可用重置券，请控制任务节奏并等待短期窗口恢复。", fiveHour.resetAt ? root.RadarTime.relativeDuration(fiveHour.resetAt, now) : "恢复时间未知");
+        return result("wait", translated("adviceWaitFiveHourTitle", undefined, "Wait for the 5-hour quota to recover"), translated("adviceNoCreditsWaitMessage", undefined, "No reset credits are available. Pace the task and wait for the short-term window to recover."), fiveHour.resetAt ? root.RadarTime.relativeDuration(fiveHour.resetAt, now) : translated("resetTimeUnknown", undefined, "Reset time unknown"));
       }
-      return result("noCredits", "没有可用重置券", "当前容量尚可，但被限制时没有额外缓冲。", `${weekly.remainingPercent}% 每周额度剩余`);
+      return result("noCredits", translated("noResetCredits", undefined, "No reset credits available"), translated("adviceNoCreditsMessage", undefined, "Current capacity is usable, but there is no extra buffer if quota is reached."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
     }
 
     const fiveHourSeconds = secondsUntil(fiveHour?.resetAt, now);
     if (fiveHour && fiveHour.remainingPercent <= 12 && weekly.remainingPercent >= 25) {
       if (fiveHourSeconds !== null && fiveHourSeconds <= 90 * 60) {
-        return result("wait", "等待 5 小时额度恢复", "短期窗口很快恢复且每周额度仍可用，保留重置券。", root.RadarTime.relativeDuration(fiveHour.resetAt, now));
+        return result("wait", translated("adviceWaitFiveHourTitle", undefined, "Wait for the 5-hour quota to recover"), translated("adviceShortWindowSoonMessage", undefined, "The short-term window recovers soon and weekly quota remains available. Keep the reset credit."), root.RadarTime.relativeDuration(fiveHour.resetAt, now));
       }
-      return result("deadline", "仅在紧急任务时使用重置券", "短期额度偏低；若没有真实截止时间，等待 5 小时窗口恢复更合适。", fiveHour?.resetAt ? root.RadarTime.relativeDuration(fiveHour.resetAt, now) : "恢复时间未知");
+      return result("deadline", translated("adviceUrgentOnlyTitle", undefined, "Use a reset credit only for urgent work"), translated("adviceUrgentOnlyMessage", undefined, "Short-term quota is low. Without a real deadline, waiting for the 5-hour window is better."), fiveHour?.resetAt ? root.RadarTime.relativeDuration(fiveHour.resetAt, now) : translated("resetTimeUnknown", undefined, "Reset time unknown"));
     }
 
     const weeklySeconds = secondsUntil(weekly.resetAt, now);
     if (weeklySeconds === null) {
-      return result("steady", "继续使用并保留重置券", "每周恢复时间未知，只在实际被限制时考虑使用重置券。", `${weekly.remainingPercent}% 每周额度剩余`);
+      return result("steady", translated("adviceContinueAndHoldTitle", undefined, "Continue working and keep reset credits"), translated("adviceUnknownWeeklyResetMessage", undefined, "Weekly recovery time is unknown. Consider a reset credit only after quota is actually reached."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
     }
     const weeklyDays = weeklySeconds / 86400;
     if (resetCount >= 2 && weekly.remainingPercent <= 15 && weeklyDays >= 4) {
-      return result("spend", "可以继续推进任务", "每周额度较低、恢复仍远且有多张重置券；先用完剩余额度，被限制后再考虑使用。", `${weekly.remainingPercent}% 每周额度剩余`);
+      return result("spend", translated("adviceContinueTaskTitle", undefined, "Continue the task"), translated("adviceContinueTaskMessage", undefined, "Weekly quota is low, recovery is far away, and several reset credits are available. Use remaining quota first, then consider a credit if blocked."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
     }
     if (weekly.remainingPercent <= 20 && weeklyDays >= 2) {
-      return result("useIfBlocked", "只在被限制时使用重置券", "如果重要工作被阻断，使用重置券是合理的；否则继续保留。", root.RadarTime.relativeDuration(weekly.resetAt, now));
+      return result("useIfBlocked", translated("adviceUseIfBlockedTitle", undefined, "Use a reset credit only if blocked"), translated("adviceUseIfBlockedMessage", undefined, "A reset credit is reasonable if important work is blocked. Otherwise keep it."), root.RadarTime.relativeDuration(weekly.resetAt, now));
     }
     if ((weekly.remainingPercent >= 35 && weeklyDays <= 3) || (weekly.remainingPercent >= 25 && weeklyDays <= 2)) {
-      return result("hold", "保留重置券", "每周额度尚可且恢复时间较近，目前无需消耗重置券。", `${weekly.remainingPercent}% 每周额度剩余`);
+      return result("hold", translated("adviceHoldCreditsTitle", undefined, "Keep reset credits"), translated("adviceHoldCreditsMessage", undefined, "Weekly quota is healthy and recovery is near, so there is no need to use a reset credit now."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
     }
-    return result("steady", "继续使用", "当前容量可用，开始大型任务前再刷新一次状态。", `${weekly.remainingPercent}% 每周额度剩余`);
+    return result("steady", translated("adviceContinueTitle", undefined, "Continue working"), translated("adviceContinueMessage", undefined, "Capacity is available. Refresh once more before starting a large task."), translated("weeklyRemaining", String(weekly.remainingPercent), "$1% weekly quota remaining"));
   }
 
   root.RadarAdvice = Object.freeze({ make });

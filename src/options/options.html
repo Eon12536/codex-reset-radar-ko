@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Codex Reset Radar 设置</title>
+    <title data-i18n="settingsTitle">Codex Reset Radar Settings</title>
     <link rel="stylesheet" href="../shared/base.css">
     <link rel="stylesheet" href="options.css">
   </head>
@@ -12,84 +12,84 @@
       <aside class="sidebar">
         <div class="sidebar-brand">
           <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
-          <div><strong>Codex Reset Radar</strong><small>通知与监控设置</small></div>
+          <div><strong>Codex Reset Radar</strong><small data-i18n="notificationAndMonitoringSettings">Notification and monitoring settings</small></div>
         </div>
-        <nav aria-label="设置分类">
-          <button class="nav-item selected" data-target="monitor" type="button">◎ <span>监控</span></button>
-          <button class="nav-item" data-target="notifications" type="button">♧ <span>通知</span></button>
-          <button class="nav-item" data-target="privacy" type="button">▢ <span>隐私</span></button>
-          <button class="nav-item" data-target="about" type="button">ⓘ <span>关于</span></button>
+        <nav aria-label="Settings sections" data-i18n-aria-label="settingsSections">
+          <button class="nav-item selected" data-target="monitor" type="button">◎ <span data-i18n="monitor">Monitor</span></button>
+          <button class="nav-item" data-target="notifications" type="button">♧ <span data-i18n="notifications">Notifications</span></button>
+          <button class="nav-item" data-target="privacy" type="button">▢ <span data-i18n="privacy">Privacy</span></button>
+          <button class="nav-item" data-target="about" type="button">ⓘ <span data-i18n="about">About</span></button>
         </nav>
       </aside>
 
       <main class="settings-main">
         <header>
           <div>
-            <h1>通知与监控设置</h1>
-            <p>公开信号监控无需登录；可选的账户建议在本地计算。</p>
+            <h1 data-i18n="notificationAndMonitoringSettings">Notification and monitoring settings</h1>
+            <p data-i18n="settingsIntro">Public-signal monitoring needs no sign-in. Optional account advice is calculated locally.</p>
           </div>
-          <span id="saveState">已保存</span>
+          <span id="saveState" data-i18n="saved">Saved</span>
         </header>
 
         <form id="settingsForm">
           <section id="monitor" class="settings-section">
-            <h2>监控目标</h2>
+            <h2 data-i18n="monitoringTargets">Monitoring targets</h2>
             <div class="setting-row">
-              <div><strong>公开动态重置信号</strong><small>监控公开信号，评估可能重置的时间窗口</small></div>
+              <div><strong data-i18n="publicResetSignals">Public reset signals</strong><small data-i18n="publicResetSignalsHelp">Monitor public signals and estimate possible reset windows</small></div>
               <label class="switch"><input id="monitorSignals" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>个人额度与重置券（可选）</strong><small>登录 ChatGPT 后显示额度、重置券与个性化建议；不影响公开信号监控</small></div>
+              <div><strong data-i18n="personalQuotaOptional">Personal quota and reset credits (optional)</strong><small data-i18n="personalQuotaOptionalHelp">After signing in to ChatGPT, show quota, reset credits, and tailored advice without affecting public monitoring</small></div>
               <label class="switch"><input id="monitorAccount" type="checkbox"><span></span></label>
             </div>
 
-            <h2>监控策略</h2>
+            <h2 data-i18n="monitoringStrategy">Monitoring strategy</h2>
             <label class="setting-row field-row">
-              <div><strong>轮询间隔</strong><small>浏览器运行时定期检查</small></div>
+              <div><strong data-i18n="pollingInterval">Polling interval</strong><small data-i18n="pollingIntervalHelp">Check periodically while the browser is running</small></div>
               <select id="pollMinutes">
-                <option value="15">每 15 分钟</option>
-                <option value="30">每 30 分钟</option>
-                <option value="60">每 60 分钟</option>
-                <option value="120">每 2 小时</option>
+                <option value="15" data-i18n="every15Minutes">Every 15 minutes</option>
+                <option value="30" data-i18n="every30Minutes">Every 30 minutes</option>
+                <option value="60" data-i18n="every60Minutes">Every 60 minutes</option>
+                <option value="120" data-i18n="every2Hours">Every 2 hours</option>
               </select>
             </label>
             <div class="setting-row field-row">
-              <div><strong>可信度阈值</strong><small>决定哪些公开信号会触发通知</small></div>
-              <div class="segments" role="radiogroup" aria-label="可信度阈值">
-                <label><input id="confidenceThresholdHigh" type="radio" name="confidenceThreshold" value="high"><span>仅高可信</span></label>
-                <label><input id="confidenceThresholdMedium" type="radio" name="confidenceThreshold" value="medium"><span>中高可信</span></label>
-                <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span>全部</span></label>
+              <div><strong data-i18n="confidenceThreshold">Confidence threshold</strong><small data-i18n="confidenceThresholdHelp">Choose which public signals trigger notifications</small></div>
+              <div class="segments" role="radiogroup" aria-label="Confidence threshold" data-i18n-aria-label="confidenceThreshold">
+                <label><input id="confidenceThresholdHigh" type="radio" name="confidenceThreshold" value="high"><span data-i18n="highOnly">High only</span></label>
+                <label><input id="confidenceThresholdMedium" type="radio" name="confidenceThreshold" value="medium"><span data-i18n="mediumAndHigh">Medium + high</span></label>
+                <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span data-i18n="all">All</span></label>
               </div>
             </div>
-            <h2>信息源与权重</h2>
+            <h2 data-i18n="sourcesAndWeights">Sources and weights</h2>
             <div class="setting-row">
-              <div><strong>Codex 负责人动态 · 1.00</strong><small>社区经验中的主要提前预告源</small></div>
+              <div><strong data-i18n="leadSourceTitle">Codex lead updates · 1.00</strong><small data-i18n="leadSourceHelp">Primary advance-notice source in community experience</small></div>
               <label class="switch"><input id="monitorLeadSource" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>OpenAI Status · 0.70</strong><small>官方故障、限流异常与恢复进度</small></div>
+              <div><strong>OpenAI Status · 0.70</strong><small data-i18n="statusSourceHelp">Official incidents, rate-limit anomalies, and recovery progress</small></div>
               <label class="switch"><input id="monitorStatusSource" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>社区重置历史 · 0.58</strong><small>依据已验证的百万用户里程碑与重置节奏预测</small></div>
+              <div><strong data-i18n="historySourceTitle">Community reset history · 0.58</strong><small data-i18n="historySourceHelp">Forecast from verified million-user milestones and reset cadence</small></div>
               <label class="switch"><input id="monitorHistorySource" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>OpenAI/Codex GitHub · 0.35</strong><small>社区额度反馈，仅作低权重辅助</small></div>
+              <div><strong>OpenAI/Codex GitHub · 0.35</strong><small data-i18n="communitySourceHelp">Community quota reports used only as low-weight context</small></div>
               <label class="switch"><input id="monitorCommunitySource" type="checkbox"><span></span></label>
             </div>
 
-            <h2>时区</h2>
+            <h2 data-i18n="timeZone">Time zone</h2>
             <div class="setting-row field-row">
-              <div><strong>时间显示</strong><small id="systemTimezoneLabel">系统时区</small></div>
+              <div><strong data-i18n="timeDisplay">Time display</strong><small id="systemTimezoneLabel" data-i18n="systemTimeZone">System time zone</small></div>
               <div class="segments">
-                <label><input id="timezoneModeSystem" type="radio" name="timezoneMode" value="system"><span>跟随系统</span></label>
-                <label><input id="timezoneModeManual" type="radio" name="timezoneMode" value="manual"><span>手动指定</span></label>
+                <label><input id="timezoneModeSystem" type="radio" name="timezoneMode" value="system"><span data-i18n="followSystem">Follow system</span></label>
+                <label><input id="timezoneModeManual" type="radio" name="timezoneMode" value="manual"><span data-i18n="manual">Manual</span></label>
               </div>
             </div>
             <label id="timezoneOverrideRow" class="setting-row field-row">
-              <div><strong>IANA 时区</strong><small>例如 Asia/Shanghai、America/Los_Angeles</small></div>
-              <input id="timezoneOverride" type="text" list="timezoneList" autocomplete="off" placeholder="Asia/Shanghai">
+              <div><strong data-i18n="ianaTimeZone">IANA time zone</strong><small data-i18n="ianaTimeZoneHelp">For example Asia/Shanghai or America/Los_Angeles</small></div>
+              <input id="timezoneOverride" type="text" list="timezoneList" autocomplete="off" placeholder="Asia/Shanghai" data-i18n-placeholder="timezonePlaceholder">
               <datalist id="timezoneList">
                 <option value="Asia/Shanghai"></option>
                 <option value="Asia/Tokyo"></option>
@@ -103,21 +103,21 @@
           </section>
 
           <section id="notifications" class="settings-section">
-            <h2>通知设置</h2>
+            <h2 data-i18n="notificationSettings">Notification settings</h2>
             <div class="setting-row">
-              <div><strong>可能即将重置</strong><small>发现符合可信度阈值的新公开信号时提醒</small></div>
+              <div><strong data-i18n="possibleResetSoon">Possible reset soon</strong><small data-i18n="possibleResetSoonHelp">Notify when a new public signal meets the confidence threshold</small></div>
               <label class="switch"><input id="notifyOfficialReset" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>重置券即将过期</strong><small>过期前显示使用建议</small></div>
+              <div><strong data-i18n="resetCreditExpiring">Reset credit expiring</strong><small data-i18n="resetCreditExpiringHelp">Show usage advice before expiration</small></div>
               <label class="switch"><input id="notifyCreditExpiry" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>额度不足时给出建议</strong><small>只在被限制或额度明显偏低时通知</small></div>
+              <div><strong data-i18n="quotaAdvice">Advice when quota is low</strong><small data-i18n="quotaAdviceHelp">Notify only when blocked or quota is clearly low</small></div>
               <label class="switch"><input id="notifyAdvice" type="checkbox"><span></span></label>
             </div>
             <div class="setting-row field-row">
-              <div><strong>勿扰时段</strong><small>在设定时间内，减少非紧急通知打扰</small></div>
+              <div><strong data-i18n="quietHours">Quiet hours</strong><small data-i18n="quietHoursHelp">Reduce non-urgent notifications during the selected hours</small></div>
               <div class="quiet-fields">
                 <label class="switch compact"><input id="quietHoursEnabled" type="checkbox"><span></span></label>
                 <input id="quietStart" type="time">
@@ -128,21 +128,21 @@
           </section>
 
           <section id="privacy" class="settings-section">
-            <h2>数据源</h2>
-            <div class="source-row"><span class="source-icon">◎</span><div><strong>公开信息源</strong><small id="publicSourceText">4 个加权公开来源</small></div></div>
-            <div class="source-row"><span class="source-icon">▢</span><div><strong>ChatGPT 登录会话（可选，仅本地读取）</strong><small>仅用于计算个人额度与重置券建议；未登录时公开信号雷达仍正常运行</small></div></div>
-            <div class="privacy-note">♢ 不上传令牌、账户标识或使用记录。访问令牌只保存在浏览器会话级存储中，关闭浏览器后失效。</div>
-            <button id="clearData" class="danger-button" type="button">清除本地数据</button>
+            <h2 data-i18n="dataSources">Data sources</h2>
+            <div class="source-row"><span class="source-icon">◎</span><div><strong data-i18n="publicSources">Public sources</strong><small id="publicSourceText" data-i18n="weightedPublicSources4">4 weighted public sources</small></div></div>
+            <div class="source-row"><span class="source-icon">▢</span><div><strong data-i18n="chatGPTSessionOptional">ChatGPT sign-in session (optional, read locally only)</strong><small data-i18n="chatGPTSessionOptionalHelp">Used only for personal quota and reset-credit advice; the public radar keeps working while signed out</small></div></div>
+            <div class="privacy-note" data-i18n="privacyNote">♢ Tokens, account identifiers, and usage records are not uploaded. The access token is stored only for the browser session and expires when the browser closes.</div>
+            <button id="clearData" class="danger-button" type="button" data-i18n="clearLocalData">Clear local data</button>
           </section>
 
           <section id="about" class="settings-section">
-            <h2>关于</h2>
+            <h2 data-i18n="about">About</h2>
             <div class="about-block">
               <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
               <div>
-                <h3>Codex Reset Radar <span>v0.2.0</span></h3>
-                <p>MIT 开源的非官方浏览器扩展。只读监控，不会自动重置额度或兑换重置券。</p>
-                <p>项目灵感来自 codex-reset-watchdog 与 codex-reset-watcher。</p>
+                <h3>Codex Reset Radar <span>v0.2.2</span></h3>
+                <p data-i18n="aboutDescription">An unofficial MIT-licensed browser extension. Read-only monitoring; it never resets quota or redeems reset credits automatically.</p>
+                <p data-i18n="aboutInspiration">Inspired by codex-reset-watchdog and codex-reset-watcher.</p>
               </div>
             </div>
           </section>
@@ -150,6 +150,8 @@
       </main>
     </div>
 
+    <script src="../core/translations.js"></script>
+    <script src="../core/i18n.js"></script>
     <script src="../core/settings.js"></script>
     <script src="../core/time.js"></script>
     <script src="../core/signals.js"></script>

@@ -1,0 +1,4 @@
+{
+  "extensionName": { "message": "Codex Reset Radar" },
+  "extensionDescription": { "message": "分析公开的 Codex 重置信号，并在本地获得额度与重置券建议。" }
+}

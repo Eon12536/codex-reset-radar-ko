@@ -1,6 +1,9 @@
 const form = document.getElementById("settingsForm");
 const saveState = document.getElementById("saveState");
+const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 let saveTimer = null;
+
+RadarI18n.apply();
 
 function control(id) {
   return document.getElementById(id);
@@ -33,8 +36,8 @@ async function load() {
   }
   setRadio("confidenceThreshold", value.confidenceThreshold);
   setRadio("timezoneMode", value.timezoneMode);
-  control("systemTimezoneLabel").textContent = `当前系统时区：${RadarTime.systemTimeZone()}`;
-  control("publicSourceText").textContent = value.sourceUrl || `${RadarSources.enabled(value).length} 个加权公开来源`;
+  control("systemTimezoneLabel").textContent = msg("currentSystemTimeZone", RadarTime.systemTimeZone(), "Current system time zone: $1");
+  control("publicSourceText").textContent = value.sourceUrl || msg("weightedPublicSources", String(RadarSources.enabled(value).length), "$1 weighted public sources");
   renderTimezoneMode();
 }
 
@@ -62,15 +65,15 @@ function readSettings() {
 async function save() {
   const settings = readSettings();
   if (settings.timezoneMode === "manual" && !RadarTime.isValidTimeZone(settings.timezoneOverride)) {
-    saveState.textContent = "时区无效";
+    saveState.textContent = msg("invalidTimeZone", undefined, "Invalid time zone");
     saveState.style.color = "var(--danger)";
     return;
   }
-  saveState.textContent = "保存中…";
+  saveState.textContent = msg("saving", undefined, "Saving…");
   saveState.style.color = "var(--muted)";
   await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings });
-  control("publicSourceText").textContent = settings.sourceUrl || `${RadarSources.enabled(settings).length} 个加权公开来源`;
-  saveState.textContent = "已保存";
+  control("publicSourceText").textContent = settings.sourceUrl || msg("weightedPublicSources", String(RadarSources.enabled(settings).length), "$1 weighted public sources");
+  saveState.textContent = msg("saved", undefined, "Saved");
   saveState.style.color = "var(--teal)";
 }
 
@@ -89,13 +92,13 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 });
 
 control("clearData").addEventListener("click", async () => {
-  const confirmed = confirm("清除额度快照、信号历史和通知去重记录？设置将保留。");
+  const confirmed = confirm(msg("clearDataConfirm", undefined, "Clear quota snapshots, signal history, and notification deduplication records? Settings will be kept."));
   if (!confirmed) return;
   const { settings } = await chrome.storage.local.get("settings");
   await chrome.storage.local.clear();
   await chrome.storage.local.set({ settings: RadarSettings.sanitize(settings) });
   await chrome.storage.session.clear();
-  saveState.textContent = "本地数据已清除";
+  saveState.textContent = msg("localDataCleared", undefined, "Local data cleared");
 });
 
 load();

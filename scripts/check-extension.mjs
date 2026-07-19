@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import vm from "node:vm";
 
 const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
@@ -11,6 +12,7 @@ function exists(relativePath) {
 }
 
 if (manifest.manifest_version !== 3) errors.push("manifest_version must be 3");
+if (manifest.default_locale !== "en") errors.push("default_locale must be en");
 for (const pathValue of [
   manifest.background?.service_worker,
   manifest.action?.default_popup,
@@ -25,6 +27,44 @@ for (const script of manifest.content_scripts || []) {
 }
 for (const group of manifest.web_accessible_resources || []) {
   for (const pathValue of group.resources || []) exists(pathValue);
+}
+
+const manifestLocales = ["en", "zh_CN", "ja", "ko", "fr", "it", "es", "ar"];
+for (const locale of manifestLocales) exists(`_locales/${locale}/messages.json`);
+for (const locale of manifestLocales) {
+  const messagesPath = path.join(root, "_locales", locale, "messages.json");
+  if (!fs.existsSync(messagesPath)) continue;
+  try {
+    const messages = JSON.parse(fs.readFileSync(messagesPath, "utf8"));
+    if (!messages.extensionName?.message || !messages.extensionDescription?.message) {
+      errors.push(`Locale ${locale} must define extensionName and extensionDescription`);
+    }
+  } catch (error) {
+    errors.push(`Invalid locale JSON for ${locale}: ${error.message}`);
+  }
+}
+
+const translationSandbox = { globalThis: {} };
+try {
+  vm.runInNewContext(fs.readFileSync(path.join(root, "src/core/translations.js"), "utf8"), translationSandbox);
+  const catalogs = translationSandbox.globalThis.RadarTranslations;
+  const referenceKeys = Object.keys(catalogs.zh_CN || {});
+  for (const locale of manifestLocales.filter((value) => !["en", "zh_CN"].includes(value))) {
+    const catalog = catalogs[locale];
+    if (!catalog) {
+      errors.push(`Missing runtime translation catalog: ${locale}`);
+      continue;
+    }
+    const missing = referenceKeys.filter((key) => !(key in catalog));
+    if (missing.length) errors.push(`Runtime locale ${locale} is missing: ${missing.join(", ")}`);
+    for (const key of referenceKeys) {
+      const expected = [...String(catalogs.zh_CN[key]).matchAll(/\{\d+\}/g)].map((match) => match[0]).sort().join(",");
+      const actual = [...String(catalog[key] || "").matchAll(/\{\d+\}/g)].map((match) => match[0]).sort().join(",");
+      if (expected !== actual) errors.push(`Runtime locale ${locale} has invalid placeholders for ${key}`);
+    }
+  }
+} catch (error) {
+  errors.push(`Runtime translations are invalid: ${error.message}`);
 }
 
 const sourceFiles = [];
@@ -65,8 +105,8 @@ for (const id of [
 }
 for (const required of [
   "chrome.notifications.onButtonClicked",
-  "查看证据",
-  "稍后提醒",
+  "viewEvidence",
+  "remindLater",
   "chrome.runtime.openOptionsPage"
 ]) {
   if (!backgroundSource.includes(required)) errors.push(`Notification action missing: ${required}`);

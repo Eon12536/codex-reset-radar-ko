@@ -1,0 +1,4 @@
+{
+  "extensionName": { "message": "Codex Reset Radar" },
+  "extensionDescription": { "message": "공개 Codex 재설정 신호를 분석하고 저장된 재설정 크레딧에 대한 로컬 조언을 제공합니다." }
+}

@@ -1,4 +1,15 @@
 (function initTime(root) {
+  function translated(key, substitutions, fallback) {
+    const localized = root.RadarI18n?.t?.(key, substitutions, "");
+    if (localized) return localized;
+    const values = Array.isArray(substitutions) ? substitutions : substitutions === undefined ? [] : [substitutions];
+    return String(fallback).replace(/\$(\d+)/g, (_match, index) => String(values[Number(index) - 1] ?? ""));
+  }
+
+  function locale() {
+    return root.RadarI18n?.uiLanguage?.() || root.navigator?.language || "en";
+  }
+
   function systemTimeZone() {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   }
@@ -35,10 +46,10 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  function formatDateTime(value, timeZone, locale = globalThis.navigator?.language || "zh-CN") {
+  function formatDateTime(value, timeZone, selectedLocale = locale()) {
     const timestamp = parseTimestamp(value) ?? Number(value);
-    if (!Number.isFinite(timestamp)) return "时间未知";
-    return new Intl.DateTimeFormat(locale, {
+    if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
+    return new Intl.DateTimeFormat(selectedLocale, {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
       month: "short",
       day: "numeric",
@@ -48,10 +59,10 @@
     }).format(new Date(timestamp));
   }
 
-  function formatTime(value, timeZone, locale = globalThis.navigator?.language || "zh-CN") {
+  function formatTime(value, timeZone, selectedLocale = locale()) {
     const timestamp = parseTimestamp(value) ?? Number(value);
     if (!Number.isFinite(timestamp)) return "--:--";
-    return new Intl.DateTimeFormat(locale, {
+    return new Intl.DateTimeFormat(selectedLocale, {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
       hour: "2-digit",
       minute: "2-digit"
@@ -60,18 +71,42 @@
 
   function relativeDuration(target, now = Date.now()) {
     const timestamp = parseTimestamp(target) ?? Number(target);
-    if (!Number.isFinite(timestamp)) return "时间未知";
+    if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
     const seconds = Math.max(0, Math.round((timestamp - now) / 1000));
-    if (seconds < 60) return "即将";
-    if (seconds < 3600) return `${Math.ceil(seconds / 60)} 分钟后`;
+    if (seconds < 60) return translated("timeSoon", undefined, "soon");
+    if (seconds < 3600) return translated("inMinutes", String(Math.ceil(seconds / 60)), "in $1 min");
     if (seconds < 86400) {
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.ceil((seconds % 3600) / 60);
-      return minutes ? `${hours} 小时 ${minutes} 分钟后` : `${hours} 小时后`;
+      return minutes
+        ? translated("inHoursMinutes", [String(hours), String(minutes)], "in $1 hr $2 min")
+        : translated("inHours", String(hours), "in $1 hr");
     }
     const days = Math.floor(seconds / 86400);
     const hours = Math.ceil((seconds % 86400) / 3600);
-    return hours ? `${days} 天 ${hours} 小时后` : `${days} 天后`;
+    return hours
+      ? translated("inDaysHours", [String(days), String(hours)], "in $1 d $2 hr")
+      : translated("inDays", String(days), "in $1 d");
+  }
+
+  function elapsedDuration(since, now = Date.now()) {
+    const timestamp = parseTimestamp(since) ?? Number(since);
+    if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
+    const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
+    if (seconds < 60) return translated("justNow", undefined, "just now");
+    if (seconds < 3600) return translated("minutesAgo", String(Math.ceil(seconds / 60)), "$1 min ago");
+    if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return minutes
+        ? translated("hoursMinutesAgo", [String(hours), String(minutes)], "$1 hr $2 min ago")
+        : translated("hoursAgo", String(hours), "$1 hr ago");
+    }
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.ceil((seconds % 86400) / 3600);
+    return hours
+      ? translated("daysHoursAgo", [String(days), String(hours)], "$1 d $2 hr ago")
+      : translated("daysAgo", String(days), "$1 d ago");
   }
 
   function minutesOfDay(value) {
@@ -112,6 +147,7 @@
     formatDateTime,
     formatTime,
     relativeDuration,
+    elapsedDuration,
     isQuietHours
   });
   if (typeof module !== "undefined") module.exports = root.RadarTime;

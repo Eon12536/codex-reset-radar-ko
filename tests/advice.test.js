@@ -37,7 +37,7 @@ test("public signal advice works without a ChatGPT login", () => {
 test("signed-out users remain in a usable public-radar mode", () => {
   const advice = Advice.make({ usage: null, credits: null, signal: null });
   assert.equal(advice.tier, "guest");
-  assert.match(advice.message, /无需登录/);
+  assert.match(advice.message, /without signing in/i);
 });
 
 test("expiring credit overrides conservative hold advice", () => {

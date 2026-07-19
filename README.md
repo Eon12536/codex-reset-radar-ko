@@ -52,6 +52,9 @@ Codex Reset Radar puts both decisions in one compact browser surface.
 - **Native notifications** — supports official-reset signals, credit expiry,
   quota advice, action buttons, and quiet hours.
 - **Local-first privacy** — no project server, analytics, telemetry, or API key.
+- **Eight interface languages** — automatically follows Chrome in English,
+  Simplified Chinese, Japanese, Korean, French, Italian, Spanish, or Arabic,
+  including right-to-left layout for Arabic.
 
 ## Install from source
 

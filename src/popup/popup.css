@@ -416,3 +416,12 @@ body {
 .last-checked {
   font-variant-numeric: tabular-nums;
 }
+
+html[dir="rtl"] .credits-panel p {
+  text-align: left;
+}
+
+html[dir="rtl"] .text-action span:last-child {
+  display: inline-block;
+  transform: scaleX(-1);
+}

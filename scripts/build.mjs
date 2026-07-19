@@ -24,7 +24,7 @@ await new Promise((resolve, reject) => {
   output.on("close", resolve);
   archive.on("error", reject);
   archive.pipe(output);
-  for (const entry of ["manifest.json", "src", "assets", "LICENSE", "PRIVACY.md", "THIRD_PARTY_NOTICES.md"]) {
+  for (const entry of ["manifest.json", "_locales", "src", "assets", "LICENSE", "PRIVACY.md", "THIRD_PARTY_NOTICES.md"]) {
     const full = path.join(root, entry);
     if (!fs.existsSync(full)) continue;
     const stat = fs.statSync(full);

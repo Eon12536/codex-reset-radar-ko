@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,15 +15,15 @@
           <strong>Codex Reset Radar</strong>
         </div>
         <div class="top-actions">
-          <span id="healthDot" class="health-dot" title="状态"></span>
-          <button id="openSettings" class="icon-button" type="button" aria-label="打开设置">
+          <span id="healthDot" class="health-dot" title="Status" data-i18n-title="status"></span>
+          <button id="openSettings" class="icon-button" type="button" aria-label="Open settings" data-i18n-aria-label="openSettings">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.3 4.6v-2.4l-2.2-.7a7 7 0 0 0-.6-1.4l1.1-2-1.7-1.7-2 1.1a7 7 0 0 0-1.4-.6L12.8 3h-2.4l-.7 2.2a7 7 0 0 0-1.4.6L6.3 4.7 4.6 6.4l1.1 2a7 7 0 0 0-.6 1.4l-2.2.7v2.4l2.2.7a7 7 0 0 0 .6 1.4l-1.1 2 1.7 1.7 2-1.1a7 7 0 0 0 1.4.6l.7 2.2h2.4l.7-2.2a7 7 0 0 0 1.4-.6l2 1.1 1.7-1.7-1.1-2a7 7 0 0 0 .6-1.4l2.2-.7Z"/></svg>
           </button>
         </div>
       </header>
 
       <section class="signal-panel" aria-labelledby="signalTitle">
-        <div class="section-label" id="signalTitle">公开动态重置信号</div>
+        <div class="section-label" id="signalTitle" data-i18n="publicResetSignals">Public reset signals</div>
         <div class="signal-layout">
           <div class="large-radar" aria-hidden="true">
             <span class="ring ring-1"></span>
@@ -35,62 +35,64 @@
             <i class="blip one"></i><i class="blip two"></i><i class="blip three"></i>
           </div>
           <div class="signal-copy">
-            <strong id="signalHeadline">正在扫描公开动态</strong>
-            <span id="confidenceBadge" class="confidence neutral">等待数据</span>
-            <p id="signalMeta">首次检查可能需要几秒钟</p>
-            <button id="viewEvidence" class="text-action" type="button" disabled>查看证据 <span>›</span></button>
+            <strong id="signalHeadline" data-i18n="scanningPublicSignals">Scanning public signals</strong>
+            <span id="confidenceBadge" class="confidence neutral" data-i18n="waitingForData">Waiting for data</span>
+            <p id="signalMeta" data-i18n="firstCheckHint">The first check may take a few seconds</p>
+            <button id="viewEvidence" class="text-action" type="button" disabled><span data-i18n="viewEvidence">View evidence</span> <span>›</span></button>
           </div>
         </div>
         <div class="forecast-heading">
-          <span>日期与时段预测</span>
-          <small id="forecastSummary">未来 72 小时 · 规则估算</small>
+          <span data-i18n="dateAndWindowForecast">Date and window forecast</span>
+          <small id="forecastSummary" data-i18n="forecastRuleEstimate">Next 72 hours · rule-based estimate</small>
         </div>
-        <div id="forecastSlots" class="forecast-slots" aria-label="未来重置概率">
-          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
-          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
-          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
+        <div id="forecastSlots" class="forecast-slots" aria-label="Future reset probability" data-i18n-aria-label="futureResetProbability">
+          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
+          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
+          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
         </div>
       </section>
 
       <section class="quota-panel" aria-labelledby="quotaTitle">
-        <div class="section-label" id="quotaTitle">当前额度</div>
+        <div class="section-label" id="quotaTitle" data-i18n="currentQuota">Current quota</div>
         <div id="fiveHourRow" class="quota-row">
-          <div class="quota-line"><span class="quota-name">5 小时</span><span id="fiveHourMeta">可选：登录后显示</span></div>
+          <div class="quota-line"><span class="quota-name" data-i18n="fiveHours">5 hours</span><span id="fiveHourMeta" data-i18n="optionalSignInToShow">Optional: sign in to show</span></div>
           <div class="meter"><span id="fiveHourBar"></span></div>
         </div>
         <div id="weeklyRow" class="quota-row">
-          <div class="quota-line"><span class="quota-name">每周</span><span id="weeklyMeta">可选：登录后显示</span></div>
+          <div class="quota-line"><span class="quota-name" data-i18n="weekly">Weekly</span><span id="weeklyMeta" data-i18n="optionalSignInToShow">Optional: sign in to show</span></div>
           <div class="meter"><span id="weeklyBar"></span></div>
         </div>
       </section>
 
       <section class="credits-panel" aria-labelledby="creditsTitle">
         <div>
-          <div class="section-label" id="creditsTitle">可用重置券</div>
+          <div class="section-label" id="creditsTitle" data-i18n="availableResetCredits">Available reset credits</div>
           <strong id="creditsCount">--</strong>
         </div>
-        <p id="creditsExpiry">过期时间未知</p>
+        <p id="creditsExpiry" data-i18n="expiryUnknown">Expiry unknown</p>
       </section>
 
       <section id="advicePanel" class="advice-panel" aria-labelledby="adviceTitle">
         <span class="advice-icon" aria-hidden="true">☆</span>
         <div>
-          <strong id="adviceTitle">公开信号雷达运行中</strong>
-          <p id="adviceMessage">无需登录即可监控公开重置信号；登录后会补充个人额度与重置券建议。</p>
-          <small id="adviceDetail">基础模式</small>
+          <strong id="adviceTitle" data-i18n="adviceGuestTitle">Public signal radar is running</strong>
+          <p id="adviceMessage" data-i18n="adviceGuestMessage">Monitor public reset signals without signing in. Sign in only to add personal quota and reset-credit advice.</p>
+          <small id="adviceDetail" data-i18n="basicMode">Basic mode</small>
         </div>
       </section>
 
       <footer class="footer">
         <button id="refreshButton" class="refresh-button" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg>
-          <span>立即刷新</span>
+          <span data-i18n="refreshNow">Refresh now</span>
         </button>
-        <span id="notificationState" class="notification-state">通知已开启</span>
-        <span id="lastChecked" class="last-checked">尚未检查</span>
+        <span id="notificationState" class="notification-state" data-i18n="notificationsOn">Notifications on</span>
+        <span id="lastChecked" class="last-checked" data-i18n="notCheckedYet">Not checked yet</span>
       </footer>
     </main>
 
+    <script src="../core/translations.js"></script>
+    <script src="../core/i18n.js"></script>
     <script src="../core/settings.js"></script>
     <script src="../core/time.js"></script>
     <script src="../core/usage.js"></script>

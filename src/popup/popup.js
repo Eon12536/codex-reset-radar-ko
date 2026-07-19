@@ -1,4 +1,7 @@
 const $ = (id) => document.getElementById(id);
+const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
+
+RadarI18n.apply();
 
 function meterColor(remaining) {
   if (remaining < 25) return "var(--danger)";
@@ -7,10 +10,10 @@ function meterColor(remaining) {
 }
 
 function accountPlaceholder(settings, accountState) {
-  if (!settings.monitorAccount) return "账户功能已关闭";
-  if (accountState?.status === "signedOut") return "可选：登录后显示";
-  if (accountState?.status === "error") return "个人数据暂时不可用";
-  return "可选：登录后显示";
+  if (!settings.monitorAccount) return msg("accountFeatureOff", undefined, "Account features are off");
+  if (accountState?.status === "signedOut") return msg("optionalSignInToShow", undefined, "Optional: sign in to show");
+  if (accountState?.status === "error") return msg("personalDataUnavailable", undefined, "Personal data is temporarily unavailable");
+  return msg("optionalSignInToShow", undefined, "Optional: sign in to show");
 }
 
 function renderWindow(kind, usage, settings, accountState) {
@@ -27,46 +30,65 @@ function renderWindow(kind, usage, settings, accountState) {
   bar.style.width = `${windowData.remainingPercent}%`;
   bar.style.background = meterColor(windowData.remainingPercent);
   const resetText = windowData.resetAt
-    ? `${RadarTime.relativeDuration(windowData.resetAt)}恢复 · ${RadarTime.formatDateTime(windowData.resetAt, timeZone)}`
-    : "恢复时间未知";
-  meta.textContent = `${windowData.remainingPercent}% 剩余 · ${resetText}`;
+    ? msg("resetTiming", [RadarTime.relativeDuration(windowData.resetAt), RadarTime.formatDateTime(windowData.resetAt, timeZone)], "$1 · $2")
+    : msg("resetTimeUnknown", undefined, "Reset time unknown");
+  meta.textContent = msg("remainingWithReset", [String(windowData.remainingPercent), resetText], "$1% remaining · $2");
 }
 
 function renderSignal(signalSnapshot, settings) {
   const signal = RadarSignals.isActive(signalSnapshot?.signal) ? signalSnapshot.signal : null;
   if (!signal) {
-    $("signalHeadline").textContent = signalSnapshot?.checkedAt ? "暂无可执行信号" : "正在扫描公开动态";
-    $("confidenceBadge").textContent = signalSnapshot?.checkedAt ? "监控中" : "等待数据";
+    $("signalHeadline").textContent = signalSnapshot?.checkedAt
+      ? msg("noActionableSignal", undefined, "No actionable signal")
+      : msg("scanningPublicSignals", undefined, "Scanning public signals");
+    $("confidenceBadge").textContent = signalSnapshot?.checkedAt
+      ? msg("monitoring", undefined, "Monitoring")
+      : msg("waitingForData", undefined, "Waiting for data");
     $("confidenceBadge").className = "confidence neutral";
     $("signalMeta").textContent = signalSnapshot?.checkedAt
-      ? `最近检查 ${RadarTime.formatTime(signalSnapshot.checkedAt, RadarTime.resolveTimeZone(settings))}`
-      : "首次检查可能需要几秒钟";
+      ? msg("lastCheckedAt", RadarTime.formatTime(signalSnapshot.checkedAt, RadarTime.resolveTimeZone(settings)), "Last checked $1")
+      : msg("firstCheckHint", undefined, "The first check may take a few seconds");
     $("viewEvidence").disabled = true;
     return;
   }
   const timeZone = RadarTime.resolveTimeZone(settings);
   const compactEventTime = signal.assessment.eventAt ? new Intl.DateTimeFormat(
-    globalThis.navigator?.language || "zh-CN",
+    RadarI18n.uiLanguage(),
     { timeZone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
   ).format(new Date(signal.assessment.eventAt)) : null;
   const communityPrediction = signal.prediction?.kind === "milestone";
   $("signalHeadline").textContent = signal.assessment.eventAt
-    ? `${communityPrediction ? "社区经验预计" : "可能"} ${compactEventTime}${communityPrediction ? " 前后" : ""}重置`
-    : "公开信号显示可能即将重置";
+    ? communityPrediction
+      ? msg("communityExpectedResetAround", compactEventTime, "Community estimate: reset around $1")
+      : msg("possibleResetAt", compactEventTime, "Possible reset at $1")
+    : msg("publicSignalResetSoon", undefined, "Public signals indicate a possible reset soon");
   $("confidenceBadge").textContent = {
-    high: "高可信",
-    medium: "中可信",
-    low: "低可信"
-  }[signal.assessment.confidence] || "待评估";
+    high: msg("confidenceHigh", undefined, "High confidence"),
+    medium: msg("confidenceMedium", undefined, "Medium confidence"),
+    low: msg("confidenceLow", undefined, "Low confidence")
+  }[signal.assessment.confidence] || msg("pendingAssessment", undefined, "Pending assessment");
   $("confidenceBadge").className = "confidence";
-  const age = signal.createdAt ? RadarTime.relativeDuration(Date.now() + Math.max(0, Date.now() - RadarTime.parseTimestamp(signal.createdAt))) : "刚刚";
-  const sourceLabel = signal.source?.label || signal.author || "公开动态";
-  $("signalMeta").textContent = `${communityPrediction ? "经验模型" : "来自"} ${sourceLabel} · ${age.replace("后", "前")}`;
+  const age = signal.createdAt ? RadarTime.elapsedDuration(signal.createdAt) : msg("justNow", undefined, "just now");
+  const sourceLabel = sourceName(signal.source) || signal.author || msg("publicUpdates", undefined, "public updates");
+  $("signalMeta").textContent = communityPrediction
+    ? msg("experienceModelMeta", [sourceLabel, age], "Experience model · $1 · $2")
+    : msg("sourceMeta", [sourceLabel, age], "From $1 · $2");
   $("viewEvidence").disabled = false;
 }
 
+function sourceName(source) {
+  const keys = {
+    "codex-lead": "sourceCodexLead",
+    "openai-status": "sourceOpenAIStatus",
+    "community-reset-history": "sourceCommunityHistory",
+    "github-community": "sourceGitHubCommunity",
+    custom: "sourceCustom"
+  };
+  return source?.id ? msg(keys[source.id], undefined, source.label || "") : "";
+}
+
 function forecastDate(value, timeZone) {
-  return new Intl.DateTimeFormat(globalThis.navigator?.language || "zh-CN", {
+  return new Intl.DateTimeFormat(RadarI18n.uiLanguage(), {
     timeZone,
     month: "numeric",
     day: "numeric",
@@ -82,11 +104,11 @@ function renderForecast(signals, settings) {
     .slice(0, 3)
     .sort((a, b) => a.startAt - b.startAt);
   $("forecastSummary").textContent = forecast.basis === "community-experience"
-    ? `未来 72 小时约 ${forecast.totalProbability}% · 社区经验预测`
+    ? msg("forecastCommunity", String(forecast.totalProbability), "Next 72 hours ≈$1% · community forecast")
     : forecast.basis === "public-signal"
-      ? `未来 72 小时约 ${forecast.totalProbability}% · ${forecast.sourceCount} 源加权`
-      : `未来 72 小时约 ${forecast.totalProbability}% · 暂无有效信号`;
-  $("forecastSummary").title = "启发式概率，不代表 OpenAI 的计划或承诺";
+      ? msg("forecastWeighted", [String(forecast.totalProbability), String(forecast.sourceCount)], "Next 72 hours ≈$1% · $2 weighted sources")
+      : msg("forecastNoSignals", String(forecast.totalProbability), "Next 72 hours ≈$1% · no valid signal");
+  $("forecastSummary").title = msg("forecastDisclaimer", undefined, "Heuristic probability, not an OpenAI plan or promise");
   $("forecastSlots").replaceChildren(...highlighted.map((slot) => {
     const item = document.createElement("div");
     item.className = "forecast-slot";
@@ -110,22 +132,24 @@ function renderCredits(credits, settings, accountState) {
   $("creditsCount").textContent = String(credits.availableCount);
   const nearest = RadarUsage.nearestExpiry(credits);
   if (!nearest) {
-    $("creditsExpiry").textContent = credits.availableCount ? "部分重置券未提供过期时间" : "当前没有可用重置券";
+    $("creditsExpiry").textContent = credits.availableCount
+      ? msg("someCreditsNoExpiry", undefined, "Some reset credits have no expiry time")
+      : msg("noResetCredits", undefined, "No reset credits available");
     return;
   }
   const timeZone = RadarTime.resolveTimeZone(settings);
-  $("creditsExpiry").textContent = `最近一张 ${RadarTime.relativeDuration(nearest)}过期 · ${RadarTime.formatDateTime(nearest, timeZone)}`;
+  $("creditsExpiry").textContent = msg("nearestCreditExpiry", [RadarTime.relativeDuration(nearest), RadarTime.formatDateTime(nearest, timeZone)], "Nearest credit expires $1 · $2");
 }
 
 function renderAdvice(advice) {
   const value = advice || {
     tier: "guest",
-    title: "公开信号雷达运行中",
-    message: "无需登录即可监控公开重置信号；登录后会补充个人额度与重置券建议。",
-    detail: "基础模式"
+    title: msg("adviceGuestTitle", undefined, "Public signal radar is running"),
+    message: msg("adviceGuestMessage", undefined, "Monitor public reset signals without signing in. Sign in only to add personal quota and reset-credit advice."),
+    detail: msg("basicMode", undefined, "Basic mode")
   };
   $("advicePanel").dataset.tier = value.tier;
-  $("adviceTitle").textContent = value.tier === "guest" ? value.title : `建议：${value.title}`;
+  $("adviceTitle").textContent = value.tier === "guest" ? value.title : msg("advicePrefix", value.title, "Advice: $1");
   $("adviceMessage").textContent = value.message;
   $("adviceDetail").textContent = value.detail;
 }
@@ -151,19 +175,19 @@ async function render() {
   const radarHasError = Boolean(data.signalError);
   $("healthDot").className = `health-dot ${radarHasError ? "warn" : data.lastCheckedAt ? "ok" : ""}`;
   $("healthDot").title = radarHasError
-    ? "公开信号暂时不可用"
+    ? msg("publicSignalsUnavailable", undefined, "Public signals are temporarily unavailable")
     : data.accountState?.status === "signedOut"
-      ? "基础模式：公开信号监控正常"
-      : "监控正常";
+      ? msg("basicModeHealthy", undefined, "Basic mode: public monitoring is healthy")
+      : msg("monitoringHealthy", undefined, "Monitoring is healthy");
   $("notificationState").textContent = settings.notifyOfficialReset || settings.notifyCreditExpiry || settings.notifyAdvice
-    ? "通知已开启"
-    : "通知已关闭";
+    ? msg("notificationsOn", undefined, "Notifications on")
+    : msg("notificationsOff", undefined, "Notifications off");
   $("notificationState").style.color = settings.notifyOfficialReset || settings.notifyCreditExpiry || settings.notifyAdvice
     ? "#7bcf74"
     : "var(--muted)";
   $("lastChecked").textContent = data.lastCheckedAt
-    ? `检查 ${RadarTime.formatTime(data.lastCheckedAt, RadarTime.resolveTimeZone(settings))}`
-    : "尚未检查";
+    ? msg("checkedAt", RadarTime.formatTime(data.lastCheckedAt, RadarTime.resolveTimeZone(settings)), "Checked $1")
+    : msg("notCheckedYet", undefined, "Not checked yet");
 }
 
 $("openSettings").addEventListener("click", () => chrome.runtime.openOptionsPage());

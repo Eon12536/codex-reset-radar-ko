@@ -1,3 +1,5 @@
+RadarI18n.apply();
+
 document.getElementById("openUsage").addEventListener("click", () => {
   chrome.tabs.create({ url: "https://chatgpt.com/codex/settings/usage" });
 });

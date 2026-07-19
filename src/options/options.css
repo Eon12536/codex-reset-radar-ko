@@ -387,3 +387,45 @@ h2 + .source-row {
   .field-row select,
   .field-row input[type="text"] { width: 100%; }
 }
+
+html[dir="rtl"] .sidebar {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+html[dir="rtl"] .nav-item {
+  text-align: right;
+}
+
+html[dir="rtl"] .nav-item.selected {
+  border-left-color: transparent;
+  border-right-color: var(--teal);
+}
+
+html[dir="rtl"] .switch span::after {
+  right: 3px;
+  left: auto;
+}
+
+html[dir="rtl"] .switch input:checked + span::after {
+  transform: translateX(-18px);
+}
+
+html[dir="rtl"] .switch.compact input:checked + span::after {
+  transform: translateX(-15px);
+}
+
+html[dir="rtl"] .segments span {
+  border-right: 1px solid var(--border);
+  border-left: 0;
+}
+
+html[dir="rtl"] .segments label:first-child span {
+  border-right: 0;
+}
+
+@media (max-width: 900px) {
+  html[dir="rtl"] .sidebar {
+    border-left: 0;
+  }
+}

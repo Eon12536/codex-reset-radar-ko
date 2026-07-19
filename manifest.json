@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Codex Reset Radar",
-  "version": "0.2.1",
-  "description": "Analyze public Codex reset signals and get local advice about banked reset credits.",
+  "name": "__MSG_extensionName__",
+  "version": "0.2.2",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
   "minimum_chrome_version": "120",
   "icons": {
     "16": "assets/icons/icon16.png",
@@ -27,7 +28,7 @@
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_title": "Codex Reset Radar",
+    "default_title": "__MSG_extensionName__",
     "default_popup": "src/popup/popup.html",
     "default_icon": {
       "16": "assets/icons/icon16.png",

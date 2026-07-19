@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>欢迎使用 Codex Reset Radar</title>
+    <title data-i18n="welcomeTitle">Welcome to Codex Reset Radar</title>
     <link rel="stylesheet" href="../shared/base.css">
     <link rel="stylesheet" href="welcome.css">
   </head>
@@ -11,19 +11,21 @@
     <main>
       <div class="radar-mark hero-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
       <p class="eyebrow">MIT OPEN SOURCE · LOCAL FIRST</p>
-      <h1>在额度重置前，先看清信号。</h1>
-      <p class="intro">Codex Reset Radar 无需登录即可监控可能的官方重置信号；登录 ChatGPT 后可额外显示个人额度与重置券建议。</p>
+      <h1 data-i18n="welcomeHeadline">See the signal before the quota resets.</h1>
+      <p class="intro" data-i18n="welcomeIntro">Codex Reset Radar monitors possible public reset signals without a sign-in. Sign in to ChatGPT only to add personal quota and reset-credit advice.</p>
       <ol>
-        <li><span>1</span><div><strong>安装后即可使用</strong><p>公开信号雷达、时间预测和信号通知都不需要登录 ChatGPT。</p></div></li>
-        <li><span>2</span><div><strong>可选：登录 ChatGPT</strong><p>仅在需要个人额度、重置券状态和个性化建议时登录，不要求 API Key。</p></div></li>
-        <li><span>3</span><div><strong>按需调整设置</strong><p>可以配置系统通知、可信度阈值和显示时区。</p></div></li>
+        <li><span>1</span><div><strong data-i18n="welcomeStep1Title">Works immediately after install</strong><p data-i18n="welcomeStep1Body">The public radar, time forecast, and signal notifications do not require a ChatGPT sign-in.</p></div></li>
+        <li><span>2</span><div><strong data-i18n="welcomeStep2Title">Optional: sign in to ChatGPT</strong><p data-i18n="welcomeStep2Body">Sign in only for personal quota, reset-credit status, and tailored advice. No API key is required.</p></div></li>
+        <li><span>3</span><div><strong data-i18n="welcomeStep3Title">Tune settings as needed</strong><p data-i18n="welcomeStep3Body">Configure system notifications, confidence threshold, and display time zone.</p></div></li>
       </ol>
       <div class="actions">
-        <button id="openUsage" type="button">可选：连接 ChatGPT</button>
-        <button id="openOptions" class="secondary" type="button">检查设置</button>
+        <button id="openUsage" type="button" data-i18n="optionalConnectChatGPT">Optional: connect ChatGPT</button>
+        <button id="openOptions" class="secondary" type="button" data-i18n="reviewSettings">Review settings</button>
       </div>
-      <p class="privacy">不上传令牌、账户标识或使用记录。不会自动兑换重置券。</p>
+      <p class="privacy" data-i18n="welcomePrivacy">Tokens, account identifiers, and usage records are not uploaded. Reset credits are never redeemed automatically.</p>
     </main>
+    <script src="../core/translations.js"></script>
+    <script src="../core/i18n.js"></script>
     <script src="welcome.js"></script>
   </body>
 </html>

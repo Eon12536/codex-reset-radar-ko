@@ -1,0 +1,4 @@
+{
+  "extensionName": { "message": "Codex Reset Radar" },
+  "extensionDescription": { "message": "Analyze public Codex reset signals and get local advice about banked reset credits." }
+}
