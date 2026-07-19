@@ -23,7 +23,7 @@
       </header>
 
       <section class="signal-panel" aria-labelledby="signalTitle">
-        <div class="section-label" id="signalTitle">官方重置信号</div>
+        <div class="section-label" id="signalTitle">公开动态重置信号</div>
         <div class="signal-layout">
           <div class="large-radar" aria-hidden="true">
             <span class="ring ring-1"></span>
@@ -40,6 +40,15 @@
             <p id="signalMeta">首次检查可能需要几秒钟</p>
             <button id="viewEvidence" class="text-action" type="button" disabled>查看证据 <span>›</span></button>
           </div>
+        </div>
+        <div class="forecast-heading">
+          <span>日期与时段预测</span>
+          <small id="forecastSummary">未来 72 小时 · 规则估算</small>
+        </div>
+        <div id="forecastSlots" class="forecast-slots" aria-label="未来重置概率">
+          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
+          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
+          <div class="forecast-slot"><span>等待信号</span><strong>--</strong></div>
         </div>
       </section>
 
@@ -85,6 +94,8 @@
     <script src="../core/settings.js"></script>
     <script src="../core/time.js"></script>
     <script src="../core/usage.js"></script>
+    <script src="../core/signals.js"></script>
+    <script src="../core/forecast.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

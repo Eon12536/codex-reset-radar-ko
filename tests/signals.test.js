@@ -29,3 +29,25 @@ test("extracts the public Dayclaw item shape", () => {
   assert.equal(items[0].author, "example");
   assert.match(items[0].url, /example\/status\/123/);
 });
+
+test("retains a future signal after its source item has been deduplicated", () => {
+  const now = Date.parse("2026-07-16T10:05:00Z");
+  const existing = {
+    id: "future-reset",
+    text: "We will reset Codex usage limits later today.",
+    createdAt: "2026-07-16T10:00:00Z",
+    assessment: Signals.classify({
+      text: "We will reset Codex usage limits later today.",
+      createdAt: "2026-07-16T10:00:00Z"
+    }, { now })
+  };
+  assert.equal(Signals.preferActive(null, existing, { now })?.id, "future-reset");
+});
+
+test("expires a retained signal after the event grace period", () => {
+  const eventAt = Date.parse("2026-07-16T18:00:00Z");
+  const existing = {
+    assessment: { actionable: true, score: 9, confidence: "high", eventAt }
+  };
+  assert.equal(Signals.isActive(existing, { now: eventAt + 13 * 60 * 60 * 1000 }), false);
+});

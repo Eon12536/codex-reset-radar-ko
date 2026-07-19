@@ -3,6 +3,7 @@ importScripts(
   "core/time.js",
   "core/usage.js",
   "core/signals.js",
+  "core/forecast.js",
   "core/advice.js"
 );
 
@@ -161,10 +162,11 @@ async function refreshSignals({ quiet = false } = {}) {
     if (!response.ok) throw new Error(`Source HTTP ${response.status}`);
     const payload = await response.json();
     const items = RadarSignals.extractItems(payload);
-    const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot"]);
+    const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot"]);
     const seen = new Set(state.seenSignalIds || []);
     const newItems = items.filter((item) => !seen.has(item.id));
-    const signal = RadarSignals.strongest(newItems);
+    const incomingSignal = RadarSignals.strongest(newItems);
+    const signal = RadarSignals.preferActive(incomingSignal, state.signalSnapshot?.signal);
     const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);
     const snapshot = {
       signal,

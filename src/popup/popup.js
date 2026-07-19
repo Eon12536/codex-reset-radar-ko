@@ -40,12 +40,46 @@ function renderSignal(signalSnapshot, settings) {
   const timeZone = RadarTime.resolveTimeZone(settings);
   $("signalHeadline").textContent = signal.assessment.eventAt
     ? `可能在 ${RadarTime.formatDateTime(signal.assessment.eventAt, timeZone)} 重置`
-    : "可能即将官方重置";
+    : "公开信号显示可能即将重置";
   $("confidenceBadge").textContent = signal.assessment.confidence === "high" ? "高可信" : "中可信";
   $("confidenceBadge").className = "confidence";
   const age = signal.createdAt ? RadarTime.relativeDuration(Date.now() + Math.max(0, Date.now() - RadarTime.parseTimestamp(signal.createdAt))) : "刚刚";
   $("signalMeta").textContent = `来自 @${signal.author || "公开动态"} · ${age.replace("后", "前")}`;
   $("viewEvidence").disabled = false;
+}
+
+function forecastDate(value, timeZone) {
+  return new Intl.DateTimeFormat(globalThis.navigator?.language || "zh-CN", {
+    timeZone,
+    month: "numeric",
+    day: "numeric",
+    weekday: "short"
+  }).format(new Date(value));
+}
+
+function renderForecast(signal, settings) {
+  const timeZone = RadarTime.resolveTimeZone(settings);
+  const forecast = RadarForecast.build({ signal, timeZone });
+  const highlighted = [...forecast.slots]
+    .sort((a, b) => b.probability - a.probability || a.startAt - b.startAt)
+    .slice(0, 3)
+    .sort((a, b) => a.startAt - b.startAt);
+  $("forecastSummary").textContent = forecast.basis === "public-signal"
+    ? `未来 72 小时约 ${forecast.totalProbability}% · 公开信号估算`
+    : `未来 72 小时约 ${forecast.totalProbability}% · 暂无有效信号`;
+  $("forecastSummary").title = "启发式概率，不代表 OpenAI 的计划或承诺";
+  $("forecastSlots").replaceChildren(...highlighted.map((slot) => {
+    const item = document.createElement("div");
+    item.className = "forecast-slot";
+    const label = document.createElement("span");
+    const start = RadarTime.formatTime(slot.startAt, timeZone);
+    const end = RadarTime.formatTime(slot.endAt, timeZone);
+    label.textContent = `${forecastDate(slot.startAt, timeZone)} · ${start}–${end}`;
+    const probability = document.createElement("strong");
+    probability.textContent = `≈${slot.probability}%`;
+    item.append(label, probability);
+    return item;
+  }));
 }
 
 function renderCredits(credits, settings) {
@@ -89,6 +123,7 @@ async function render() {
   ]);
   const settings = RadarSettings.sanitize(data.settings);
   renderSignal(data.signalSnapshot, settings);
+  renderForecast(data.signalSnapshot?.signal || null, settings);
   renderWindow("fiveHour", data.accountSnapshot?.usage, settings);
   renderWindow("weekly", data.accountSnapshot?.usage, settings);
   renderCredits(data.accountSnapshot?.credits, settings);
