@@ -53,10 +53,18 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  function formatLocalized(value, options, selectedLocale = locale()) {
+    const text = new Intl.DateTimeFormat(selectedLocale, options).format(value);
+    // Some ICU versions keep English day periods even in Korean date formats.
+    return /^ko(?:-|$)/i.test(selectedLocale)
+      ? text.replace(/\bAM\b/g, "오전").replace(/\bPM\b/g, "오후")
+      : text;
+  }
+
   function formatDateTime(value, timeZone, selectedLocale = locale()) {
     const timestamp = parseTimestamp(value) ?? Number(value);
     if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
-    return new Intl.DateTimeFormat(selectedLocale, {
+    return formatLocalized(new Date(timestamp), {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
       month: "short",
       day: "numeric",
@@ -64,18 +72,18 @@
       hour: "numeric",
       minute: "2-digit",
       hourCycle: "h12"
-    }).format(new Date(timestamp));
+    }, selectedLocale);
   }
 
   function formatTime(value, timeZone, selectedLocale = locale()) {
     const timestamp = parseTimestamp(value) ?? Number(value);
     if (!Number.isFinite(timestamp)) return "--:--";
-    return new Intl.DateTimeFormat(selectedLocale, {
+    return formatLocalized(new Date(timestamp), {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
       hour: "numeric",
       minute: "2-digit",
       hourCycle: "h12"
-    }).format(new Date(timestamp));
+    }, selectedLocale);
   }
 
   function relativeDuration(target, now = Date.now()) {
@@ -154,6 +162,7 @@
     resolveTimeZone,
     parseTimestamp,
     countryZone,
+    formatLocalized,
     formatDateTime,
     formatTime,
     relativeDuration,

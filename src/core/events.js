@@ -131,12 +131,12 @@
     if (event.keynoteAt) return [
       `${ko ? '키노트' : 'Keynote'} · ${target.label} ${stamp(event.keynoteAt, target.zone)}`,
       `${ko ? '종료' : 'Ends'} · ${target.label} ${stamp(event.endAt, target.zone)}`,
-      `${event.zone.label} ${stamp(event.keynoteAt, event.zone.zone)} – ${new Intl.DateTimeFormat(locale, {timeZone:event.zone.zone, hour:'numeric',minute:'2-digit',hourCycle:'h12'}).format(event.endAt)}`
+      `${event.zone.label} ${stamp(event.keynoteAt, event.zone.zone)} – ${root.RadarTime.formatTime(event.endAt, event.zone.zone, locale)}`
     ];
     if (event.startAt) lines.push(`${target.label} ${stamp(event.startAt, target.zone)}${event.endAt ? ' – ' + stamp(event.endAt, target.zone) : ''}`);
     else if (event.endAt) lines.push(`${ko ? '종료' : 'Ends'} · ${target.label} ${stamp(event.endAt, target.zone)}`);
     else lines.push(`${event.dateText || ''} · ${ko ? '시각 미정' : 'Time unconfirmed'}`);
-    if (event.startAt && event.zone?.zone) lines.push(`${event.zone.label} ${stamp(event.startAt, event.zone.zone)}${event.endAt ? ' – ' + new Intl.DateTimeFormat(locale, {timeZone:event.zone.zone, hour:'numeric',minute:'2-digit',hourCycle:'h12'}).format(event.endAt) : ''}${event.zone.assumed ? (ko ? ' · 추정' : ' · Estimated') : ''}`);
+    if (event.startAt && event.zone?.zone) lines.push(`${event.zone.label} ${stamp(event.startAt, event.zone.zone)}${event.endAt ? ' – ' + root.RadarTime.formatTime(event.endAt, event.zone.zone, locale) : ''}${event.zone.assumed ? (ko ? ' · 추정' : ' · Estimated') : ''}`);
     if (!event.endAt) lines.push(ko ? '종료 미정 · 행사일 종료까지 임시 고정' : 'End unconfirmed · Pinned through the event day');
     return lines;
   }

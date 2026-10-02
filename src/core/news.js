@@ -102,7 +102,7 @@
     if (delta === undefined) return null;
     return { ...parts(wallEpoch({ ...anchor, hour: 0, minute: 0 }) + delta * DAY_MS, { offset: 0 }), inferred: true };
   }
-  const clockLabel = p => new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', hour: 'numeric', minute: '2-digit', hourCycle: 'h12' }).format(new Date(wallEpoch(p)));
+  const clockLabel = p => root.RadarTime.formatTime(wallEpoch(p), 'UTC', locale());
   const dateLabel = (p, year) => locale() !== 'ko-KR' ? new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', month: 'short', day: 'numeric', weekday: 'short', ...(year ? {year: 'numeric'} : {}) }).format(new Date(wallEpoch(p))) : `${year ? p.year + '년 ' : ''}${p.month}/${p.day}(${KOREAN_DAYS[new Date(wallEpoch(p)).getUTCDay()]})`;
 
   function schedule(item) {

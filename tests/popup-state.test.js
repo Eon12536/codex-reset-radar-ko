@@ -74,8 +74,9 @@ test('an older popup read completing after a newer refresh cannot restore stale 
   const render = source.slice(source.indexOf('async function render()'), source.indexOf('$("openSettings").addEventListener'));
   vm.runInContext('let renderRevision = 0; ' + render, w.context);
   const now = Date.now();
-  const old = { settings: { monitorSignals: false }, lastCheckedAt: now - 60000 };
-  const current = { settings: { monitorSignals: false }, lastCheckedAt: now };
+  const settings = { monitorSignals: false, timezoneMode: 'manual', timezoneOverride: 'Asia/Seoul' };
+  const old = { settings, lastCheckedAt: now - 60000 };
+  const current = { settings, lastCheckedAt: now };
   const first = w.context.render();
   const second = w.context.render();
   assert.equal(reads.length, 2);

@@ -54,9 +54,9 @@ function renderWindow(kind, usage, settings, accountState) {
   const language = RadarI18n.catalogLanguage();
   meta.textContent = !windowData.resetAt ? "초기화 시각 확인 전" : language === 'en' ? `Resets ${untilReset}` :
     ['fr','es','it'].includes(language) ? `Reset ${untilReset}` : language === 'ja' ? `${untilReset}にリセット` : language === 'zh_CN' ? `${untilReset}重置` : `${untilReset} 초기화`;
-  date.textContent = windowData.resetAt ? new Intl.DateTimeFormat(RadarI18n.uiLanguage(), {
+  date.textContent = windowData.resetAt ? RadarTime.formatLocalized(new Date(windowData.resetAt), {
     timeZone, month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", hourCycle: "h12"
-  }).format(new Date(windowData.resetAt)) : "";
+  }) : "";
   date.title = windowData.resetAt ? RadarTime.formatDateTime(windowData.resetAt, timeZone) : "";
 }
 
@@ -133,9 +133,9 @@ function renderNews(data, settings) {
   const both = scan?.timelines?.length === 6 && scan.timelines.every(t => t.ok);
   const freshness = !settings.monitorSignals || !settings.monitorLeadSource ? 'OpenAI · Tibo · VB 수집 꺼짐' : data.signalError ? '수집 오류 · 보관된 소식' :
     !settings.monitorDirectX ? (lead?.state === 'stale' ? '최신 글 수집을 확인해 주세요 · ' : '') + '답글 직접 확인 꺼짐 · 설정에서 연결' : !lead?.directOk ? 'X 수집 확인 필요 · 설정 확인' :
-    !scan?.timelines || scan.timelines.length < 6 ? '이전 수집 기록 · 지금 확인을 눌러 주세요' : !both ? scan.timelines.filter(t => !t.ok).map(t => (RadarSignals.authorName(t) + ' ') + (t.kind === 'posts' ? '원글' : '답글') + ' 수집 실패').join(' · ') + ' · 설정 확인' : `원글·답글 ${scan.posts}개 확인` + (lead.latestPostAt ? ' · 최근 글 ' + new Intl.DateTimeFormat(RadarI18n.uiLanguage(), {
+    !scan?.timelines || scan.timelines.length < 6 ? '이전 수집 기록 · 지금 확인을 눌러 주세요' : !both ? scan.timelines.filter(t => !t.ok).map(t => (RadarSignals.authorName(t) + ' ') + (t.kind === 'posts' ? '원글' : '답글') + ' 수집 실패').join(' · ') + ' · 설정 확인' : `원글·답글 ${scan.posts}개 확인` + (lead.latestPostAt ? ' · 최근 글 ' + RadarTime.formatLocalized(new Date(lead.latestPostAt), {
       timeZone, month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h12'
-    }).format(new Date(lead.latestPostAt)) : '');
+    }) : '');
   $("newsFreshness").textContent = freshness;
   if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX && lead?.directOk && !data.signalError && both && lead.collectionVerified === false) {
     $("newsFreshness").textContent = scan.contextPending ? `답글 문맥 ${scan.contextPending}개 확인 대기 · 일부 수집` : '일부 수집 · 재확인 필요';
@@ -302,9 +302,7 @@ function forecastDate(value, timeZone) {
 
 function renderForecast(signals, settings) {
   const timeZone = RadarTime.resolveTimeZone(settings);
-  const slotClock = new Intl.DateTimeFormat(RadarI18n.uiLanguage(), {
-    timeZone, hour: "numeric", minute: "2-digit", hourCycle: "h12"
-  });
+  const slotClock = value => RadarTime.formatTime(value, timeZone);
   const forecast = RadarForecast.build({ signals, timeZone });
   const highlighted = [...forecast.slots]
     .sort((a, b) => b.probability - a.probability || a.startAt - b.startAt)
@@ -317,8 +315,8 @@ function renderForecast(signals, settings) {
     const item = document.createElement("div");
     item.className = "forecast-slot";
     const label = document.createElement("span");
-    const start = slotClock.format(new Date(slot.startAt));
-    const end = slotClock.format(new Date(slot.endAt));
+    const start = slotClock(slot.startAt);
+    const end = slotClock(slot.endAt);
     label.textContent = `${forecastDate(slot.startAt, timeZone)}\n${start}–${end}`;
     item.title = `${RadarTime.formatDateTime(slot.startAt, timeZone)} – ${RadarTime.formatDateTime(slot.endAt, timeZone)}`;
     item.append(label);
@@ -341,9 +339,9 @@ function renderCredits(credits, settings, accountState) {
     return;
   }
   const timeZone = RadarTime.resolveTimeZone(settings);
-  $("creditsExpiry").textContent = msg('creditsExpiryPrefix') + " · " + new Intl.DateTimeFormat(RadarI18n.uiLanguage(), {
+  $("creditsExpiry").textContent = msg('creditsExpiryPrefix') + " · " + RadarTime.formatLocalized(new Date(nearest), {
     timeZone, month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", hourCycle: "h12"
-  }).format(new Date(nearest));
+  });
 }
 
 function renderBankedArrival(unread) {
