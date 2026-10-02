@@ -1,196 +1,59 @@
-# Codex Reset Radar
+# Codex Reset Radar · 리셋 레이더
 
-[简体中文](README.zh-CN.md)
+OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권을 확인하는 Chrome/Edge 확장프로그램입니다. **OpenAI 공식 제품이 아닌 커뮤니티 파생판**입니다.
 
-Codex Reset Radar is a local-first Chrome/Edge extension that combines:
+## 설치와 업데이트
 
-- possible official Codex quota-reset signals from public posts
-- current 5-hour and weekly usage windows
-- banked reset-credit count and expiry times
-- read-only advice about whether to spend or hold a reset credit
-- native browser notifications
+1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.61.zip`을 내려받아 압축을 풉니다.
+2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
+3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
+4. 확장을 고정하고 필요한 조회 기능을 직접 켭니다. 계정 조회와 선택형 화면 접근은 동의 후에만 작동합니다.
 
-![Approved UI design](docs/design/codex-reset-radar-ui.png)
+업데이트는 기존 설치 폴더에 최신 파일을 덮어쓴 다음 확장 관리에서 **새로고침**하세요. 같은 확장을 삭제하지 않고 업데이트하면 로컬 설정·읽음·집계 기록을 유지합니다. ChatGPT 탭도 새로고침하세요. ZIP 설치는 자동 업데이트되지 않습니다.
 
-## Implemented interface
+## 주요 기능
 
-![420 by 600 extension popup](docs/screenshots/popup.png)
+- Codex 5시간·주간 잔여량, 리셋 시각, 리셋권 보유·만료 상태
+- X 공지가 없어도 계정의 Banked reset 증가를 별도로 감지
+- 주간 `%` 배지와 미확인 `!`: 리셋권 영역에서 확인하거나 24시간이 지나면 해제
+- 리셋 소식 우선 표시, 일정이 있는 행사 묶기와 종료까지 고정
+- 출시 후보, 작성자 사진, 원문 링크, 긴 글 말줄임
+- 8개국·7개 언어, 대표 지역 시간대 자동 변환, 라이트·다크 테마
+- 일반 Chat 모델별 기록과 추정 잔여량
+- 알림 대기열, 전송 재시도, Chrome 재시작·절전 복귀 후 확인
 
-![Responsive settings page](docs/screenshots/settings.png)
+## 사용 전 알아두기
 
-> [!IMPORTANT]
-> This is an unofficial community project. It is not affiliated with or
-> endorsed by OpenAI. The extension never redeems reset credits or changes your
-> account.
+**X 계정 없이도 기본 공개 피드와 계정 사용량 조회를 사용할 수 있습니다.** 하지만 피드가 오래되거나 중단되면 최신 글을 얻지 못합니다. 최신 원글·답글 확인에는 설정의 **X 직접 확인**과 브라우저 접근 허용이 필요하며 X에서 로그인을 요구할 수 있습니다. 제공처와 X 화면의 접근 제한 때문에 모든 글의 탐지를 보장하지는 않습니다. 이미지·영상 속 발언은 분석하지 않습니다.
 
-## Why this exists
+**Chat 숫자는 서버가 보증한 잔여량이 아닌, 확인한 기록에 기반한 추정치**입니다. 삭제·임시 대화, 조회 범위, 요금제와 초기화 시점 차이가 영향을 줍니다. 현재 정량 한도가 확인되지 않은 Pro $200·$500에는 임의 퍼센트를 만들지 않습니다. 과거 Pro $200 한도는 날짜가 표시된 직접 선택 기준으로만 제공합니다.
 
-An official reset announcement and a banked reset credit answer different
-questions:
+Windows 알림은 Chrome 실행, 확장 알림 설정, Windows 알림 허용과 방해 금지 설정의 영향을 받습니다. Chrome의 알림 접수가 실제 Windows 표시·소리를 보장하지는 않습니다.
 
-1. **Could OpenAI reset limits soon?**
-2. **Should I use a reset credit right now?**
+정기 확인은 로컬 규칙과 읽기 전용 HTTP 요청을 사용합니다. **AI API나 Codex 추론 토큰을 사용하지 않습니다.**
 
-Codex Reset Radar puts both decisions in one compact browser surface.
+## 피드백
 
-## Features
+- [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml)
+- [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
 
-- **Weighted multi-source radar** — checks the Codex lead's public posts,
-  OpenAI Status, community reset history, and public rate-limit reports in the
-  OpenAI/Codex repository.
-- **Date/time forecast** — converts an active public signal into heuristic
-  probabilities for six-hour slots over the next 72 hours.
-- **Quota monitor** — shows known 5-hour and weekly windows without guessing
-  when the backend omits a trustworthy duration.
-- **Banked resets** — uses the authoritative available count and shows the
-  nearest known expiry.
-- **Advice engine** — blocked state, expiring credits, official signals,
-  short-window refill timing, weekly capacity, and reset count are evaluated in
-  a strict priority order.
-- **Time-zone aware** — stores UTC/Unix timestamps and renders them using the
-  system IANA time zone or a valid manual override.
-- **Native notifications** — supports official-reset signals, credit expiry,
-  quota advice, action buttons, and quiet hours.
-- **Local-first privacy** — no project server, analytics, telemetry, or API key.
-- **Eight interface languages** — automatically follows Chrome in English,
-  Simplified Chinese, Japanese, Korean, French, Italian, Spanish, or Arabic,
-  including right-to-left layout for Arabic.
+버전·브라우저·재현 순서와 공개 원문 링크를 알려주세요. 스크린샷의 개인 정보는 가리고 토큰·쿠키·계정 ID·대화 본문·원본 API 응답은 올리지 마세요.
 
-## Install from source
+[자세한 한국어 설명서](README.ko.md) · [개인정보 처리](PRIVACY.md) · [기여 방법](CONTRIBUTING.md) · [제3자 고지](THIRD_PARTY_NOTICES.md)
 
-1. Download or clone this repository.
-2. Run:
+## 개발 및 검증
 
-   ```bash
-   npm install
-   npm run verify
-   ```
+Node.js 20.11 이상에서 실행합니다.
 
-3. Open `chrome://extensions` or `edge://extensions`.
-4. Enable **Developer mode**.
-5. Choose **Load unpacked**.
-6. Select the repository directory.
-
-The public-signal radar, time forecast, and signal notifications work without
-signing in. Sign in to ChatGPT in the same browser only if you also want
-personal quota, reset-credit status, and personalized advice.
-
-The build command also creates a distributable zip under `dist/`.
-
-## Permissions
-
-| Permission | Why it is needed |
-| --- | --- |
-| `storage` | Save settings, sanitized quota snapshots, signal IDs, and notification dedupe state |
-| `alarms` | Schedule durable Manifest V3 background checks |
-| `notifications` | Display native system notifications |
-| `tabs` | Open evidence/settings and ask an existing ChatGPT tab for a fresh read |
-| `https://chatgpt.com/*` | Read Codex usage and reset-credit metadata from the existing login |
-| `https://api.dayclaw.com/*` | Read the configured public reset-signal source |
-| `https://status.openai.com/*` | Read official OpenAI incident and recovery updates |
-| `https://codex-resets.com/*` | Read public reset history and user-milestone records |
-| `https://api.github.com/*` | Read public rate-limit issues in the OpenAI/Codex repository |
-
-See [PRIVACY.md](PRIVACY.md) for the complete data boundary.
-
-## Time zones
-
-Backend timestamps remain UTC/Unix values. The popup, settings page, quiet
-hours, and notification copy convert them at render time with
-`Intl.DateTimeFormat`.
-
-Default: follow the browser/system IANA time zone.
-
-Manual examples:
-
-- `Asia/Shanghai`
-- `America/Los_Angeles`
-- `Europe/London`
-- `UTC`
-
-Invalid manual time zones are rejected and never silently used.
-
-## Forecast boundary
-
-The popup shows a 72-hour reset forecast in six-hour slots. It derives the
-estimate from classifier score, source weight, corroborating source count,
-recent milestone cadence, and approximate event time, rendered in the user's
-time zone. The default weights are `1.00` for the Codex lead's public feed,
-`0.70` for OpenAI Status, `0.58` for community reset history, and `0.35` for
-GitHub community reports. A recent sequence of million-user milestones can
-produce a medium-confidence forecast, but remains labeled as community
-experience rather than an official announcement. With no active signal it
-shows only a low baseline. This is a deterministic heuristic—not a statistical
-model, private OpenAI information, or an official commitment.
-
-## Advice priority
-
-The engine evaluates in this order:
-
-1. Account blocked now
-2. Reset credit expires within 24 hours
-3. High-confidence future official-reset signal
-4. Missing or partial account data
-5. Very low 5-hour capacity and refill distance
-6. Low weekly capacity and weekly reset distance
-7. Healthy capacity / hold advice
-
-Advice is informational. The user must redeem a credit inside an official
-Codex surface.
-
-## Development
-
-```bash
-npm test
-npm run lint
-npm run build
+```sh
+npm ci
 npm run verify
 ```
 
-The project intentionally uses plain Manifest V3 JavaScript, HTML, and CSS:
-there is no runtime framework and no remotely hosted code.
+`verify`는 패키징·확장 구문/권한 검사·회귀 테스트를 실행합니다. 결과 ZIP은 `dist/`에 생성됩니다. 의존성 설치 스크립트는 `.npmrc`에서 기본 차단하고 공식 npm 레지스트리를 사용합니다.
 
-## Architecture
+화면 확인: `node scripts/preview-server.mjs` 실행 후 `http://127.0.0.1:4173/src/popup/popup.html`. 이 화면은 **예시 데이터**이며 실제 계정·Windows 알림 검증을 대신하지 않습니다.
 
-```text
-Weighted public sources ─> signal classifier ─> time-slot forecast ─┐
-                                                                   ├─> popup / badge / notifications
-ChatGPT usage + reset credits ─> tolerant normalization ─┘
-```
+## 출처 및 라이선스
 
-Persistent storage contains derived display values only. A short-lived access
-token may be cached in `chrome.storage.session`, never local persistent
-storage.
-
-## Attribution
-
-The project directly ports and adapts MIT-licensed ideas/code from
-`jordan-edai/codex-reset-watcher` and
-`codexquotamonitor/codex-quota-monitor`.
-
-It is also inspired by `thinkingjimmy/codex-reset-watchdog`; no source from
-that repository is included because its license was not exposed at the
-referenced revision. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## License
-
-[MIT](LICENSE)
-
----
-
-## ❤️ 支持与关注 / Support & Follow
-
-> 开源代码可以免费，但显卡、电费、服务器和咖啡豆暂时还没学会开源。
-
-你好，我是**赛博迪克朗**。我平时给 AI 喂提示词、给 ComfyUI 接管线，也负责修复那些“昨天明明还能跑”的神秘问题。教程里看起来三分钟解决的事，背后往往是三十次失败和一句又一句“这不应该啊”。
-
-如果这个项目帮你少踩了一个坑、少重装了一次环境，那些和报错窗口深情对视的夜晚就算没有白熬。欢迎通过下面的方式支持和关注：
-
-- [💙 支付宝 / Alipay](https://github.com/whmc76/.github/blob/main/SUPPORT.md#alipay)
-- [🌍 PayPal](https://paypal.me/CyberDickLang)
-- [📺 哔哩哔哩 / Bilibili](https://space.bilibili.com/339984)
-- [▶️ YouTube](https://www.youtube.com/@CyberDickLang)
-
-抖音、小红书、快手、今日头条、微信视频号、X：搜索全网统一名称 **“赛博迪克朗”**。
-
-**不赞助也完全没关系。** 使用、Star、反馈、分享，甚至一句“这东西真能用”，都是继续更新的动力。谢谢你让这个项目不只是躺在我的硬盘里感动自己。
+[whmc76/codex-reset-radar](https://github.com/whmc76/codex-reset-radar) v0.2.2 기반 파생판이며 원본과 기존 기여자의 MIT 고지를 유지합니다. [LICENSE](LICENSE)와 [제3자 자산 고지](THIRD_PARTY_NOTICES.md)를 확인하세요.

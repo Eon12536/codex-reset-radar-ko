@@ -36,3 +36,21 @@ test("uses authoritative available count and filters redeemed credits", () => {
   assert.equal(credits.availableCount, 2);
   assert.equal(credits.credits.length, 2);
 });
+
+test("malformed numeric fields never become a zero usage or credit reading", () => {
+  for (const value of [false, true, [], [0], {}, " ", "\t"]) {
+    assert.equal(Usage.normalizeWindow({ used_percent: value, limit_window_seconds: 604800 }), null);
+    assert.equal(Usage.normalizeCredits({ available_count: value }), null);
+    assert.equal(Usage.normalizeUsage({ rate_limit: {
+      primary_window: { used_percent: value, limit_window_seconds: 604800 }
+    } }), null);
+    const partial = Usage.normalizeUsage({ rate_limit: {
+      primary_window: { used_percent: value, limit_window_seconds: 18000 },
+      secondary_window: { used_percent: 25, limit_window_seconds: 604800 }
+    } });
+    assert.deepEqual(partial.invalidWindowKinds, ['fiveHour']);
+    assert.deepEqual(partial.windows.map(window => window.kind), ['weekly']);
+  }
+  assert.equal(Usage.normalizeWindow({ used_percent: "0", limit_window_seconds: "604800" }).remainingPercent, 100);
+  assert.equal(Usage.normalizeCredits({ available_count: "0" }).availableCount, 0);
+});

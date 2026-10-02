@@ -18,7 +18,7 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
-  --font: Inter, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
 }
 
 * {
@@ -146,3 +146,6 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* Keep Korean words together while allowing long source names to wrap. */
+html[lang="ko-KR"] { word-break: keep-all; overflow-wrap: anywhere; }

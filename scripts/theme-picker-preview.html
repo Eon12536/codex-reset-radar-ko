@@ -1,0 +1,23 @@
+<!doctype html><html lang="ko-KR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>팝업 테마 선택 · 상태 검증</title><script src="/src/core/theme.js"></script><link rel="stylesheet" href="/src/shared/base.css"><link rel="stylesheet" href="/src/shared/theme.css"><style>/* Hallmark · component: theme select · genre: modern-minimal · theme: shared
+   pre-emit critique: P5 H5 E4 S5 R5 V4
+   states: default / hover / focus / active / disabled / loading / error / success */
+.header-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.popup-theme-control { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.theme-preview { width: 82px; height: 40px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.theme-preview:hover, .theme-preview.is-hover { border-color: var(--border-strong); }
+.theme-preview:focus-visible, .theme-preview.is-focus { outline: 2px solid var(--focus); outline-offset: 3px; }
+.theme-preview:active, .theme-preview.is-active { background: var(--surface-3); }
+.theme-preview:disabled { color: var(--dim); cursor: default; }
+.theme-preview[data-state="loading"] { border-color: var(--teal); cursor: wait; }
+.theme-preview[data-state="error"] { border-color: var(--danger); }
+.theme-preview[data-state="success"] { border-color: var(--teal); }
+.theme-status { position: absolute; width: 1px; height: 1px; overflow: clip; clip-path: inset(50%); margin: 0; }
+.theme-status[data-state="error"] { position: static; width: auto; height: auto; clip-path: none; margin: 0 0 var(--space-md); font-size: 13px; color: var(--danger); }
+</style></head><body><h1 style="font-size:18px;padding:16px">테마 선택 · 상태 검증</h1><section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">default</span><select class="theme-preview is-default" data-state="default" ><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">hover</span><select class="theme-preview is-hover" data-state="hover" ><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">focus</span><select class="theme-preview is-focus" data-state="focus" ><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">active</span><select class="theme-preview is-active" data-state="active" ><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">disabled</span><select class="theme-preview is-disabled" data-state="disabled" disabled><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">loading</span><select class="theme-preview is-loading" data-state="loading" disabled><option>라이트</option><option>다크</option><option>시스템</option></select></label></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">error</span><select class="theme-preview is-error" data-state="error" ><option>라이트</option><option>다크</option><option>시스템</option></select></label><p class="theme-status" data-state="error">테마를 저장하지 못했어요. 다시 선택해 주세요.</p></section>
+<section style="padding:12px 16px"><label class="popup-theme-control"><span style="width:70px">success</span><select class="theme-preview is-success" data-state="success" ><option>라이트</option><option>다크</option><option>시스템</option></select></label></section></body></html>

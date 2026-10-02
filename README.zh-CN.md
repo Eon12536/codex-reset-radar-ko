@@ -1,3 +1,5 @@
+> Historical upstream reference only. Links, screenshots, store metadata and donation destinations below belong to the original project, not this fork. For current installation and feedback, see [README](README.md).
+
 # Codex Reset Radar
 
 [English](README.md)

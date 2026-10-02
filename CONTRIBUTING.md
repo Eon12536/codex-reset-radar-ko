@@ -1,37 +1,9 @@
-# Contributing
+# 피드백과 기여
 
-Thanks for helping improve Codex Reset Radar.
+Issues의 Bug report나 Feature request로 알려주세요. 확장 버전, 브라우저, 재현 순서, 기대 결과와 실제 결과를 포함해주세요. 놓친 공개 소식은 원문 링크와 게시 시각이 도움이 됩니다.
 
-## Development
+토큰·쿠키·계정 ID·대화 내용·원본 계정 응답은 게시하지 마세요. 보안 결함은 가능한 경우 Security → Report a vulnerability로 비공개 제보해주세요. 비공개 제보 기능이 없으면 공개 이슈에 민감한 정보나 자격 증명을 올리지 마세요.
 
-Requirements:
+Node.js 20.11 이상에서 `npm ci` 후 `npm run verify`를 실행합니다. 저장소를 Fork하고 작은 범위의 PR을 보내주세요. 오류 수정에는 실제 실패를 재현하는 회귀 테스트를 포함해주세요.
 
-- Node.js 20+
-- Chrome or Microsoft Edge
-
-```bash
-npm install
-npm run verify
-```
-
-Load the extension:
-
-1. Open `chrome://extensions` or `edge://extensions`.
-2. Enable Developer mode.
-3. Choose **Load unpacked**.
-4. Select this repository directory.
-
-## Pull requests
-
-- Keep the extension read-only.
-- Do not persist auth tokens or account identifiers.
-- Add tests for signal, quota, reset-credit, advice, or time-zone changes.
-- Preserve missing and partial-data states.
-- Update `CHANGELOG.md` for user-visible changes.
-- Include screenshots when changing the popup or settings page.
-
-## Design changes
-
-The approved design artifact and implementation contract are stored under
-`docs/design/`. Update the parity ledger when changing visible modules or
-controls.
+동의 설정·읽음 기록·계정 분리는 보존하고 계정 API는 읽기 전용으로 유지합니다. UI는 라이트·다크 테마, 좁은 팝업 폭, 국가 변경을 확인해주세요. 자동 테스트나 예시 화면으로 실제 Windows 알림과 모든 X 글 수집이 보장된다고 표현하지 마세요.

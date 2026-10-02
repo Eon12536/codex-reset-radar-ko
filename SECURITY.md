@@ -15,7 +15,8 @@ account identifiers into a public issue.
 - The extension is read-only and contains no reset-redemption call.
 - ChatGPT requests use exact HTTPS endpoint constants.
 - Redirects are rejected for authenticated requests.
-- Tokens are held only in `chrome.storage.session`.
+- Tokens are used in memory for authenticated reads and are never persisted.
+- Account-scoped hashes, bounded counters and notification state remain local.
 - Persisted snapshots exclude identifiers and raw response payloads.
 - Manifest V3 remote hosted code is not used.
 - No `eval` or dynamically downloaded executable JavaScript is allowed.

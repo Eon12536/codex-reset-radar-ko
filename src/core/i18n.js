@@ -1,10 +1,36 @@
 (function initI18n(root) {
   const RTL_LANGUAGES = new Set(["ar", "fa", "he", "ur"]);
+  const COUNTRIES = Object.freeze([
+    { locale: 'ko-KR', code: 'kr', name: '대한민국', timeZone: 'Asia/Seoul', timeLabel: '한국' },
+    { locale: 'en-US', code: 'us', name: 'United States', timeZone: 'America/New_York', timeLabel: 'US Eastern (ET)' },
+    { locale: 'en-GB', code: 'gb', name: 'United Kingdom', timeZone: 'Europe/London', timeLabel: 'UK' },
+    { locale: 'ja-JP', code: 'jp', name: '日本', timeZone: 'Asia/Tokyo', timeLabel: '日本' },
+    { locale: 'zh-CN', code: 'cn', name: '中国', timeZone: 'Asia/Shanghai', timeLabel: '中国' },
+    { locale: 'fr-FR', code: 'fr', name: 'France', timeZone: 'Europe/Paris', timeLabel: 'France' },
+    { locale: 'es-ES', code: 'es', name: 'España', timeZone: 'Europe/Madrid', timeLabel: 'España (Madrid)' },
+    { locale: 'it-IT', code: 'it', name: 'Italia', timeZone: 'Europe/Rome', timeLabel: 'Italia' }
+  ].map(Object.freeze));
+  const LOCALES = Object.freeze(COUNTRIES.map(country => country.locale));
+  let selected = 'ko-KR', revision = 0;
+  const listeners = new Set();
 
   function uiLanguage() {
-    const value = root.chrome?.i18n?.getUILanguage?.() || root.navigator?.language || "en";
-    return String(value).replace(/_/g, "-");
+    return selected;
   }
+  function country() { return COUNTRIES.find(item => item.locale === selected) || COUNTRIES[0]; }
+  function setLocale(value) {
+    selected = LOCALES.includes(value) ? value : 'ko-KR';
+    revision++;
+    apply();
+    for (const listener of listeners) listener(selected);
+  }
+  async function save(value) {
+    if (!LOCALES.includes(value)) throw new TypeError('Unsupported language');
+    await root.chrome.storage.local.set({ uiLocale: value });
+    setLocale(value);
+    return selected;
+  }
+  function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
 
   function catalogLanguage(language = uiLanguage()) {
     const normalized = String(language).replace(/-/g, "_").toLowerCase();
@@ -24,8 +50,7 @@
   }
 
   function t(key, substitutions, fallback) {
-    const value = root.chrome?.i18n?.getMessage?.(key, substitutions);
-    if (value) return value;
+    // Explicit preference is independent of the Chrome UI language and time zone.
     const template = root.RadarTranslations?.[catalogLanguage()]?.[key];
     if (template) return interpolate(template, substitutions);
     if (fallback !== undefined) return fallback ? interpolateFallback(fallback, substitutions) : "";
@@ -56,6 +81,13 @@
     }
   }
 
-  root.RadarI18n = Object.freeze({ uiLanguage, catalogLanguage, direction, t, apply });
+  const initialRevision = revision;
+  const ready = root.chrome?.storage?.local?.get?.('uiLocale')?.then(data => {
+    if (revision === initialRevision) setLocale(data.uiLocale);
+  }).catch(() => {}) || Promise.resolve();
+  root.chrome?.storage?.onChanged?.addListener((changes, area) => {
+    if (area === 'local' && changes.uiLocale) setLocale(changes.uiLocale.newValue);
+  });
+  root.RadarI18n = Object.freeze({ uiLanguage, country, catalogLanguage, direction, t, apply, save, subscribe, ready, setLocale, LOCALES, COUNTRIES });
   if (typeof module !== "undefined") module.exports = root.RadarI18n;
 })(globalThis);

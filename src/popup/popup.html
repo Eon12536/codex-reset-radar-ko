@@ -1,103 +1,143 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko-KR">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Codex Reset Radar</title>
+    <title>Codex 리셋 레이더 · 한국어</title>
+    <script src="../core/theme.js"></script>
     <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main class="popup-shell">
       <header class="topbar">
-        <div class="brand">
-          <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
-          <strong>Codex Reset Radar</strong>
-        </div>
-        <div class="top-actions">
-          <span id="healthDot" class="health-dot" title="Status" data-i18n-title="status"></span>
-          <button id="openSettings" class="icon-button" type="button" aria-label="Open settings" data-i18n-aria-label="openSettings">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.3 4.6v-2.4l-2.2-.7a7 7 0 0 0-.6-1.4l1.1-2-1.7-1.7-2 1.1a7 7 0 0 0-1.4-.6L12.8 3h-2.4l-.7 2.2a7 7 0 0 0-1.4.6L6.3 4.7 4.6 6.4l1.1 2a7 7 0 0 0-.6 1.4l-2.2.7v2.4l2.2.7a7 7 0 0 0 .6 1.4l-1.1 2 1.7 1.7 2-1.1a7 7 0 0 0 1.4.6l.7 2.2h2.4l.7-2.2a7 7 0 0 0 1.4-.6l2 1.1 1.7-1.7-1.1-2a7 7 0 0 0 .6-1.4l2.2-.7Z"/></svg>
-          </button>
+        <div class="brand"><img src="../../assets/icons/icon128.png" width="34" height="34" alt=""><strong>Codex</strong><span>리셋 레이더</span></div>
+        <div class="header-actions">
+          <label class="popup-theme-control"><span>테마</span>
+            <select id="popupTheme" aria-label="화면 테마" disabled>
+              <option value="light">라이트</option>
+              <option value="dark">다크</option>
+              <option value="system" selected>시스템</option>
+            </select>
+          </label>
+        <button id="openSettings" class="icon-button" type="button" aria-label="설정 열기" title="설정 열기">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M9 4v6M15 14v6"/></svg><span>설정</span>
+        </button>
+          <div class="popup-language-control">
+            <button id="popupLanguage" type="button" role="combobox" aria-label="국가 선택" aria-haspopup="listbox" aria-controls="countryOptions" aria-expanded="false" disabled>
+              <img id="countryFlag" src="../../assets/flag-kr.svg" width="16" height="12" alt="">
+              <span id="countryName" data-no-translate>대한민국</span><span class="country-chevron" aria-hidden="true">⌄</span>
+            </button>
+            <div id="countryOptions" role="listbox" aria-label="국가 선택" hidden></div>
+          </div>
         </div>
       </header>
-
-      <section class="signal-panel" aria-labelledby="signalTitle">
-        <div class="section-label" id="signalTitle" data-i18n="publicResetSignals">Public reset signals</div>
-        <div class="signal-layout">
-          <div class="large-radar" aria-hidden="true">
-            <span class="ring ring-1"></span>
-            <span class="ring ring-2"></span>
-            <span class="ring ring-3"></span>
-            <span class="axis axis-x"></span>
-            <span class="axis axis-y"></span>
-            <span class="sweep"></span>
-            <i class="blip one"></i><i class="blip two"></i><i class="blip three"></i>
-          </div>
-          <div class="signal-copy">
-            <strong id="signalHeadline" data-i18n="scanningPublicSignals">Scanning public signals</strong>
-            <span id="confidenceBadge" class="confidence neutral" data-i18n="waitingForData">Waiting for data</span>
-            <p id="signalMeta" data-i18n="firstCheckHint">The first check may take a few seconds</p>
-            <button id="viewEvidence" class="text-action" type="button" disabled><span data-i18n="viewEvidence">View evidence</span> <span>›</span></button>
-          </div>
-        </div>
-        <div class="forecast-heading">
-          <span data-i18n="dateAndWindowForecast">Date and window forecast</span>
-          <small id="forecastSummary" data-i18n="forecastRuleEstimate">Next 72 hours · rule-based estimate</small>
-        </div>
-        <div id="forecastSlots" class="forecast-slots" aria-label="Future reset probability" data-i18n-aria-label="futureResetProbability">
-          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
-          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
-          <div class="forecast-slot"><span data-i18n="waitingForSignal">Waiting for signal</span><strong>--</strong></div>
-        </div>
-      </section>
+      <p id="themeStatus" class="theme-status" role="status" aria-live="polite"></p>
 
       <section class="quota-panel" aria-labelledby="quotaTitle">
-        <div class="section-label" id="quotaTitle" data-i18n="currentQuota">Current quota</div>
-        <div id="fiveHourRow" class="quota-row">
-          <div class="quota-line"><span class="quota-name" data-i18n="fiveHours">5 hours</span><span id="fiveHourMeta" data-i18n="optionalSignInToShow">Optional: sign in to show</span></div>
-          <div class="meter"><span id="fiveHourBar"></span></div>
+        <div class="section-heading"><h1 id="quotaTitle">남은 사용량</h1><button id="connectAccount" class="text-action" type="button" hidden>계정 연결</button></div>
+        <div class="quota-grid">
+          <div id="fiveHourRow" class="quota-row">
+            <span class="quota-name" data-i18n="fiveHours">5시간</span>
+            <strong id="fiveHourValue" class="quota-value">—</strong>
+            <div class="meter" role="progressbar" aria-label="5시간 잔여량" aria-valuemin="0" aria-valuemax="100"><span id="fiveHourBar"></span></div>
+            <p id="fiveHourMeta" class="quota-meta">계정 연결 후 표시</p>
+            <small id="fiveHourAt" class="quota-date"></small>
+          </div>
+          <div id="weeklyRow" class="quota-row">
+            <span class="quota-name" data-i18n="weekly">주간</span>
+            <div class="quota-value-line"><strong id="weeklyValue" class="quota-value">—</strong><span id="weeklyUnread" class="unread-marker" role="img" hidden>!</span></div>
+            <div class="meter" role="progressbar" aria-label="주간 잔여량" aria-valuemin="0" aria-valuemax="100"><span id="weeklyBar"></span></div>
+            <p id="weeklyMeta" class="quota-meta">계정 연결 후 표시</p>
+            <small id="weeklyAt" class="quota-date"></small>
+          </div>
         </div>
-        <div id="weeklyRow" class="quota-row">
-          <div class="quota-line"><span class="quota-name" data-i18n="weekly">Weekly</span><span id="weeklyMeta" data-i18n="optionalSignInToShow">Optional: sign in to show</span></div>
-          <div class="meter"><span id="weeklyBar"></span></div>
-        </div>
+        <p id="accountNotice" class="account-notice" hidden></p>
       </section>
 
-      <section class="credits-panel" aria-labelledby="creditsTitle">
-        <div>
-          <div class="section-label" id="creditsTitle" data-i18n="availableResetCredits">Available reset credits</div>
-          <strong id="creditsCount">--</strong>
-        </div>
-        <p id="creditsExpiry" data-i18n="expiryUnknown">Expiry unknown</p>
+      <section id="newsPanel" class="signal-panel news-panel" aria-labelledby="signalTitle">
+        <div class="section-heading news-heading"><h2 id="signalTitle">리셋·출시 소식</h2><span id="newsUnread" class="unread-marker" role="img" hidden>!</span><small class="news-timing-note">예고 시간보다 늦어질 수 있어요</small><small id="newsCount" class="muted"></small></div>
+        <p id="newsFreshness" class="news-status muted" role="status"></p>
+        <p id="newsEmpty" class="muted">새 소식을 확인하고 있어요</p>
+        <div id="newsList" class="news-list" role="list" aria-label="감지한 소식 · 리셋 우선" tabindex="0" hidden></div>
+        <div id="pinnedEvents" class="pinned-events" aria-label="행사 일정" hidden></div>
       </section>
 
-      <section id="advicePanel" class="advice-panel" aria-labelledby="adviceTitle">
-        <span class="advice-icon" aria-hidden="true">☆</span>
-        <div>
-          <strong id="adviceTitle" data-i18n="adviceGuestTitle">Public signal radar is running</strong>
-          <p id="adviceMessage" data-i18n="adviceGuestMessage">Monitor public reset signals without signing in. Sign in only to add personal quota and reset-credit advice.</p>
-          <small id="adviceDetail" data-i18n="basicMode">Basic mode</small>
-        </div>
+      <section class="chat-panel" aria-labelledby="chatCountTitle">
+        <div class="section-heading"><h2 id="chatCountTitle">Chat · 모델별 사용량</h2><strong id="chatCountValue" class="chat-count-value" hidden>계정 확인 전</strong><button id="enableChatCounter" class="text-action" type="button">계정 연결</button></div>
+        <div id="chatMeters" class="chat-meters" aria-label="Chat 추정 잔여량" hidden></div>
+        <details id="chatPlanControls" class="chat-plan-controls" hidden>
+          <summary><span id="chatPlanSource">한도 기준 선택</span><span aria-hidden="true">⌄</span></summary>
+          <label for="chatPlanChoice">현재 계정의 요금제</label>
+          <select id="chatPlanChoice" aria-describedby="chatCountStatus"><option value="auto">자동 확인</option></select>
+          <small>선택은 이 계정에만 적용되며, 구독을 변경하지 않습니다.</small>
+        </details>
+        <p id="chatCountBreakdown"></p><small id="chatOtherModels"></small><small id="chatCountNote"></small>
+        <small id="chatResetNote" hidden></small>
+        <div class="chat-history-row"><small id="chatHistoryStatus" role="status" aria-live="polite"></small><button id="syncChatHistoryButton" class="text-action" type="button">계정 기록 연결</button></div>
+        <p id="chatCountStatus" class="chat-count-status" role="status" aria-live="polite"></p>
       </section>
-
+      <section id="schedulePanel" class="hint-panel" aria-labelledby="scheduleTitle" hidden>
+        <div class="hint-heading"><h2 id="scheduleTitle">리셋 일정 변경</h2><small id="scheduleAssociation"></small></div>
+        <p id="scheduleMeta"></p>
+        <p><strong>변경 안내</strong></p><blockquote id="scheduleQuote"></blockquote>
+        <p id="scheduleCaution"></p>
+        <details><summary>이전 예고 확인 <span aria-hidden="true">+</span></summary><blockquote id="schedulePrevious"></blockquote></details>
+        <div class="schedule-actions"><button id="viewScheduleUpdate" class="text-action" type="button">변경 글 ↗</button><button id="viewScheduleOriginal" class="text-action" type="button">이전 글 ↗</button></div>
+      </section>
+      <section id="bankedArrival" class="banked-arrival" aria-label="리셋 소식 · 리셋권 안내" role="status" hidden>
+        <div><strong id="bankedArrivalTitle"></strong><span id="bankedArrivalUnread" class="unread-marker" role="img" hidden>!</span><small id="bankedArrivalMeta"></small></div>
+        <button id="viewBankedCredits" class="text-action" type="button" aria-controls="moreDetails">리셋권 보기</button>
+      </section>
+      <details id="moreDetails" class="more-details">
+        <summary><span class="summary-label">리셋권 · 상태 <span id="creditsUnread" class="unread-marker" role="img" hidden>!</span></span><span aria-hidden="true">+</span></summary>
+        <div class="details-body">
+          <section class="credits-panel" aria-labelledby="creditsTitle">
+            <div class="section-heading"><h2 id="creditsTitle">리셋권</h2><strong id="creditsCount">—</strong></div>
+            <p id="creditsExpiry" class="muted">계정 연결 후 표시</p>
+          </section>
+          <section id="advicePanel" class="advice-panel" aria-labelledby="adviceTitle">
+            <h2 id="adviceTitle">사용 안내</h2><p id="adviceMessage"></p>
+          </section>
+          <section id="forecastPanel" class="forecast-panel" aria-label="참고 예상" hidden>
+            <h2>참고 예상 · 확정 아님</h2><p id="forecastSummary" class="muted"></p>
+            <div id="forecastSlots" class="forecast-slots"></div>
+          </section>
+          <section class="brief-status" aria-label="확인 상태" data-i18n-aria-label="statusSummaryLabel">
+            <p id="newsCollection"></p>
+            <p class="muted">후보는 미확정 · Chat 잔여량은 추정</p>
+          </section>
+        </div>
+      </details>
       <footer class="footer">
-        <button id="refreshButton" class="refresh-button" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg>
-          <span data-i18n="refreshNow">Refresh now</span>
-        </button>
-        <span id="notificationState" class="notification-state" data-i18n="notificationsOn">Notifications on</span>
-        <span id="lastChecked" class="last-checked" data-i18n="notCheckedYet">Not checked yet</span>
+        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.61</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
+        <button id="refreshButton" class="refresh-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg><span data-i18n="refreshNow">지금 확인</span></button>
       </footer>
+      <p id="refreshStatus" class="refresh-status" role="status" aria-live="polite"></p>
     </main>
-
     <script src="../core/translations.js"></script>
     <script src="../core/i18n.js"></script>
     <script src="../core/settings.js"></script>
+    <script src="../core/account.js"></script>
     <script src="../core/time.js"></script>
     <script src="../core/usage.js"></script>
+    <script src="../core/credit-grants.js"></script>
     <script src="../core/signals.js"></script>
+    <script src="../core/news.js"></script>
+    <script src="../core/events.js"></script>
+    <script src="../core/chat-counter.js"></script>
+    <script src="../core/chat-history.js"></script>
+    <script src="../core/schedule.js"></script>
+    <script src="../core/badge.js"></script>
     <script src="../core/forecast.js"></script>
+    <script src="../core/advice.js"></script>
+    <script src="../core/security.js"></script>
+    <script src="../shared/news-avatar.js"></script>
     <script src="popup.js"></script>
+    <script src="../shared/chat-history-ui.js"></script>
+    <script src="../core/ui-copy-locales.js"></script>
+    <script src="../core/ui-copy.js"></script>
+    <script src="../shared/language-ui.js"></script>
   </body>
 </html>

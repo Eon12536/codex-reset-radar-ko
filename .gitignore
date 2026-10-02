@@ -7,3 +7,9 @@ Thumbs.db
 .vscode/
 .playwright-cli/
 coverage/
+.hallmark/
+.env
+.env.*
+!.env.example
+*.pem
+*.key

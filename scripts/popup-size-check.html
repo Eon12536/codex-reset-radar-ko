@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>팝업 너비 회귀 확인 · 개발용</title>
+  <style>
+    body { margin: 24px; font: 14px/1.5 system-ui, sans-serif; background: #eef0f2; }
+    main { display: flex; align-items: flex-start; gap: 24px; }
+    iframe { display: block; border: 1px solid #aaa; height: 600px; box-sizing: content-box; }
+  </style>
+</head>
+<body>
+  <h1>좁은 시작 너비와 정상 팝업 너비</h1>
+  <p>55px에서도 내부 문서의 요청 너비가 유지되어야 합니다. Chrome 도구 모음 팝업 자체를 재현하는 테스트는 아닙니다.</p>
+  <main>
+    <section><h2>55px 시작</h2><iframe id="narrow" title="좁은 시작 너비" style="width:55px" src="/src/popup/popup.html?mode=off"></iframe></section>
+    <section><h2>340px 기본</h2><iframe id="normal" title="기본 팝업" style="width:340px" src="/src/popup/popup.html?mode=off"></iframe></section>
+    <section><h2>340px 후보</h2><iframe id="hint" title="암시 후보 팝업" style="width:340px" src="/src/popup/popup.html?mode=qualified"></iframe></section>
+  </main>
+</body>
+</html>

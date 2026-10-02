@@ -2,7 +2,7 @@ body {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 20%, rgba(231, 169, 59, 0.08), transparent 36%), var(--bg);
+  background: var(--bg);
 }
 
 main {
@@ -75,7 +75,7 @@ button {
   padding: 0 17px;
   border: 1px solid var(--amber);
   border-radius: 9px;
-  color: #17120a;
+  color: var(--accent-ink);
   background: var(--amber);
   cursor: pointer;
 }
@@ -89,5 +89,7 @@ button.secondary {
 .privacy {
   margin-top: 25px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 13px;
 }
+.brand-image { display: block; border-radius: var(--radius-lg); }
+button:not(.secondary) { background: var(--action-bg); border-color: var(--action-bg); color: var(--action-text); }

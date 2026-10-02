@@ -1,97 +1,140 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko-KR">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title data-i18n="settingsTitle">Codex Reset Radar Settings</title>
+    <title data-i18n="settingsTitle">Codex 리셋 레이더 · 한국어 설정</title>
+    <script src="../core/theme.js"></script>
     <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="options.css">
   </head>
   <body>
     <div class="options-shell">
-      <aside class="sidebar">
-        <div class="sidebar-brand">
-          <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
-          <div><strong>Codex Reset Radar</strong><small data-i18n="notificationAndMonitoringSettings">Notification and monitoring settings</small></div>
-        </div>
-        <nav aria-label="Settings sections" data-i18n-aria-label="settingsSections">
-          <button class="nav-item selected" data-target="monitor" type="button">◎ <span data-i18n="monitor">Monitor</span></button>
-          <button class="nav-item" data-target="notifications" type="button">♧ <span data-i18n="notifications">Notifications</span></button>
-          <button class="nav-item" data-target="privacy" type="button">▢ <span data-i18n="privacy">Privacy</span></button>
-          <button class="nav-item" data-target="about" type="button">ⓘ <span data-i18n="about">About</span></button>
-        </nav>
-      </aside>
-
       <main class="settings-main">
-        <header>
-          <div>
-            <h1 data-i18n="notificationAndMonitoringSettings">Notification and monitoring settings</h1>
-            <p data-i18n="settingsIntro">Public-signal monitoring needs no sign-in. Optional account advice is calculated locally.</p>
-          </div>
-          <span id="saveState" data-i18n="saved">Saved</span>
+        <div class="page-topbar">
+          <div class="brand"><img src="../../assets/icons/icon128.png" width="48" height="48" alt=""><strong>Codex</strong><span>리셋 레이더</span></div>
+          <span class="version">v0.2.61</span>
+        </div>
+        <header class="page-heading">
+          <div><h1>설정</h1><p>화면과 알림을 원하는 방식으로 맞춰보세요.</p></div>
+          <span id="saveState" role="status" aria-live="polite" data-i18n="saved">저장됨</span>
         </header>
-
         <form id="settingsForm">
-          <section id="monitor" class="settings-section">
-            <h2 data-i18n="monitoringTargets">Monitoring targets</h2>
+          <section class="appearance-panel" aria-labelledby="appearanceTitle">
+            <div class="appearance-heading"><h2 id="appearanceTitle">화면 테마</h2><p>팝업과 설정에 함께 적용되며 자동 저장됩니다.</p></div>
+            <fieldset id="theme" class="theme-picker">
+              <legend class="sr-only">화면 테마</legend>
+                <label class="theme-choice"><input type="radio" name="theme" value="light"><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><strong>라이트 모드</strong><span class="theme-check" aria-hidden="true">✓</span></span></label>
+                <label class="theme-choice"><input type="radio" name="theme" value="dark"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.1A8.8 8.8 0 0 1 9.9 3.5a8.8 8.8 0 1 0 10.6 10.6Z"/></svg><strong>다크 모드</strong><span class="theme-check" aria-hidden="true">✓</span></span></label>
+                <label class="theme-choice"><input type="radio" name="theme" value="system" checked><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4m-4 0h8"/></svg><strong>시스템 설정</strong><span class="theme-check" aria-hidden="true">✓</span></span></label>
+            </fieldset>
+          </section>
+          <nav class="settings-nav" role="tablist" aria-label="설정 항목">
+            <button id="tab-monitor" class="nav-item selected" type="button" role="tab" data-target="monitor" aria-controls="monitor" aria-selected="true" tabindex="0">감시 설정</button>
+            <button id="tab-notifications" class="nav-item" type="button" role="tab" data-target="notifications" aria-controls="notifications" aria-selected="false" tabindex="-1">알림</button>
+            <button id="tab-privacy" class="nav-item" type="button" role="tab" data-target="privacy" aria-controls="privacy" aria-selected="false" tabindex="-1">데이터·개인정보</button>
+            <button id="tab-about" class="nav-item" type="button" role="tab" data-target="about" aria-controls="about" aria-selected="false" tabindex="-1">정보</button>
+          </nav>
+          <section id="monitor" class="settings-section" role="tabpanel" aria-labelledby="tab-monitor" tabindex="0">
+            <div class="settings-group">
+              <h2>OpenAI · Tibo · VB 수집 연결</h2>
+              <div class="settings-card">
+                <div class="setting-row">
+                  <div><strong>X 글·답글 직접 확인 · 선택</strong><small>OpenAI, Tibo, VB의 원글과 답글 목록을 각각 확인하고 긴 본문을 펼쳐 읽습니다. 목록별 최대 24회 스크롤, 작성자별 최대 160개, 대화 원문 최대 3개를 확인합니다. 최대 270초 동안 비활성 탭을 열었다 닫으며 같은 Chrome의 X 로그인이 필요할 수 있습니다. 공개 본문·시각·링크·작성자 사진 주소·선행 대화만 기기에 보관하며 DM·쿠키·로그인 정보는 읽지 않습니다. 최근 7일을 목표로 확인하지만 전체 수집을 보장하지 않습니다.</small></div>
+                  <label class="switch"><input id="monitorDirectX" type="checkbox" aria-label="X 공개 페이지 직접 확인"><span></span></label>
+                </div>
+                <div class="setting-row notification-check"><div><strong>글·답글 수집 상태</strong><small id="publicConnectionState" role="status">확인 전</small></div><div class="account-actions"><button id="checkPublic" class="account-button" type="button">공개 소식 확인</button></div></div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h2 data-i18n="monitoringTargets">확인할 항목</h2>
+              <div class="settings-card">
             <div class="setting-row">
-              <div><strong data-i18n="publicResetSignals">Public reset signals</strong><small data-i18n="publicResetSignalsHelp">Monitor public signals and estimate possible reset windows</small></div>
-              <label class="switch"><input id="monitorSignals" type="checkbox"><span></span></label>
+              <div><strong data-i18n="publicResetSignals">공개 리셋 소식</strong><small data-i18n="publicResetSignalsHelp">공개 글과 기록에서 리셋 단서와 예상 시점을 확인합니다.</small></div>
+              <label class="switch"><input id="monitorSignals" type="checkbox" aria-label="공개 리셋 소식"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong data-i18n="personalQuotaOptional">Personal quota and reset credits (optional)</strong><small data-i18n="personalQuotaOptionalHelp">After signing in to ChatGPT, show quota, reset credits, and tailored advice without affecting public monitoring</small></div>
-              <label class="switch"><input id="monitorAccount" type="checkbox"><span></span></label>
+              <div><strong data-i18n="personalQuotaOptional">내 잔여량·리셋권(선택)</strong><small data-i18n="personalQuotaOptionalHelp">직접 켜면 ChatGPT 로그인 상태로 잔여량을 조회합니다. 끄면 진행 중인 조회와 계정 데이터 저장을 중단하고 기존 데이터를 지웁니다.</small></div>
+              <label class="switch"><input id="monitorAccount" type="checkbox" aria-label="내 잔여량·리셋권"><span></span></label>
             </div>
-
-            <h2 data-i18n="monitoringStrategy">Monitoring strategy</h2>
+            <div class="setting-row">
+              <div><strong>Chat · 계정 연결 및 모델별 카운터</strong><small>계정의 요금제와 Astra·Sol Pro·일반 Sol·Luna 사용을 구분합니다. 다른 기기는 아래 기록 동기화를 켜면 포함됩니다. 팝업의 지금 확인으로 요금제와 기록을 함께 갱신합니다. 잔여량은 추정이며, 끄면 모든 Chat 집계 기록을 삭제합니다.</small><small id="chatCounterSettingStatus" role="status" aria-live="polite"></small><button id="checkChatPlan" class="account-button" type="button">요금제 다시 확인</button></div>
+              <label class="switch"><input id="monitorChat" type="checkbox" aria-label="Chat 사용 횟수 카운트"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>계정 기록 동기화 · 다른 기기 포함</strong><small>직접 켜면 현재 계정에 동기화된 최근 30일 기록을 조회합니다. 응답에는 대화 본문이 포함될 수 있지만 본문은 저장·출력·외부 전송하지 않고, 모델·사용 시각·중복 확인용 해시만 집계합니다. 삭제·임시 대화는 빠질 수 있습니다. 한 번에 최대 20개 대화를 확인하며 다음 확인 때 이어갑니다. 끄면 가져온 집계와 동기화 기록을 삭제합니다.</small><small id="chatHistoryStatus" role="status" aria-live="polite"></small><button id="syncChatHistoryButton" class="account-button" type="button">지금 동기화</button></div>
+              <label class="switch"><input id="syncChatHistory" type="checkbox" aria-label="계정 기록 동기화 · 다른 기기 포함"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>선택 기능 · Codex 기준 로컬 집계</strong><small>Chat과 Codex의 공식 한도는 별도입니다. 기본은 꺼짐이며, 켜면 Codex 회복 시각 이전 기록을 로컬 집계에서 제외합니다. Chat의 실제 잔여량 확인에는 사용하지 마세요.</small></div>
+              <label class="switch"><input id="syncChatResetWithCodex" type="checkbox" aria-label="Codex 리셋 시 Chat 카운터도 초기화"><span></span></label>
+            </div>
+            <div class="setting-row account-connection">
+              <div><strong>ChatGPT 연결</strong><small id="accountConnectionState" role="status" aria-live="polite">연결 상태 확인 중…</small></div>
+              <div class="account-actions"><button id="loginAccount" class="account-button" type="button">ChatGPT 로그인</button><button id="checkAccount" class="account-button" type="button" disabled>연결 확인</button></div>
+            </div>
+                          </div>
+            </div>
+            <div class="settings-group">
+              <h2 data-i18n="monitoringStrategy">확인 방식</h2>
+              <div class="settings-card">
             <label class="setting-row field-row">
-              <div><strong data-i18n="pollingInterval">Polling interval</strong><small data-i18n="pollingIntervalHelp">Check periodically while the browser is running</small></div>
+              <div><strong data-i18n="pollingInterval">확인 간격</strong><small data-i18n="pollingIntervalHelp">브라우저 실행 중 주기적으로 확인</small></div>
               <select id="pollMinutes">
-                <option value="15" data-i18n="every15Minutes">Every 15 minutes</option>
-                <option value="30" data-i18n="every30Minutes">Every 30 minutes</option>
-                <option value="60" data-i18n="every60Minutes">Every 60 minutes</option>
-                <option value="120" data-i18n="every2Hours">Every 2 hours</option>
+                <option value="15" data-i18n="every15Minutes">15분마다</option>
+                <option value="30" data-i18n="every30Minutes">30분마다</option>
+                <option value="60" data-i18n="every60Minutes">60분마다</option>
+                <option value="120" data-i18n="every2Hours">2시간마다</option>
               </select>
             </label>
             <div class="setting-row field-row">
-              <div><strong data-i18n="confidenceThreshold">Confidence threshold</strong><small data-i18n="confidenceThresholdHelp">Choose which public signals trigger notifications</small></div>
+              <div><strong data-i18n="confidenceThreshold">알림을 받을 신뢰도</strong><small data-i18n="confidenceThresholdHelp">어느 수준의 공개 소식부터 알림을 받을지 선택하세요.</small></div>
               <div class="segments" role="radiogroup" aria-label="Confidence threshold" data-i18n-aria-label="confidenceThreshold">
-                <label><input id="confidenceThresholdHigh" type="radio" name="confidenceThreshold" value="high"><span data-i18n="highOnly">High only</span></label>
-                <label><input id="confidenceThresholdMedium" type="radio" name="confidenceThreshold" value="medium"><span data-i18n="mediumAndHigh">Medium + high</span></label>
-                <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span data-i18n="all">All</span></label>
+                <label><input id="confidenceThresholdHigh" type="radio" name="confidenceThreshold" value="high"><span data-i18n="highOnly">높음만</span></label>
+                <label><input id="confidenceThresholdMedium" type="radio" name="confidenceThreshold" value="medium"><span data-i18n="mediumAndHigh">중간 이상</span></label>
+                <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span data-i18n="all">전체</span></label>
               </div>
             </div>
-            <h2 data-i18n="sourcesAndWeights">Sources and weights</h2>
+                          </div>
+            </div>
+            <div class="settings-group">
+              <h2 data-i18n="sourcesAndWeights">정보 출처·반영 비중</h2>
+              <div class="settings-card">
             <div class="setting-row">
-              <div><strong data-i18n="leadSourceTitle">Codex lead updates · 1.00</strong><small data-i18n="leadSourceHelp">Primary advance-notice source in community experience</small></div>
-              <label class="switch"><input id="monitorLeadSource" type="checkbox"><span></span></label>
+              <div><strong>OpenAI · Tibo · VB의 Codex 소식 · 1.00</strong><small>OpenAI, Tibo, VB의 공개 리셋·제품 출시·행사 소식을 확인합니다. 출시·행사만으로 리셋을 확정하지 않습니다.</small></div>
+              <label class="switch"><input id="monitorLeadSource" type="checkbox" aria-label="OpenAI · Tibo · VB의 Codex 소식"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>OpenAI Status · 0.70</strong><small data-i18n="statusSourceHelp">Official incidents, rate-limit anomalies, and recovery progress</small></div>
-              <label class="switch"><input id="monitorStatusSource" type="checkbox"><span></span></label>
+              <div><strong>OpenAI Status · 0.70</strong><small data-i18n="statusSourceHelp">공식 장애, 한도 이상, 복구 상황을 참고합니다.</small></div>
+              <label class="switch"><input id="monitorStatusSource" type="checkbox" aria-label="OpenAI Status"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong data-i18n="historySourceTitle">Community reset history · 0.58</strong><small data-i18n="historySourceHelp">Forecast from verified million-user milestones and reset cadence</small></div>
-              <label class="switch"><input id="monitorHistorySource" type="checkbox"><span></span></label>
+              <div><strong data-i18n="historySourceTitle">커뮤니티 리셋 기록 · 0.58</strong><small data-i18n="historySourceHelp">사용자 수 이정표와 과거 리셋 간격을 참고합니다.</small></div>
+              <label class="switch"><input id="monitorHistorySource" type="checkbox" aria-label="커뮤니티 리셋 기록"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>OpenAI/Codex GitHub · 0.35</strong><small data-i18n="communitySourceHelp">Community quota reports used only as low-weight context</small></div>
-              <label class="switch"><input id="monitorCommunitySource" type="checkbox"><span></span></label>
+              <div><strong>OpenAI/Codex GitHub · 0.35</strong><small data-i18n="communitySourceHelp">사용자의 한도 관련 제보는 낮은 가중치의 참고 자료로만 사용합니다.</small></div>
+              <label class="switch"><input id="monitorCommunitySource" type="checkbox" aria-label="OpenAI/Codex GitHub"><span></span></label>
             </div>
 
-            <h2 data-i18n="timeZone">Time zone</h2>
+                          </div>
+            </div>
+            <div class="settings-group">
+              <h2 data-i18n="timeZone">시간대</h2>
+              <div class="settings-card">
             <div class="setting-row field-row">
-              <div><strong data-i18n="timeDisplay">Time display</strong><small id="systemTimezoneLabel" data-i18n="systemTimeZone">System time zone</small></div>
+              <div><strong data-i18n="timeDisplay">시간 표시</strong><small id="systemTimezoneLabel" data-i18n="systemTimeZone">시스템 시간대</small></div>
               <div class="segments">
-                <label><input id="timezoneModeSystem" type="radio" name="timezoneMode" value="system"><span data-i18n="followSystem">Follow system</span></label>
-                <label><input id="timezoneModeManual" type="radio" name="timezoneMode" value="manual"><span data-i18n="manual">Manual</span></label>
+                <label><input id="timezoneModeSystem" type="radio" name="timezoneMode" value="system"><span data-i18n="followSystem">시스템 따름</span></label>
+                <label><input id="timezoneModeManual" type="radio" name="timezoneMode" value="manual"><span data-i18n="manual">수동</span></label>
               </div>
             </div>
             <label id="timezoneOverrideRow" class="setting-row field-row">
-              <div><strong data-i18n="ianaTimeZone">IANA time zone</strong><small data-i18n="ianaTimeZoneHelp">For example Asia/Shanghai or America/Los_Angeles</small></div>
-              <input id="timezoneOverride" type="text" list="timezoneList" autocomplete="off" placeholder="Asia/Shanghai" data-i18n-placeholder="timezonePlaceholder">
+              <div><strong data-i18n="ianaTimeZone">시간대 직접 입력</strong><small data-i18n="ianaTimeZoneHelp">한국 표준시: Asia/Seoul · 미국 서부: America/Los_Angeles</small></div>
+              <input id="timezoneOverride" type="text" list="timezoneList" autocomplete="off" placeholder="Asia/Seoul" data-i18n-placeholder="timezonePlaceholder">
               <datalist id="timezoneList">
-                <option value="Asia/Shanghai"></option>
+                <option value="Asia/Seoul"></option>
                 <option value="Asia/Tokyo"></option>
                 <option value="Europe/London"></option>
                 <option value="Europe/Berlin"></option>
@@ -99,63 +142,111 @@
                 <option value="America/New_York"></option>
                 <option value="UTC"></option>
               </datalist>
-            </label>
+            </label>              </div>
+            </div>
           </section>
 
-          <section id="notifications" class="settings-section">
-            <h2 data-i18n="notificationSettings">Notification settings</h2>
+          <section id="notifications" class="settings-section" role="tabpanel" aria-labelledby="tab-notifications" tabindex="0" hidden>
+            <div class="settings-group">
+              <h2>알림 연결 확인</h2>
+              <div class="settings-card">
+                <div class="setting-row notification-check"><div><strong>Windows 알림 테스트</strong><small id="notificationTestStatus" role="status">테스트 기능을 준비하고 있습니다. 이 문구가 바뀌지 않으면 설정 탭을 F5로 새로고침해 주세요.</small><small id="notificationWorkerStatus" role="status">실행 코드 연결 확인 중…</small></div><div class="account-actions"><button id="testNotification" class="account-button" type="button">테스트 알림</button></div></div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h2 data-i18n="notificationSettings">알림 설정</h2>
+              <div class="settings-card">
             <div class="setting-row">
-              <div><strong data-i18n="possibleResetSoon">Possible reset soon</strong><small data-i18n="possibleResetSoonHelp">Notify when a new public signal meets the confidence threshold</small></div>
-              <label class="switch"><input id="notifyOfficialReset" type="checkbox"><span></span></label>
+              <div><strong>잔여량 회복 알림</strong><small>5시간·주간 잔여량이 100%로 회복되면 알립니다. 리셋 주기가 바뀌고 잔여량이 늘어난 경우 현재 잔여량으로 알립니다. 처음 연결한 계정은 비교 기준만 저장합니다.</small></div>
+              <label class="switch"><input id="notifyAccountReset" type="checkbox" aria-label="잔여량 100% 회복 알림"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong data-i18n="resetCreditExpiring">Reset credit expiring</strong><small data-i18n="resetCreditExpiringHelp">Show usage advice before expiration</small></div>
-              <label class="switch"><input id="notifyCreditExpiry" type="checkbox"><span></span></label>
+              <div><strong data-i18n="bankedSettingTitle">Banked reset 지급 알림</strong><small data-i18n="bankedSettingDescription">X 공지와 관계없이 같은 계정의 새 리셋권을 확인하면 Windows 알림을 보냅니다. 첫 조회는 비교 기준으로 저장하며, 방해 금지 시간을 따릅니다. 팝업 안내와 아이콘 !는 감지 후 24시간 표시합니다.</small></div>
+              <label class="switch"><input id="notifyBankedReset" type="checkbox" data-i18n-aria-label="bankedSettingTitle" aria-label="Banked reset 지급 알림"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong data-i18n="quotaAdvice">Advice when quota is low</strong><small data-i18n="quotaAdviceHelp">Notify only when blocked or quota is clearly low</small></div>
-              <label class="switch"><input id="notifyAdvice" type="checkbox"><span></span></label>
+              <div><strong>다시 켰을 때 놓친 회복 바로 알림</strong><small>Chrome 시작 또는 긴 조회 공백 후 같은 계정의 회복을 확인하면 확장의 방해 금지 시간에도 알립니다. 비교 기록은 최대 30일 보관합니다. 인터넷 연결 실패 시 재시도합니다. Chrome이 실행되어야 하며 Windows의 알림 허용 설정을 따릅니다.</small></div>
+              <label class="switch"><input id="notifyRecoveryOnResume" type="checkbox" aria-label="다시 켰을 때 놓친 회복 바로 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>놓친 공개 소식 복귀 알림</strong><small>Chrome을 다시 켰을 때 놓친 예고·암시를 해당 알림 항목이 켜져 있으면 한 번 알립니다. 늦게 수집한 암시도 대상입니다. 복귀 알림은 확장 방해 금지 시간을 예외 처리합니다. 후보 보관은 최근 7일·최대 100개이며 리셋 확정이 아닙니다. 아래 후보 알림을 꺼도 팝업에는 표시됩니다.</small></div>
+              <label class="switch"><input id="notifyPublicOnResume" type="checkbox" aria-label="놓친 공개 소식 복귀 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>암시·출시·행사 후보 알림</strong><small>리셋 암시·제품 예고와 날짜·요일·시각이 있는 행사 소식을 알립니다. 같은 행사는 최초 일정·변경·취소 때만 알립니다. 출시·행사는 리셋 확정이 아닙니다. 기본 꺼짐. 최근 글·저장된 복귀 범위에 적용하며 사진·영상이나 불명확한 표현은 놓칠 수 있습니다.</small></div>
+              <label class="switch"><input id="notifyHints" type="checkbox" aria-label="암시·출시·행사 후보 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>리셋 예고·완료·리셋권 공지 알림</strong><small>기준에 맞는 예고와 Tibo의 리셋 완료·리셋권 지급 공지를 한 번 알립니다. 내 계정 반영은 잔여량 조회로 별도 확인합니다.</small></div>
+              <label class="switch"><input id="notifyOfficialReset" type="checkbox" aria-label="리셋 예고·완료·리셋권 공지 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong>리셋 일정 변경 알림</strong><small>기존 예고와 연결된 연기·일정 변경을 알립니다. 은유 후보는 후보 알림을 켠 경우에만, 명시 예고는 예고 알림을 켠 경우에만 알립니다. 답글 연결 정보가 없으면 연결 추정으로 표시합니다.</small></div>
+              <label class="switch"><input id="notifyScheduleChanges" type="checkbox" aria-label="리셋 일정 변경 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong data-i18n="resetCreditExpiring">리셋권 만료 알림</strong><small data-i18n="resetCreditExpiringHelp">만료가 가까워지면 사용 안내를 표시합니다.</small></div>
+              <label class="switch"><input id="notifyCreditExpiry" type="checkbox" aria-label="리셋권 만료 알림"><span></span></label>
+            </div>
+            <div class="setting-row">
+              <div><strong data-i18n="quotaAdvice">잔여량 부족 시 사용 안내</strong><small data-i18n="quotaAdviceHelp">한도 때문에 작업이 막혔거나 잔여량이 적을 때 알립니다.</small></div>
+              <label class="switch"><input id="notifyAdvice" type="checkbox" aria-label="잔여량 부족 시 사용 안내"><span></span></label>
             </div>
             <div class="setting-row field-row">
-              <div><strong data-i18n="quietHours">Quiet hours</strong><small data-i18n="quietHoursHelp">Reduce non-urgent notifications during the selected hours</small></div>
+              <div><strong data-i18n="quietHours">방해 금지 시간</strong><small data-i18n="quietHoursHelp">선택한 시간 동안 긴급하지 않은 알림 줄이기</small></div>
               <div class="quiet-fields">
-                <label class="switch compact"><input id="quietHoursEnabled" type="checkbox"><span></span></label>
-                <input id="quietStart" type="time">
+                <label class="switch compact"><input id="quietHoursEnabled" type="checkbox" aria-label="방해 금지 시간 사용"><span></span></label>
+                <input id="quietStart" type="time" aria-label="방해 금지 시작 시간">
                 <span>—</span>
-                <input id="quietEnd" type="time">
+                <input id="quietEnd" type="time" aria-label="방해 금지 종료 시간">
               </div>
+            </div>              </div>
             </div>
           </section>
 
-          <section id="privacy" class="settings-section">
-            <h2 data-i18n="dataSources">Data sources</h2>
-            <div class="source-row"><span class="source-icon">◎</span><div><strong data-i18n="publicSources">Public sources</strong><small id="publicSourceText" data-i18n="weightedPublicSources4">4 weighted public sources</small></div></div>
-            <div class="source-row"><span class="source-icon">▢</span><div><strong data-i18n="chatGPTSessionOptional">ChatGPT sign-in session (optional, read locally only)</strong><small data-i18n="chatGPTSessionOptionalHelp">Used only for personal quota and reset-credit advice; the public radar keeps working while signed out</small></div></div>
-            <div class="privacy-note" data-i18n="privacyNote">♢ Tokens, account identifiers, and usage records are not uploaded. The access token is stored only for the browser session and expires when the browser closes.</div>
-            <button id="clearData" class="danger-button" type="button" data-i18n="clearLocalData">Clear local data</button>
+          <section id="privacy" class="settings-section" role="tabpanel" aria-labelledby="tab-privacy" tabindex="0" hidden>
+            <div class="settings-group">
+              <h2 data-i18n="dataSources">정보 출처</h2>
+              <div class="settings-card">
+            <div class="source-row"><div><strong data-i18n="publicSources">공개 정보</strong><small id="publicSourceText" data-i18n="weightedPublicSources4">공개 출처 4개</small></div></div>
+            <div class="source-row"><div><strong data-i18n="chatGPTSessionOptional">ChatGPT 로그인 상태(선택, 백그라운드 조회)</strong><small data-i18n="chatGPTSessionOptionalHelp">계정 기능을 직접 켠 경우에만 조회합니다. ChatGPT 페이지에 스크립트를 주입하지 않습니다.</small></div></div>
+            <div class="privacy-note" data-i18n="privacyNote">♢ 로그인 토큰은 조회 요청 중에만 사용하고 저장소에 보관하지 않습니다. 공개 정보 제공처에는 토큰·계정 정보를 보내지 않습니다.</div>
+            <button id="clearData" class="danger-button" type="button" data-i18n="clearLocalData">로컬 데이터 지우기</button>              </div>
+            </div>
           </section>
 
-          <section id="about" class="settings-section">
-            <h2 data-i18n="about">About</h2>
+          <section id="about" class="settings-section" role="tabpanel" aria-labelledby="tab-about" tabindex="0" hidden>
+            <div class="settings-group">
+              <h2 data-i18n="about">정보</h2>
+              <div class="settings-card">
             <div class="about-block">
-              <div class="radar-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
               <div>
-                <h3>Codex Reset Radar <span>v0.2.2</span></h3>
-                <p data-i18n="aboutDescription">An unofficial MIT-licensed browser extension. Read-only monitoring; it never resets quota or redeems reset credits automatically.</p>
-                <p data-i18n="aboutInspiration">Inspired by codex-reset-watchdog and codex-reset-watcher.</p>
+                <h3>Codex 리셋 레이더 <span>한국어판 · v0.2.61</span></h3>
+                <p data-i18n="aboutDescription">MIT 라이선스의 비공식 한국어 확장프로그램입니다. 보안 강화판은 페이지 코드 주입과 토큰 저장을 제거하고 통신·링크·메시지를 제한합니다. 계정 조회만 하며 리셋권을 자동 사용하지 않습니다.</p>
+                <p data-i18n="aboutInspiration">codex-reset-watchdog와 codex-reset-watcher에서 영감을 받았습니다.</p>
               </div>
+            </div>              </div>
             </div>
           </section>
         </form>
+        <p class="page-note">기본 공개 피드는 로그인 없이 확인합니다. 선택 기능인 X 직접 확인은 X 로그인이 필요할 수 있습니다. 내 잔여량 조회는 직접 켰을 때만 작동하며, 끄면 계정 데이터를 지웁니다.</p>
       </main>
     </div>
 
+    <script src="notification-test.js"></script>
     <script src="../core/translations.js"></script>
     <script src="../core/i18n.js"></script>
     <script src="../core/settings.js"></script>
+    <script src="../core/account.js"></script>
+    <script src="../core/chat-counter.js"></script>
+    <script src="../core/chat-history.js"></script>
     <script src="../core/time.js"></script>
     <script src="../core/signals.js"></script>
     <script src="../core/sources.js"></script>
     <script src="options.js"></script>
+    <script src="../core/ui-copy-locales.js"></script>
+    <script src="../core/ui-copy.js"></script>
+    <script src="../shared/language-ui.js"></script>
+    <script src="../shared/chat-history-ui.js"></script>
   </body>
 </html>

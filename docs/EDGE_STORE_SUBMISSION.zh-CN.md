@@ -1,3 +1,5 @@
+> Historical upstream reference only. Links, screenshots, store metadata and donation destinations below belong to the original project, not this fork. For current installation and feedback, see [README](../README.md).
+
 # Microsoft Edge 加载项提交材料
 
 适用于 Codex Reset Radar v0.2.2。发布入口：Microsoft Partner Center 的 Microsoft Edge 工作区。

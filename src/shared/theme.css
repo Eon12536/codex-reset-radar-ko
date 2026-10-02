@@ -1,0 +1,81 @@
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4
+   modern-minimal · calm · neutral charcoal / selective blue accents · shared themes */
+:root {
+  color-scheme: light;
+  --bg: #e9edf3;
+  --surface: #ffffff;
+  --surface-2: #d5deea;
+  --surface-3: #e2e9f2;
+  --text: #172132;
+  --muted: #3b4b61;
+  --dim: #4b5b70;
+  --border: #bac6d6;
+  --border-strong: #71839b;
+  --teal: #2459a8;
+  --teal-soft: #e7effb;
+  --amber: #81530a;
+  --amber-soft: #fff3db;
+  --banked-text: #14633e;
+  --banked-bg: #dff3e6;
+  --hint-bg: #fff3db;
+  --hint-border: #d5b573;
+  --danger: #b52b37;
+  --danger-soft: #ffedf0;
+  --focus: #2459a8;
+  --accent-ink: #ffffff;
+  --action-bg: #2459a8;
+  --action-text: #ffffff;
+  --panel-surface: var(--surface);
+  --panel-border: #77879c;
+  --panel-divider: #b1bfd1;
+  --quota-surface: #ffffff;
+  --quota-border: var(--panel-border);
+  --switch-track: #64748b;
+  --switch-thumb: #ffffff;
+  --light-panel-shadow: 0 2px 5px rgba(31, 48, 74, .10);
+  --transparent: transparent;
+  --font: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 12px; --space-lg: 16px; --space-xl: 24px;
+  --radius-sm: 8px; --radius: 12px; --radius-lg: 16px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1c1c;
+  --surface: #262626;
+  --surface-2: #3b3b3b;
+  --surface-3: #303030;
+  --text: #eeeeec;
+  --muted: #bdbdbd;
+  --dim: #a8a8a8;
+  --border: #3c3c3c;
+  --border-strong: #686868;
+  --teal: #91baff;
+  --teal-soft: #25334a;
+  --amber: #d9b77a;
+  --amber-soft: #3b3226;
+  --banked-text: #9fe1b8;
+  --banked-bg: #254337;
+  --hint-bg: #3b3226;
+  --hint-border: #746044;
+  --danger: #e8a09b;
+  --danger-soft: #402c2b;
+  --focus: #95baff;
+  --accent-ink: #152238;
+  --action-bg: #95baff;
+  --action-text: #182339;
+  --panel-surface: #303030;
+  --panel-border: #70829b;
+  --panel-divider: #56606e;
+  --quota-surface: #303030;
+  --quota-border: var(--panel-border);
+  --switch-track: #686868;
+  --switch-thumb: #eeeeec;
+}
+html, body { overflow-x: clip; font-family: var(--font); font-size: 15px; line-height: 1.55; }
+body::before { display: none; }
+h1, h2, h3 { font-style: normal; min-width: 0; overflow-wrap: anywhere; }
+button, summary, .nav-item { white-space: nowrap; }
+button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 3px;
+}
+[hidden] { display: none !important; }

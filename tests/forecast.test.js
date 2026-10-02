@@ -25,8 +25,8 @@ test("places the highest probability in the six-hour slot around an active signa
 test("aligns forecast slots to local six-hour periods", () => {
   const now = Date.parse("2026-07-19T13:25:00Z");
   const [first] = Forecast.slotBoundaries(now, "Asia/Shanghai", 6);
-  assert.equal(global.RadarTime.formatTime(first.startAt, "Asia/Shanghai", "en-GB"), "18:00");
-  assert.equal(global.RadarTime.formatTime(first.endAt, "Asia/Shanghai", "en-GB"), "00:00");
+  assert.equal(first.startAt, Date.parse("2026-07-19T10:00:00Z"));
+  assert.equal(first.endAt, Date.parse("2026-07-19T16:00:00Z"));
 });
 
 test("uses a visibly low baseline when no active public signal exists", () => {

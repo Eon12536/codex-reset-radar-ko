@@ -1,28 +1,31 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko-KR">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title data-i18n="welcomeTitle">Welcome to Codex Reset Radar</title>
+    <title data-i18n="welcomeTitle">Codex 리셋 레이더 한국어판 · 시작하기</title>
+    <script src="../core/theme.js"></script>
     <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="welcome.css">
   </head>
   <body>
     <main>
-      <div class="radar-mark hero-mark" aria-hidden="true"><span class="radar-sweep"></span></div>
-      <p class="eyebrow">MIT OPEN SOURCE · LOCAL FIRST</p>
-      <h1 data-i18n="welcomeHeadline">See the signal before the quota resets.</h1>
-      <p class="intro" data-i18n="welcomeIntro">Codex Reset Radar monitors possible public reset signals without a sign-in. Sign in to ChatGPT only to add personal quota and reset-credit advice.</p>
+      <img class="brand-image" src="../../assets/icons/icon128.png" width="80" height="80" alt="">
+      <p class="eyebrow">MIT 오픈소스 · 내 브라우저에서 실행</p>
+      <h1 data-i18n="welcomeHeadline">리셋 소식과 내 잔여량을 한눈에.</h1>
+      <p class="intro" data-i18n="welcomeIntro">Codex 리셋 레이더 보안 강화판입니다. 공개 소식을 확인하고, 계정 조회를 직접 켜면 내 잔여량과 리셋권도 볼 수 있습니다.</p>
       <ol>
-        <li><span>1</span><div><strong data-i18n="welcomeStep1Title">Works immediately after install</strong><p data-i18n="welcomeStep1Body">The public radar, time forecast, and signal notifications do not require a ChatGPT sign-in.</p></div></li>
-        <li><span>2</span><div><strong data-i18n="welcomeStep2Title">Optional: sign in to ChatGPT</strong><p data-i18n="welcomeStep2Body">Sign in only for personal quota, reset-credit status, and tailored advice. No API key is required.</p></div></li>
-        <li><span>3</span><div><strong data-i18n="welcomeStep3Title">Tune settings as needed</strong><p data-i18n="welcomeStep3Body">Configure system notifications, confidence threshold, and display time zone.</p></div></li>
+        <li><span>1</span><div><strong data-i18n="welcomeStep1Title">설치 후 공개 소식 확인</strong><p data-i18n="welcomeStep1Body">공개 리셋 소식, 예상 시간대, 관련 알림은 ChatGPT 로그인 없이 사용할 수 있습니다.</p></div></li>
+        <li><span>2</span><div><strong data-i18n="welcomeStep2Title">내 잔여량을 보려면 ChatGPT 로그인</strong><p data-i18n="welcomeStep2Body">아래 연결 버튼으로 계정 조회를 켠 뒤 같은 크롬 프로필에서 ChatGPT에 로그인하세요. API 키는 필요하지 않습니다.</p></div></li>
+        <li><span>3</span><div><strong data-i18n="welcomeStep3Title">알림과 시간대 설정</strong><p data-i18n="welcomeStep3Body">확인 간격, 알림을 받을 신뢰도, 방해 금지 시간, 표시 시간대를 설정하세요.</p></div></li>
       </ol>
       <div class="actions">
-        <button id="openUsage" type="button" data-i18n="optionalConnectChatGPT">Optional: connect ChatGPT</button>
-        <button id="openOptions" class="secondary" type="button" data-i18n="reviewSettings">Review settings</button>
+        <button id="openUsage" type="button" data-i18n="optionalConnectChatGPT">내 한도 연결하기</button>
+        <button id="openOptions" class="secondary" type="button" data-i18n="reviewSettings">설정 확인</button>
       </div>
-      <p class="privacy" data-i18n="welcomePrivacy">Tokens, account identifiers, and usage records are not uploaded. Reset credits are never redeemed automatically.</p>
+      <p id="connectionHelp" class="privacy" role="status" aria-live="polite">로그인 후 확장을 다시 열면 잔여량 연결을 확인합니다.</p>
+      <p class="privacy" data-i18n="welcomePrivacy">계정 조회는 기본 꺼짐입니다. 토큰은 저장하지 않으며 리셋권을 자동 사용하지 않습니다.</p>
     </main>
     <script src="../core/translations.js"></script>
     <script src="../core/i18n.js"></script>

@@ -1,4 +1,4 @@
 {
-  "extensionName": { "message": "Codex Reset Radar" },
-  "extensionDescription": { "message": "공개 Codex 재설정 신호를 분석하고 저장된 재설정 크레딧에 대한 로컬 조언을 제공합니다." }
+  "extensionName": { "message": "Codex 리셋 레이더 · 한국어" },
+  "extensionDescription": { "message": "Tibo·VB의 공개 리셋 소식, Codex 잔여량과 리셋권을 한국어·영어로 확인하고 브라우저 알림을 받습니다." }
 }

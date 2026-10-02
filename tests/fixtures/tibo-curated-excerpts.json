@@ -1,0 +1,208 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "sourceFile": "Tibo_Codex_Reset_Data.json",
+    "sourceSha256": "aac4d2f259c7bd880bc860304113cc458f8f4871c746fa84a9dfb21fb6ba56e6",
+    "sourcePostCount": 89,
+    "excerptCount": 24,
+    "fullTextCount": 0,
+    "independentlyVerifiedAccountResetCount": 0,
+    "coverage": "public_index_and_archives_NOT_complete_timeline",
+    "performanceMetricsValid": false,
+    "purpose": "Verbatim user-supplied excerpts for local rule regression only; curated stages are not independently verified reset outcomes."
+  },
+  "excerpts": [
+    {
+      "postId": "2048997818673537399",
+      "text": "but the vibes are good",
+      "stage": "completion_claim",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2062329981548802523",
+      "text": "May the tokens flow again.",
+      "stage": "completion_claim",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2078320950488297917",
+      "text": "Oops... I did it again.",
+      "stage": "completion_claim",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2081940052154933696",
+      "text": "Back at the laptop.",
+      "stage": "completion_claim",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2082326593532473523",
+      "text": "One day we created the reset button and the rest is history.",
+      "stage": "retrospective",
+      "signalKind": "retrospective",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2086189414292865249",
+      "text": "I'll do another performative reset on Monday.",
+      "stage": "scheduled",
+      "signalKind": "explicit",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2086972802457063486",
+      "text": "Hi. It is done.",
+      "stage": "context_confirmation",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2087423996115681767",
+      "text": "Little surprise for you tomorrow.",
+      "stage": "hint",
+      "signalKind": "mixed_metaphor",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2092311059197808936",
+      "text": "Ah yeah, forgot to say",
+      "stage": "needs_context",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "yes",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2092316228497063958",
+      "text": "Not so random, but yes",
+      "stage": "needs_context",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2092862554632826968",
+      "text": "find it tomorrow and dust it up",
+      "stage": "hint",
+      "signalKind": "mixed_metaphor",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2092993835953787255",
+      "text": "I always deliver",
+      "stage": "needs_context",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2093014447833116908",
+      "text": "Brand new me and brand new usage",
+      "stage": "completion_claim",
+      "signalKind": "mixed_metaphor",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2093551005711679557",
+      "text": "Soon, but not today",
+      "stage": "hint",
+      "signalKind": "qualified_hint",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2093573991965557198",
+      "text": "new milestone to celebrate tomorrow",
+      "stage": "hint",
+      "signalKind": "pure_metaphor",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2093811840258293947",
+      "text": "This celebration is moved to tomorrow",
+      "stage": "rescheduled",
+      "signalKind": "pure_metaphor",
+      "archiveReportsChange": "yes",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2094143054039183573",
+      "text": "Yes",
+      "stage": "needs_context",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "yes",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2096692394435752258",
+      "text": "Who says it won't reset in a while",
+      "stage": "hint",
+      "signalKind": "rhetorical_hint",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2097043464538264003",
+      "text": "Lands around 6pm PST today.",
+      "stage": "scheduled",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "yes",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2097174560412246215",
+      "text": "All reset for everyone.",
+      "stage": "completion_claim",
+      "signalKind": "explicit",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2097175062566846501",
+      "text": "There is no schedule, only resets",
+      "stage": "non_specific_comment",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2097183639356489952",
+      "text": "I reset usage twice in the middle",
+      "stage": "retrospective",
+      "signalKind": "retrospective",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2098113585683808624",
+      "text": "Thanks!",
+      "stage": "review_candidate",
+      "signalKind": "context_reply",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    },
+    {
+      "postId": "2098685367058612394",
+      "text": "Reset all propagated. Sweet dreams.",
+      "stage": "completion_claim",
+      "signalKind": "mixed_playful",
+      "archiveReportsChange": "unknown",
+      "duplicateOf": null
+    }
+  ]
+}

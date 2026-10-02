@@ -12,7 +12,7 @@ function exists(relativePath) {
 }
 
 if (manifest.manifest_version !== 3) errors.push("manifest_version must be 3");
-if (manifest.default_locale !== "en") errors.push("default_locale must be en");
+if (manifest.default_locale !== "ko") errors.push("default_locale must be ko");
 for (const pathValue of [
   manifest.background?.service_worker,
   manifest.action?.default_popup,
@@ -89,17 +89,35 @@ for (const file of sourceFiles) {
 
 const popupHtml = fs.readFileSync(path.join(root, "src/popup/popup.html"), "utf8");
 const optionsHtml = fs.readFileSync(path.join(root, "src/options/options.html"), "utf8");
+exists("src/core/theme.js");
+exists("src/shared/theme.css");
 const backgroundSource = fs.readFileSync(path.join(root, "src/background.js"), "utf8");
-const contentSource = fs.readFileSync(path.join(root, "src/content.js"), "utf8");
+const contentSource = "";
+if (manifest.content_scripts?.length) errors.push("Unconditional page injection is not permitted; Chat counter must be opt-in");
+if (JSON.stringify(manifest.optional_permissions) !== JSON.stringify(["scripting"]) ||
+    JSON.stringify(manifest.optional_host_permissions) !== JSON.stringify(["https://x.com/*"])) errors.push("Optional access must stay limited to scripting and X");
+exists("src/chat-counter.js");
+exists("src/core/chat-counter.js");
+exists("src/core/direct-x.js");
+exists("src/x-reader.js");
+if (manifest.web_accessible_resources?.length) errors.push("Hardened build must not expose extension resources to pages");
+if (manifest.permissions.includes("tabs")) errors.push("Broad tabs permission is not needed");
+if (fs.existsSync(path.join(root, "src/content.js"))) errors.push("Legacy content script must not be packaged");
+if (!manifest.content_security_policy?.extension_pages.includes("connect-src 'self' data: https://chatgpt.com")) errors.push("Network CSP must allow bundled inline notification images and explicit API origins");
+exists("src/core/notification-icon.js");
+exists("src/options/notification-test.js");
 
 if ((popupHtml.match(/class="quota-row"/g) || []).length !== 2) errors.push("Popup must contain exactly two quota rows");
-for (const id of ["signalHeadline", "viewEvidence", "creditsCount", "advicePanel", "refreshButton"]) {
+for (const id of ["newsList", "newsEmpty", "newsCount", "chatCountValue", "enableChatCounter", "creditsCount", "advicePanel", "refreshButton"]) {
   if (!popupHtml.includes(`id="${id}"`)) errors.push(`Popup is missing #${id}`);
 }
 if ((optionsHtml.match(/class="nav-item/g) || []).length !== 4) errors.push("Options page must contain four navigation items");
+for (const theme of ["light", "dark", "system"]) {
+  if (!optionsHtml.includes(`type="radio" name="theme" value="${theme}"`)) errors.push(`Options page is missing the ${theme} theme choice`);
+}
 for (const id of [
   "monitorSignals", "monitorAccount", "confidenceThresholdHigh", "timezoneModeSystem",
-  "timezoneModeManual", "notifyOfficialReset", "notifyCreditExpiry", "notifyAdvice", "clearData"
+  "timezoneModeManual", "notifyOfficialReset", "notifyCreditExpiry", "notifyAdvice", "clearData", "theme"
 ]) {
   if (!optionsHtml.includes(`id="${id}"`)) errors.push(`Options page is missing #${id}`);
 }

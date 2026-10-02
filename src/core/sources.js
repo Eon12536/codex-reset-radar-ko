@@ -2,7 +2,7 @@
   const DEFINITIONS = Object.freeze([
     Object.freeze({
       id: "codex-lead",
-      label: "Codex 负责人动态",
+      label: "Tibo의 Codex 소식",
       kind: "dayclaw",
       url: "https://api.dayclaw.com/api/source/public/x/thsottiaux/items",
       weight: 1,
@@ -18,7 +18,7 @@
     }),
     Object.freeze({
       id: "community-reset-history",
-      label: "社区重置历史",
+      label: "커뮤니티 리셋 기록",
       kind: "reset-tracker-html",
       url: "https://codex-resets.com/",
       weight: 0.58,
@@ -26,7 +26,7 @@
     }),
     Object.freeze({
       id: "github-community",
-      label: "OpenAI/Codex GitHub 社区",
+      label: "OpenAI/Codex GitHub 커뮤니티",
       kind: "github-issues",
       url: "https://api.github.com/repos/openai/codex/issues?state=all&labels=rate-limits&sort=updated&direction=desc&per_page=20",
       weight: 0.35,
@@ -35,15 +35,6 @@
   ]);
 
   function enabled(settings = {}) {
-    if (settings.sourceUrl) {
-      return [{
-        id: "custom",
-        label: "自定义公开源",
-        kind: "dayclaw",
-        url: settings.sourceUrl,
-        weight: 0.75
-      }];
-    }
     return DEFINITIONS.filter((source) => settings[source.setting] !== false);
   }
 
@@ -76,7 +67,7 @@
         text: `${incident.name || "OpenAI incident"}. ${details}`.slice(0, 6000),
         author: "OpenAI Status",
         createdAt: updates[0]?.created_at || incident.updated_at || incident.created_at || null,
-        url: incident.shortlink || `https://status.openai.com/incidents/${incident.id}`,
+        url: `https://status.openai.com/incidents/${encodeURIComponent(incident.id)}`,
         isReply: false,
         source: sourceMeta(source)
       };
@@ -91,7 +82,7 @@
       text: `${issue.title || ""}. ${issue.body || ""}`.slice(0, 6000),
       author: issue.user?.login || "GitHub community",
       createdAt: issue.created_at || issue.updated_at || null,
-      url: issue.html_url || `https://github.com/openai/codex/issues/${issue.number}`,
+      url: `https://github.com/openai/codex/issues/${encodeURIComponent(issue.number)}`,
       isReply: false,
       source: sourceMeta(source)
     })).filter((item) => item.id && item.text);

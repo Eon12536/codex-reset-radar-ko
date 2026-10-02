@@ -4,7 +4,11 @@
   const MAX_CREDITS = 100;
 
   function number(value) {
-    if (value === null || value === undefined || value === "") return null;
+    // API schema failures must stay unknown. JavaScript coerces booleans,
+    // empty arrays and whitespace to zero, which can fabricate full quota
+    // or erase the credit baseline before a false "new grant" alert.
+    if (!["number", "string"].includes(typeof value) ||
+        (typeof value === "string" && value.trim() === "")) return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -28,22 +32,34 @@
     return Math.round(seconds * 1000);
   }
 
+  function windowDuration(raw) {
+    const minutes = number(raw?.window_duration_mins ?? raw?.windowDurationMins);
+    return integer(raw?.limit_window_seconds ?? (minutes === null ? null : minutes * 60));
+  }
+
+  function windowKind(seconds) {
+    return seconds === FIVE_HOURS ? "fiveHour" : seconds === WEEK ? "weekly" : "generic";
+  }
+
   function normalizeWindow(raw, now = Date.now(), id = "primary") {
     if (!raw || typeof raw !== "object") return null;
-    const usedPercent = percent(raw.used_percent ?? raw.usedPercent);
+    const rawUsed = raw.used_percent ?? raw.usedPercent;
+    const usedPercent = percent(rawUsed);
     if (usedPercent === null) return null;
-    const durationMinutes = raw.window_duration_mins ?? raw.windowDurationMins;
-    const windowSeconds = integer(raw.limit_window_seconds ?? (durationMinutes === undefined ? null : Number(durationMinutes) * 60));
+    const windowSeconds = windowDuration(raw);
     const afterSeconds = integer(raw.reset_after_seconds ?? raw.resetAfterSeconds);
     const explicitReset = epochMs(raw.reset_at ?? raw.resets_at ?? raw.resetsAt);
     const resetAt = explicitReset || (afterSeconds !== null && afterSeconds >= 0
       ? now + afterSeconds * 1000
       : null);
-    const kind = windowSeconds === FIVE_HOURS ? "fiveHour" : windowSeconds === WEEK ? "weekly" : "generic";
+    const kind = windowKind(windowSeconds);
     return {
       id,
       kind,
       usedPercent,
+      // Display rounding must never turn e.g. 0.4% used into a reset event.
+      usedPercentExact: ["number", "string"].includes(typeof rawUsed) && String(rawUsed).trim() !== "" &&
+        Number(rawUsed) >= 0 && Number(rawUsed) <= 100 ? Number(rawUsed) : null,
       remainingPercent: 100 - usedPercent,
       windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
       resetAt,
@@ -66,11 +82,18 @@
   function normalizeUsage(data, options = {}) {
     const now = options.now ?? Date.now();
     const rateLimit = data?.rate_limit || data?.rateLimits || {};
-    const candidates = [
-      normalizeWindow(rateLimit.primary_window || rateLimit.primary, now, "primary"),
-      normalizeWindow(rateLimit.secondary_window || rateLimit.secondary, now, "secondary")
-    ].filter(Boolean);
-    const windows = dedupeWindowKinds(candidates);
+    const rawWindows = [rateLimit.primary_window || rateLimit.primary, rateLimit.secondary_window || rateLimit.secondary];
+    const candidates = rawWindows.map((raw, index) => normalizeWindow(raw, now, index ? "secondary" : "primary"));
+    const windows = dedupeWindowKinds(candidates.filter(Boolean));
+    // A malformed reported window is distinct from an absent window. Keep
+    // only its kind so the recovery detector can invalidate that comparison
+    // without presenting the malformed value as quota.
+    const invalidWindowKinds = [...new Set(rawWindows.flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object" || candidates[index] ||
+          !["used_percent", "usedPercent"].some(key => Object.hasOwn(raw, key))) return [];
+      const kind = windowKind(windowDuration(raw));
+      return kind === "generic" ? [] : [kind];
+    }))];
     const embeddedCount = integer(
       data?.rate_limit_reset_credits?.available_count ??
       data?.rateLimitResetCredits?.availableCount
@@ -80,6 +103,7 @@
     }
     return {
       windows,
+      ...(invalidWindowKinds.length ? { invalidWindowKinds } : {}),
       plan: typeof data?.plan_type === "string" ? data.plan_type : data?.planType || null,
       allowed: rateLimit.allowed !== false,
       limitReached: Boolean(rateLimit.limit_reached ?? rateLimit.limitReached ?? rateLimit.allowed === false),
@@ -104,12 +128,16 @@
   }
 
   function normalizeCredits(data) {
-    if (!data || typeof data !== "object") return null;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const countValue = data.available_count ?? data.availableCount;
+    const rawCount = integer(countValue);
+    if ((countValue !== undefined && (rawCount === null || rawCount < 0 || rawCount > MAX_CREDITS)) ||
+        (rawCount === null && !Array.isArray(data.credits))) return null;
+    if (Array.isArray(data.credits) && data.credits.some(row => !row || typeof row !== "object" || Array.isArray(row))) return null;
     const credits = Array.isArray(data.credits)
       ? data.credits.map(normalizeCredit).filter(Boolean)
       : [];
     const derivedCount = credits.filter((credit) => credit.available).length;
-    const rawCount = integer(data.available_count ?? data.availableCount);
     const availableCount = rawCount === null
       ? derivedCount
       : Math.min(MAX_CREDITS, Math.max(0, rawCount));

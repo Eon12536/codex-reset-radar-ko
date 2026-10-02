@@ -31,6 +31,13 @@
     return systemTimeZone();
   }
 
+  // Country is a presentation preference. Do not change quiet-hour scheduling
+  // or the source zone used to interpret the author's original words.
+  function countryZone() {
+    const country = root.RadarI18n?.country?.();
+    return { zone: country?.timeZone || 'Asia/Seoul', label: country?.timeLabel || '한국' };
+  }
+
   function parseTimestamp(value) {
     if (value === null || value === undefined || value === "") return null;
     if (typeof value === "number" || /^\d+(?:\.\d+)?$/.test(String(value))) {
@@ -54,8 +61,9 @@
       month: "short",
       day: "numeric",
       weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit"
+      hour: "numeric",
+      minute: "2-digit",
+      hourCycle: "h12"
     }).format(new Date(timestamp));
   }
 
@@ -64,8 +72,9 @@
     if (!Number.isFinite(timestamp)) return "--:--";
     return new Intl.DateTimeFormat(selectedLocale, {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
-      hour: "2-digit",
-      minute: "2-digit"
+      hour: "numeric",
+      minute: "2-digit",
+      hourCycle: "h12"
     }).format(new Date(timestamp));
   }
 
@@ -144,6 +153,7 @@
     isValidTimeZone,
     resolveTimeZone,
     parseTimestamp,
+    countryZone,
     formatDateTime,
     formatTime,
     relativeDuration,

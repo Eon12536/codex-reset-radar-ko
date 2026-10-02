@@ -64,3 +64,39 @@ As of the reference revision
 license file through GitHub's license endpoint. No source code from that
 repository is included in Codex Reset Radar. The signal classifier and browser
 implementation are independently written.
+
+## Public author profile pictures
+
+The small JPEG files in `assets/profiles/` identify the authors of linked public posts. Observed on X on 2026-09-29; copyright and trademark rights remain with their respective owners. These images are not covered by the project's MIT license and do not imply endorsement.
+
+- Tibo (@thsottiaux): https://pbs.twimg.com/profile_images/2093807917833281537/2yBgpwVV_normal.jpg
+- Vaibhav (VB) Srivastav (@reach_vb): https://pbs.twimg.com/profile_images/1509901130670747666/JFlrSzB4_normal.jpg
+- OpenAI (@OpenAI): https://pbs.twimg.com/profile_images/1885410181409820672/ztsaR0JW_normal.jpg
+
+## Codex Quota Monitor MIT license
+
+Copyright (c) 2026 The Codex Quota Monitor team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Branding artwork
+
+The user-supplied artwork in scripts/brand-source.png and derived icons includes
+third-party likenesses and OpenAI branding. The software MIT license does not
+grant rights in third-party likenesses or trademarks and does not imply endorsement.
