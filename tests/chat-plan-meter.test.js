@@ -67,6 +67,22 @@ test('user plan selection applies only to the verified account without changing 
   assert.equal(Counter.view(w.local).plan, 'pro100'); // Permission failure preserves the prior selection.
 });
 
+test('an older popup cannot restore a retired Pro 200 allowance through a stale selection message', async () => {
+  const { w } = worker();
+  await w.context.ensureSecurity(); await w.context.refreshChatAccount({ force: true });
+  const accountKey = w.local.chatAccount.key;
+  const events = [{ key: 'e'.repeat(64), model: 'astra', at: now }];
+  w.local.chatCounters[accountKey].events = events;
+  assert.equal((await w.send({ type: 'SET_CHAT_PLAN_CHOICE', accountKey, plan: 'pro200' }, w.sender('popup'))).ok, true);
+  assert.equal(w.local.chatCounters[accountKey].planChoice.plan, 'pro200Current');
+  const view = Counter.view(w.local);
+  assert.equal(view.plan, 'pro200Current');
+  assert.equal(view.count.astra, 1);
+  assert.equal(view.count.remaining, null);
+  assert.deepEqual(view.meters, []);
+  assert.deepEqual(w.local.chatCounters[accountKey].events, events);
+});
+
 test('refresh preserves dated plan evidence instead of erasing it after one day', async () => {
   const { w } = worker();
   await w.context.ensureSecurity(); await w.context.refreshChatAccount({ force: true });

@@ -29,12 +29,19 @@ test('old automatic Pro 200 evidence cannot silently apply grandfathered numeric
   }
 });
 
-test('an explicit dated legacy selection remains an estimate and preserves counted messages', () => {
+test('retired Pro 200 selections resolve to the single current tier without changing stored history', () => {
   const state = { ...profile('pro200Current'), planChoice: { plan: 'pro200', at: now } };
+  const before = structuredClone(state);
   const evidence = Counter.planEvidence(state, 'pro', now);
-  assert.equal(evidence.plan, 'pro200');
+  assert.equal(evidence.plan, 'pro200Current');
   assert.equal(evidence.source, 'selected');
-  assert.equal(Counter.summary(state, evidence.plan, now).astraRemaining, 199);
-  assert.deepEqual(state.events, [event]);
+  const view = Counter.view({ settings: { monitorChat: true },
+    chatAccount: { status: 'connected', checkedAt: now, key: 'account', family: 'pro' },
+    chatCounters: { account: state } }, now);
+  assert.equal(view.label, 'Pro $200');
+  assert.equal(view.count.astra, 1);
+  assert.equal(view.count.remaining, null);
+  assert.deepEqual(view.meters, []);
+  assert.deepEqual(state, before);
   assert.equal(Counter.planEvidence(state, 'business', now).plan, null);
 });

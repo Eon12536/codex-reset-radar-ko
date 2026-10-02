@@ -97,7 +97,7 @@ test('selecting automatic actually verifies billing and preserves the current me
   const accountKey = await selected(w);
   const create = w.context.chrome.tabs.create;
   w.context.chrome.tabs.create = async options => {
-    assert.equal(Counter.view(w.local).plan, 'pro200');
+    assert.equal(Counter.view(w.local).plan, 'pro200Current');
     assert.equal(Counter.view(w.local).planSource, 'selected');
     assert.equal(Counter.view(w.local).planCheck.status, 'running');
     return create(options);
@@ -142,7 +142,7 @@ test('late automatic results cannot overwrite a newer manual choice', async () =
   const { scope } = await w.send({ type: 'CHAT_COUNT_STATUS' }, from);
   assert.equal((await w.send({ type: 'CHAT_PLAN_OBSERVED', scope, heading: 'ChatGPT Pro 5x' }, from)).ok, false);
   assert.equal((await attempt).ok, false);
-  assert.equal(Counter.view(w.local).plan, 'pro200');
+  assert.equal(Counter.view(w.local).plan, 'pro200Current');
   assert.equal(Counter.view(w.local).planSource, 'selected');
 });
 

@@ -38,7 +38,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.61";
+const NOTIFICATION_BUILD = "0.2.62";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -422,10 +422,11 @@ async function connectChatAccount({ active = true } = {}) {
 
 async function chooseChatPlan(message) {
   const epoch = stateEpoch;
+  const plan = RadarChatCounter.currentPlan(message.plan);
   const account = await refreshChatAccount({ force: true });
   if (account.status !== 'connected' || account.key !== message.accountKey ||
-      (message.plan !== 'auto' && RadarChatCounter.PLANS[message.plan]?.family !== account.family)) return { ok: false };
-  if (message.plan === 'auto') {
+      (plan !== 'auto' && RadarChatCounter.PLANS[plan]?.family !== account.family)) return { ok: false };
+  if (plan === 'auto') {
     // Switching to automatic is a verification transaction. Keep the existing
     // choice until a current Billing observation actually replaces it.
     const result = await refreshChatPlan(account.key);
@@ -446,7 +447,7 @@ async function chooseChatPlan(message) {
     const { chatAccount, chatCounters = {} } = await chrome.storage.local.get(['chatAccount', 'chatCounters']);
     if (epoch !== stateEpoch || !(await loadSettings()).monitorChat || chatAccount?.key !== account.key) return { ok: false };
     chatCounters[account.key] = { ...chatCounters[account.key], updatedAt: Date.now(),
-      planChoice: { plan: message.plan, at: Date.now() }, planChoiceRevision: crypto.randomUUID(), planCheck: null };
+      planChoice: { plan, at: Date.now() }, planChoiceRevision: crypto.randomUUID(), planCheck: null };
     await chrome.storage.local.set({ chatCounters: boundedChatProfiles(chatCounters, account.key) });
     return { ok: true };
   });

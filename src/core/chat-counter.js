@@ -6,7 +6,8 @@
   // of the legacy Pro 200 Chat allowance.
   const PLANS = Object.freeze({
     pro100: { label: 'Pro $100 · 5x', family: 'pro', shared: 50, days: 7 },
-    pro200: { label: 'Pro $200 · 9/27', family: 'pro', astraWeekly: 200, solDaily: 170, combinedDaily: 200 },
+    // Retained only for historical reference; never offered as a current plan.
+    pro200: { label: 'Pro $200 · 9/27', family: 'pro', retired: true, astraWeekly: 200, solDaily: 170, combinedDaily: 200 },
     pro200Current: { label: 'Pro $200', family: 'pro' },
     pro500: { label: 'Pro $500', family: 'pro' },
     businessStandard: { label: 'Business Standard', family: 'business', shared: 15, days: 30 },
@@ -44,19 +45,22 @@
       return { family: family(auth.chatgpt_plan_type), user, account };
     } catch { return null; }
   }
+  function currentPlan(id) {
+    return id === 'pro200' ? 'pro200Current' : id;
+  }
   function verifiedPlan(profile, accountFamily, now = Date.now()) {
-    const id = profile?.plan === 'pro200' ? 'pro200Current' : profile?.plan;
+    const id = currentPlan(profile?.plan);
     const plan = PLANS[id];
     return plan && plan.family === accountFamily && profile.planAt <= now && now - profile.planAt < DAY ? id : null;
   }
   function planEvidence(profile, accountFamily, now = Date.now()) {
     const choice = profile?.planChoice;
     if (PLANS[choice?.plan]?.family === accountFamily && choice.at <= now && now - choice.at < 30 * DAY &&
-        choice.at >= (profile?.planAt || 0)) return { plan: choice.plan, source: 'selected', at: choice.at };
+        choice.at >= (profile?.planAt || 0)) return { plan: currentPlan(choice.plan), source: 'selected', at: choice.at };
     const fresh = verifiedPlan(profile, accountFamily, now);
     if (fresh) return { plan: fresh, source: 'verified', at: profile.planAt };
     if (PLANS[profile?.plan]?.family === accountFamily && profile.planAt <= now && now - profile.planAt < WEEK)
-      return { plan: profile.plan === 'pro200' ? 'pro200Current' : profile.plan, source: 'cached', at: profile.planAt };
+      return { plan: currentPlan(profile.plan), source: 'cached', at: profile.planAt };
     return { plan: null, source: null, at: null };
   }
   function meters(count, plan) {
@@ -192,6 +196,6 @@
       }
     };
   }
-  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, identity, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
+  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, identity, currentPlan, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
   if (typeof module !== 'undefined') module.exports = root.RadarChatCounter;
 })(globalThis);

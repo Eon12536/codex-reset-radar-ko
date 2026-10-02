@@ -199,12 +199,11 @@ function renderChat(data, settings) {
   $("chatCountValue").textContent = "추정";
   renderChatMeters(view);
   $("chatCountBreakdown").textContent = !view.connected ? "계정 연결 후 요금제와 사용 모델을 확인합니다." :
-    view.plan === "pro200" ? `사용 · Astra ${count.astra}회/7일 · Sol Pro ${count.sol}회/24시간` :
     `${settings.syncChatHistory ? '기록 집계' : 'Chrome 관측'} · Astra ${count.astra}회 + Sol Pro ${count.sol}회` + (!view.plan && needsTier ? " · 한도 기준 선택 필요" : "");
   $("enableChatCounter").hidden = Boolean(view.connected && (view.plan || !needsTier) && !data.chatCounterError);
   $("enableChatCounter").textContent = !settings.monitorChat ? "계정 연결" : !view.connected ? "연결 확인" : "요금제 확인";
   $("enableChatCounter").dataset.action = !settings.monitorChat || data.chatCounterError ? "enable" : "connect";
-  const allowance = count.limit ? (view.plan === "businessStandard" ? "공유 월 " : "공유 주 ") + count.limit + "회" : view.plan === "pro200" ? "일간·주간 한도 함께 반영" : view.plan ? "고정 잔여 횟수 미공개" : ['enterprise', 'edu'].includes(view.family) ? "워크스페이스별 한도" : needsTier ? "한도 확인 전" : "고정 잔여 횟수 미공개";
+  const allowance = count.limit ? (view.plan === "businessStandard" ? "공유 월 " : "공유 주 ") + count.limit + "회" : view.plan ? "고정 잔여 횟수 미공개" : ['enterprise', 'edu'].includes(view.family) ? "워크스페이스별 한도" : needsTier ? "한도 확인 전" : "고정 잔여 횟수 미공개";
   $("chatOtherModels").hidden = !view.connected;
   $("chatOtherModels").textContent = `최근 7일 · Sol 일반 ${view.modelCounts.solStandard}회 · Luna ${view.modelCounts.luna}회`;
   $("chatOtherModels").title = '일반 Sol·Luna는 Astra·Sol Pro 한도에서 차감하지 않습니다. 모델이 명확한 기록만 집계합니다.';
@@ -217,8 +216,7 @@ function renderChat(data, settings) {
   $("chatCountStatus").textContent = view.planCheck?.status === 'running' ? '요금제 확인 중…' :
     view.connected && needsTier && ['timeout', 'error', 'stopped', 'failed'].includes(view.planCheck?.status) ?
       view.plan ? '자동 확인 실패 · 기존 기준으로 표시 중' : '자동 확인 실패 · 위에서 요금제를 선택해 주세요.' :
-      view.connected && view.plan && !view.meters.length ? msg('chatQuotaUnknown') :
-      view.plan === 'pro200' ? msg('chatLegacyPolicy') : '';
+      view.connected && view.plan && !view.meters.length ? msg('chatQuotaUnknown') : '';
 }
 
 function renderChatMeters(view) {
@@ -251,7 +249,7 @@ function renderChatMeters(view) {
   const family = view.family;
   if (select.dataset.family !== family) {
     select.replaceChildren();
-    const options = [['auto', '자동 확인'], ...Object.entries(RadarChatCounter.PLANS).filter(([, policy]) => policy.family === family).map(([id, policy]) => [id, policy.label])];
+    const options = [['auto', '자동 확인'], ...Object.entries(RadarChatCounter.PLANS).filter(([, policy]) => policy.family === family && !policy.retired).map(([id, policy]) => [id, policy.label])];
     for (const [value, label] of options) { const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option); }
     select.dataset.family = family;
   }

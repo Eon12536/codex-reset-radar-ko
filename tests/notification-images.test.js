@@ -105,9 +105,9 @@ test('diagnostic messages do not depend on account/feed startup and do not revea
   w.context.chrome.storage.local.setAccessLevel = async () => { throw new Error('unrelated startup failure'); };
   w.context.chrome.notifications.getPermissionLevel = async () => 'granted';
   const result = await w.send({ type: 'TEST_NOTIFICATION' }, w.sender('options'));
-  assert.equal(result.ok, true); assert.equal(result.version, '0.2.61');
+  assert.equal(result.ok, true); assert.equal(result.version, manifest.version);
   const status = await w.send({ type: 'NOTIFICATION_STATUS' }, w.sender('options'));
-  assert.equal(status.ok, true); assert.equal(status.version, '0.2.61');
+  assert.equal(status.ok, true); assert.equal(status.version, manifest.version);
   assert.equal(status.delivery.status, 'accepted'); assert.equal(status.delivery.test, true);
   assert.equal(status.delivery.title, undefined); assert.equal(status.delivery.id, undefined);
   assert.equal(w.requests.length, 0);

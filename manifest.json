@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Codex 리셋 레이더 · 한국어",
-  "version": "0.2.61",
+  "version": "0.2.62",
   "description": "OpenAI·Tibo·VB의 리셋·출시·행사 소식, Codex 잔여량과 리셋권을 확인하고 브라우저 알림을 받습니다. 8개국·7개 언어를 지원합니다.",
   "default_locale": "ko",
   "minimum_chrome_version": "120",
@@ -42,7 +42,7 @@
     }
   },
   "options_page": "src/options/options.html",
-  "version_name": "0.2.61 · 전체 검수 및 갱신 안정화",
+  "version_name": "0.2.62 · 요금제 선택 정리",
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'; connect-src 'self' data: https://chatgpt.com https://api.dayclaw.com https://status.openai.com https://codex-resets.com https://api.github.com; img-src 'self' data: https://pbs.twimg.com/profile_images/; style-src 'self' 'unsafe-inline'"
   }
