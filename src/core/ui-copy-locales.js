@@ -1,7 +1,15 @@
 // Local interface translations only. Country labels and original posts stay intact.
 (function(root){
   const languages=['ja','zh_CN','fr','es','it'];
-  const rows=`Only plans matching your signed-in account type can be selected.|ログイン中のアカウントと同じ種類のプランのみ選択できます。|只能选择与已登录账户类型相同的套餐。|Seuls les forfaits correspondant au type de votre compte connecté peuvent être sélectionnés.|Solo puedes seleccionar planes del mismo tipo que tu cuenta conectada.|Puoi selezionare solo piani dello stesso tipo del tuo account connesso.
+  const rows=`Reset propagation fix|リセット反映の修正|重置到账修复|Correction de propagation du reset|Corrección de propagación del reset|Correzione della propagazione del reset
+Reset investigation and remediation|リセット調査・補償|重置调查与补偿|Enquête et correction du reset|Investigación y corrección del reset|Indagine e correzione del reset
+Reset update|リセット続報|重置后续|Suivi du reset|Actualización del reset|Aggiornamento del reset
+Follow-up post|続報|后续公告|Publication de suivi|Publicación de seguimiento|Post di aggiornamento
+Reset announcements, updates and credit grants|リセット予告・続報・付与通知|重置预告、后续和重置券通知|Annonces, suivis et crédits de reset|Anuncios, actualizaciones y créditos de reset|Annunci, aggiornamenti e crediti di reset
+Reset propagation investigation and remediation · additional reset and timing unconfirmed|リセット反映の調査・補償案内 · 追加リセット・時刻は未確定|重置未到账问题调查与补偿说明 · 额外重置及时间未确认|Enquête et correction de propagation · reset supplémentaire et horaire non confirmés|Investigación y corrección de propagación · reset adicional y horario sin confirmar|Indagine e correzione della propagazione · reset aggiuntivo e orario non confermati
+Reset propagation fix · additional grants and your account recovery need separate confirmation|リセット反映の修正案内 · 追加付与・自分の利用枠回復は別途確認|重置到账修复说明 · 额外发放和个人额度恢复需另行确认|Correction de propagation · crédits supplémentaires et récupération de votre compte à vérifier|Corrección de propagación · créditos adicionales y recuperación de tu cuenta por confirmar|Correzione della propagazione · crediti aggiuntivi e recupero del tuo account da verificare
+Notifies once about qualifying reset announcements, follow-up fixes, completed resets and banked reset grants. Your own quota recovery is checked separately.|対象のリセット予告・続報・完了・付与を一度通知します。自分の利用枠回復は別途確認します。|对符合条件的重置预告、后续修复、完成和重置券发放各通知一次。个人额度恢复单独确认。|Signale une fois les annonces, corrections, resets terminés et crédits admissibles. La récupération de votre quota est vérifiée séparément.|Avisa una vez de anuncios, correcciones, resets completados y créditos válidos. Tu recuperación de cuota se comprueba por separado.|Avvisa una volta per annunci, correzioni, reset completati e crediti validi. Il recupero della tua quota è verificato separatamente.
+Only plans matching your signed-in account type can be selected.|ログイン中のアカウントと同じ種類のプランのみ選択できます。|只能选择与已登录账户类型相同的套餐。|Seuls les forfaits correspondant au type de votre compte connecté peuvent être sélectionnés.|Solo puedes seleccionar planes del mismo tipo que tu cuenta conectada.|Puoi selezionare solo piani dello stesso tipo del tuo account connesso.
 Official schedule · Pinned|公式日程・固定|官方日程 · 置顶|Programme officiel · Épinglé|Programa oficial · Fijado|Programma ufficiale · In evidenza
 Ends · Korea|終了・韓国|结束 · 韩国|Fin · Corée|Fin · Corea|Fine · Corea
 Event schedule|イベント日程|活动日程|Calendrier des événements|Calendario de eventos|Calendario eventi

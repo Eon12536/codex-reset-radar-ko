@@ -38,7 +38,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.63";
+const NOTIFICATION_BUILD = "0.2.64";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -966,7 +966,7 @@ function confidenceAllowed(confidence, threshold) {
 }
 
 function reportNotificationOptions(report) {
-  return { title: report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + ' · Banked reset 지급 공지' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
+  return { title: report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + ' · Banked reset 지급 공지' : report.assessment.report === 'reset-update' ? RadarSignals.authorName(report) + ' · 리셋 후속 안내' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
     message: `${RadarTime.formatDateTime(report.createdAt, 'Asia/Seoul', 'ko-KR')} 게시 · ${report.assessment.reason}. 원문과 내 계정 잔여량을 확인하세요.`,
     buttons: [{ title: '원문 보기' }] };
 }

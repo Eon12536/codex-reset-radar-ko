@@ -34,6 +34,8 @@ test('all eight countries persist and render their interface language without tr
    assert.doesNotMatch(a.i18n.t(key), /[가-힣]/, key);
   assert.equal(reopened.copy.translate('Resets all propagated. That will be all.'),'Resets all propagated. That will be all.');
   assert.equal(a.storage.settings.timezoneOverride,'Asia/Seoul');
-  if(value!=='ko-KR') for(const text of ['Tibo · VB 리셋 소식','국가 선택','언어를 저장했습니다.','원글·답글 23개 확인'])assert.doesNotMatch(a.copy.translate(text),/[가-힣]/);
+  if(value!=='ko-KR') for(const text of ['Tibo · VB 리셋 소식','국가 선택','언어를 저장했습니다.','원글·답글 23개 확인',
+    '리셋 후속', '후속 안내', '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정',
+    '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인', '리셋 예고·후속·완료·리셋권 공지 알림'])assert.doesNotMatch(a.copy.translate(text),/[가-힣]/);
  }
 });

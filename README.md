@@ -4,7 +4,7 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 
 ## 설치와 업데이트
 
-1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.63.zip`을 내려받아 압축을 풉니다.
+1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.64.zip`을 내려받아 압축을 풉니다.
 2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
 4. 확장을 고정하고 필요한 조회 기능을 직접 켭니다. 계정 조회와 선택형 화면 접근은 동의 후에만 작동합니다.
@@ -12,6 +12,8 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 업데이트는 기존 설치 폴더에 최신 파일을 덮어쓴 다음 확장 관리에서 **새로고침**하세요. 같은 확장을 삭제하지 않고 업데이트하면 로컬 설정·읽음·집계 기록을 유지합니다. ChatGPT 탭도 새로고침하세요. ZIP 설치는 자동 업데이트되지 않습니다.
 
 ## 주요 기능
+
+- 일부 계정의 리셋 반영 문제 조사·보완 및 인용된 수정 완료 안내 알림 (0.2.64)
 
 - Codex 5시간·주간 잔여량, 리셋 시각, 리셋권 보유·만료 상태
 - X 공지가 없어도 계정의 Banked reset 증가를 별도로 감지

@@ -128,10 +128,16 @@ test('X access is optional, with no broad tab access or persistent content scrip
   assert.doesNotMatch(source, /\bfetch\s*\(|document\.cookie|localStorage|sessionStorage|\.innerHTML\s*=/);
 });
 
-function article(post, { quoted = false, emoji = false, moreText, moreQuoted = false } = {}) {
+function article(post, { quoted = false, emoji = false, moreText, moreQuoted = false, quotePost } = {}) {
   let expanded = false;
   const textNode = text => ({ nodeType: 3, textContent: text });
   const node = { querySelectorAll(selector) {
+    if (selector === '[role="link"]:not(a)') return quotePost ? [{ querySelector(selector) {
+      if (selector === 'time') return { getAttribute: () => quotePost.createdAt };
+      if (selector === '[data-testid="tweetText"]') return { childNodes: [textNode(quotePost.text)] };
+      if (selector === '[data-testid="User-Name"]') return { childNodes: [textNode('Tibo@' + quotePost.author)] };
+      return null;
+    } }] : [];
     const parent = isQuote => selector => selector === 'article[data-testid="tweet"]' ? node
       : selector === '[role="link"]:not(a)' ? isQuote ? {} : null
       : selector === 'a' ? { getAttribute: () => `/${post.author}/status/${post.id}` } : null;
@@ -164,6 +170,17 @@ async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navig
   const result = await vm.runInContext(fs.readFileSync(require.resolve('../src/x-reader'), 'utf8'), context);
   return { result, scrolls, elapsed };
 }
+
+test('rendered quote evidence stays separate from the author body and resolves via the original timeline', async () => {
+  const parent = row('122', 'thsottiaux', 'Pro 500 did not get the reset. Investigating.');
+  parent.createdAt = new Date(Date.now() - 3600000).toISOString();
+  const fixed = row('123', 'thsottiaux', 'All fixed.');
+  const { result } = await domRead([[article(fixed, { quotePost: parent }), article(parent)]]);
+  const items = Direct.linkQuotedContexts(Direct.normalize(result.rows));
+  assert.equal(items[0].text, fixed.text);
+  assert.equal(items[0].replyContext.id, parent.id);
+  assert.equal(Signals.reports(items)[0].assessment.updateStatus, 'resolved');
+});
 
 test('scroll collection preserves virtualized early rows and catches a later Tuesday reply with its parent', async () => {
   const parent = row('122', 'udiWertheimer', 'you owe us a banked reset');

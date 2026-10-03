@@ -272,6 +272,7 @@
     // The single narrow interrogative exception does not exempt other negation.
     if (isNegated(rhetorical)) return none;
     if (classify(item, options).actionable) return none;
+    if (resetUpdate(item)) return none;
     if (!isCompleted(text) && !/\b(?:don't|do not|stop|never|not)\b/.test(text) &&
         clauses(text).some(part => /^(?:(?:please|let's|time to|go)\s+)?(?:burn(?: through)?|use(?: up)?|spend)\s+(?:(?:those|your|the|remaining|all|extra|spare)\s+){0,3}tokens?\b/.test(part))) {
       return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '',
@@ -381,6 +382,7 @@
           !at || at > now + 300000 || now - at > 7 * 86400000) continue;
       const text = normalizedText(item);
       if (classify(item, options).actionable) continue;
+      const update = resetUpdate(item);
       // "Reset should be reflected for everyone" reports propagation, unlike
       // the suggestion "we should reset". Keep this exception narrowly scoped.
       const reflected = part => /^resets? should (?:now )?be reflected for everyone\b/.test(part);
@@ -393,13 +395,43 @@
         ((/\b(?:codex|chatgpt|limits?|quotas?|allowance|usage|tokens?)\b/.test(part) &&
           (isCompleted(part) || /\b(?:was|were|we've|i've) (?:just |now )?reset\b/.test(part))) ||
           /^(?:all )?resets? (?:have (?:now )?)?(?:(?:all )?propagated|done|complete|completed)\b/.test(part) || reflected(part)));
-      if (!grant && !completed) continue;
+      if (!grant && !completed && !update) continue;
       unique.set(item.id, { id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url,
-        assessment: { report: grant ? 'credit-grant' : 'completed-reset', actionable: false, confidence: 'high', eventAt: null,
-          reason: grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' } });
+        ...(update && item.replyContext ? { replyContext: item.replyContext } : {}),
+        assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: 'high', eventAt: null,
+          ...(update && !grant && !completed ? { updateStatus: update } : {}),
+          reason: grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
+            update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);
+  }
+
+  function resetUpdate(item) {
+    // Negative reports about a missed reset are useful follow-ups, not a
+    // promise of another reset. Keep them outside predictions and counters.
+    const text = normalizedText(item);
+    if (!isLead(item) || UNRELATED.test(text) || includesAny(text, EXCLUSIONS) ||
+        /\?|\b(?:if|maybe|might|could|rumou?rs?|last year|last month|years? ago)\b/.test(text)) return null;
+    const parent = item.replyContext;
+    const parentAt = root.RadarTime.parseTimestamp(parent?.createdAt);
+    const itemAt = root.RadarTime.parseTimestamp(item.createdAt);
+    const linked = ['quoted-post', 'conversation-before'].includes(parent?.relation) && parent.targetId === item.id &&
+      /^@?(?:thsottiaux|reach_vb|openai)$/i.test(parent.author || '') && referenceId(parent.id) &&
+      parent.url === `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` &&
+      Number.isFinite(parentAt) && Number.isFinite(itemAt) && parentAt <= itemAt && itemAt - parentAt <= 14 * 86400000;
+    const context = linked ? normalizedText(parent) : '';
+    const relevant = value => /\bresets?\b/.test(value) &&
+      /\b(?:codex|chatgpt|limits?|quota|usage|allowance|pro|paid|users?|accounts?)\b/.test(value) &&
+      !UNRELATED.test(value) && !includesAny(value, EXCLUSIONS);
+    if (!relevant(text) && !relevant(context)) return null;
+    const failed = /\b(?:didn't|did not|hasn't|haven't|not|failed|missing|missed|issues?|problems?|delayed)\b.{0,65}\bresets?\b|\bresets?\b.{0,65}\b(?:not|missing|missed|failed|issues?|problems?|delayed|didn't|did not|hasn't|haven't)\b/;
+    const resolved = /\b(?:all fixed|(?:we(?:'ve| have)? |now )?(?:fixed|resolved|patched) (?:the |this |that |it|reset)|made (?:up for|it right))\b/.test(text) &&
+      !/\b(?:not|never|haven't|hasn't|didn't|did not|can't|cannot|won't)\b.{0,30}\b(?:fixed|resolved|patched|made)\b/.test(text);
+    if (resolved && (failed.test(text) || linked && failed.test(context))) return 'resolved';
+    if (failed.test(text) && /\b(?:investigating|looking into|working (?:on|to)|will make (?:up for|it right)|we(?:'ll| will) (?:fix|resolve))\b/.test(text) &&
+        !/\b(?:not|never|won't|will not|can't|cannot)\b.{0,25}\b(?:investigating|looking|working|make|fix|resolve)\b/.test(text)) return 'investigating';
+    return null;
   }
 
   function strongest(items, options = {}) {

@@ -136,6 +136,19 @@
   };
 
   const mode = new URLSearchParams(globalThis.location?.search || "").get("mode");
+  if (mode === 'resetUpdates') {
+    const parent = { id: '2106233145163141249', author: 'thsottiaux', createdAt: new Date(now - 3600000).toISOString(),
+      text: 'Seeing some reports that the Pro 500 didn’t get the reset as expected earlier. Investigating and will make up for it',
+      url: 'https://x.com/thsottiaux/status/2106233145163141249', source: { id: 'codex-lead', weight: 1 } };
+    const fixed = { id: '2106239435461579088', author: 'thsottiaux', createdAt: new Date(now - 1800000).toISOString(),
+      text: 'All fixed. Surprising number of Pro 500 users on here.', url: 'https://x.com/thsottiaux/status/2106239435461579088',
+      source: parent.source, replyContext: { ...parent, relation: 'quoted-post', targetId: '2106239435461579088' } };
+    state.settings.monitorDirectX = true;
+    state.signalSnapshot = { checkedAt: now, activeSignals: [], reports: [fixed, parent] };
+    state.hintSnapshot = { items: [], events: [] };
+    state.publicAlertState = { entries: Object.fromEntries([parent, fixed].map(post => [post.id,
+      { observedAt: now - 60000, expiresAt: now + 86400000 - 60000, publishedAt: Date.parse(post.createdAt) }])) };
+  }
   if (['bankedUnread', 'badgeReadError', 'bankedBaseline', 'publicUnread', 'bankedHeld'].includes(mode)) {
     const accountKey = 'a'.repeat(64);
     state.accountSnapshot.accountKey = accountKey;
@@ -462,10 +475,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.63", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.64", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.63", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.64", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

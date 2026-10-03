@@ -36,10 +36,19 @@
       const avatar = Array.from(article.querySelectorAll('[data-testid^="UserAvatar-Container-"] img')).find(image =>
         own(image) && image.closest('a')?.getAttribute('href')?.replace(/\/$/, '').toLowerCase() === '/' + match[1].toLowerCase());
       const avatarUrl = avatar?.getAttribute('src') || '';
+      const quote = Array.from(article.querySelectorAll('[role="link"]:not(a)')).map(card => {
+        const quotedTime = card.querySelector('time');
+        const quotedBody = card.querySelector('[data-testid="tweetText"]');
+        const quotedAuthor = /@([a-zA-Z0-9_]{1,15})\b/.exec(originalText(card.querySelector('[data-testid="User-Name"]')))?.[1]?.toLowerCase();
+        if (!quotedTime || !quotedBody || !['thsottiaux', 'reach_vb', 'openai'].includes(quotedAuthor)) return null;
+        return { author: quotedAuthor, text: originalText(quotedBody).slice(0, 6000), createdAt: quotedTime.getAttribute('datetime'),
+          truncated: Boolean(card.querySelector('[data-testid="tweet-text-show-more-link"]')) };
+      }).filter(Boolean);
       const previous = rows.at(-1);
       rows.push({ id: match[2], author: match[1], text: originalText(body).slice(0, 6000),
         avatarUrl, createdAt: time.getAttribute("datetime"), url: `https://x.com/${match[1]}/status/${match[2]}`,
         truncated: Array.from(article.querySelectorAll('[data-testid="tweet-text-show-more-link"]')).some(own),
+        ...(quote.length === 1 ? { quotedPost: quote[0] } : {}),
         adjacentId: previous?.id || "" });
       if (rows.length >= 160) break;
     }

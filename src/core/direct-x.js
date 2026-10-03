@@ -9,6 +9,30 @@
   const publicContext = text => resetContext(text) || /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*)\b/i.test(text || "");
   const needsContext = item => item.truncated || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
 
+  function quotedPost(value, now) {
+    if (!value || !trusted(value.author) || typeof value.text !== 'string' || !value.text || value.truncated) return null;
+    const at = Date.parse(value.createdAt);
+    if (!Number.isFinite(at) || at > now + 300000 || now - at > 14 * day) return null;
+    return { author: value.author.toLowerCase(), text: value.text.slice(0, 6000), createdAt: new Date(at).toISOString() };
+  }
+
+  function linkQuotedContexts(items) {
+    // X quote cards have no public status link in the DOM. Resolve only an
+    // exact author/time/body match with a separately collected original post.
+    // A quote alone or its position in a timeline cannot establish identity.
+    return items.map(item => {
+      const quote = item.quotedPost;
+      if (!quote) return item;
+      const matches = items.filter(parent => parent.id !== item.id && !parent.truncated &&
+        parent.author.toLowerCase() === quote.author && parent.createdAt === quote.createdAt &&
+        parent.text === quote.text && Date.parse(parent.createdAt) <= Date.parse(item.createdAt));
+      if (matches.length !== 1) return item;
+      const parent = matches[0];
+      return { ...item, replyContext: { id: parent.id, author: parent.author, text: parent.text,
+        url: parent.url, createdAt: parent.createdAt, relation: 'quoted-post', targetId: item.id } };
+    });
+  }
+
   function normalize(rows, now = Date.now()) {
     const valid = (Array.isArray(rows) ? rows : []).slice(0, 160).flatMap(row => {
       if (!row || typeof row.id !== "string" || typeof row.author !== "string" ||
@@ -18,6 +42,7 @@
       if (!Number.isFinite(at) || at > now + 300000 || now - at > 14 * day) return [];
       return [{ id: row.id, author: row.author, text: row.text.slice(0, 6000), createdAt: new Date(at).toISOString(), url: row.url, truncated: Boolean(row.truncated),
         avatarUrl: typeof row.avatarUrl === "string" && row.avatarUrl.length <= 512 && /^https:\/\/pbs\.twimg\.com\/profile_images\/[a-zA-Z0-9_/-]+\.(?:png|jpe?g|webp)$/.test(row.avatarUrl) ? row.avatarUrl : null,
+        ...(quotedPost(row.quotedPost, now) ? { quotedPost: quotedPost(row.quotedPost, now) } : {}),
         ...(typeof row.adjacentId === "string" ? { adjacentId: row.adjacentId } : {}) }];
     });
     return valid.flatMap((post, index) => {
@@ -194,7 +219,7 @@
       }
       diagnostics.contextPending = pending.length - resolved;
       diagnostics.truncated = items.filter(item => item.truncated).length;
-      return { items, diagnostics, contextCache: Object.fromEntries(Object.entries(cache)
+      return { items: linkQuotedContexts(items), diagnostics, contextCache: Object.fromEntries(Object.entries(cache)
         .sort((a, b) => b[1].checkedAt - a[1].checkedAt).slice(0, 160)) };
     } finally {
       if (tab?.id) {
@@ -208,6 +233,6 @@
     }
   }
 
-  root.RadarDirectX = Object.freeze({ normalize, conversationContext, failureReason, read, PERMISSION, AUTHORS });
+  root.RadarDirectX = Object.freeze({ normalize, conversationContext, linkQuotedContexts, failureReason, read, PERMISSION, AUTHORS });
   if (typeof module !== "undefined") module.exports = root.RadarDirectX;
 })(globalThis);
