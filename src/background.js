@@ -38,7 +38,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.64";
+const NOTIFICATION_BUILD = "0.2.65";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -792,7 +792,7 @@ async function revalidateCachedSignals(epoch) {
   }
   await reconcileSignalNotifications(activeSignals, settings, epoch, cached);
   await reconcileHintNotifications(hints, settings, epoch);
-  await reconcileReportNotifications(reports, settings, epoch);
+  await reconcileReportNotifications(reports, settings, epoch, schedule);
   await reconcileScheduleNotifications(schedule, settings, epoch);
   await reconcileEventNotifications(eventAlerts, settings, epoch);
 }
@@ -931,10 +931,10 @@ async function runSignalRefresh(quiet) {
         await maybeNotifySignal(candidate);
       }
       await reconcileHintNotifications(hints, currentSettings, epoch);
-      await reconcileReportNotifications(reports, currentSettings, epoch);
+      await reconcileReportNotifications(reports, currentSettings, epoch, schedule);
       for (const report of reports) {
         if (epoch !== stateEpoch) break;
-        await maybeNotifyReport(report, currentSettings, epoch);
+        await maybeNotifyReport(report, currentSettings, epoch, schedule);
       }
       for (const hint of hints) {
         if (epoch !== stateEpoch) break;
@@ -971,10 +971,19 @@ function reportNotificationOptions(report) {
     buttons: [{ title: '원문 보기' }] };
 }
 
-async function reconcileReportNotifications(reports, settings, epoch) {
-  const valid = new Map((settings.monitorSignals && settings.monitorLeadSource && settings.notifyOfficialReset ? reports : []).map(item => ['report:' + item.id, item]));
+function reportNotificationEnabled(report, settings, schedule, pending = []) {
+  if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return false;
+  // Prefer the linked schedule notice, which also explains the old forecast.
+  // Keep the follow-up route when schedule alerts are disabled or too old.
+  return !RadarSchedule.changes(schedule).some(change => change.post.id === report.id &&
+    scheduleNotificationEnabled(change, settings) && (Date.now() - RadarTime.parseTimestamp(change.post.createdAt) <= 12 * 3600000 ||
+      pending.some(item => item.id === RadarSchedule.notificationId(change))));
+}
+
+async function reconcileReportNotifications(reports, settings, epoch, schedule) {
   const { pendingNotifications = [] } = await chrome.storage.local.get('pendingNotifications');
   if (epoch !== stateEpoch) return;
+  const valid = new Map(reports.filter(item => reportNotificationEnabled(item, settings, schedule, pendingNotifications)).map(item => ['report:' + item.id, item]));
   await chrome.storage.local.set({ pendingNotifications: pendingNotifications.flatMap(pending => !pending.id.startsWith('report:') ? [pending] :
     valid.has(pending.id) ? [{ ...pending, options: { ...pending.options, ...reportNotificationOptions(valid.get(pending.id)) } }] : []) });
   for (const id of Object.keys(await chrome.notifications.getAll())) {
@@ -990,11 +999,10 @@ function publicResumeBypassesQuiet(item, state, settings) {
   return Boolean(settings.notifyPublicOnResume && entry?.catchUp && entry.expiresAt > Date.now());
 }
 
-async function maybeNotifyReport(report, settings, epoch) {
-  if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return;
+async function maybeNotifyReport(report, settings, epoch, schedule) {
   const id = 'report:' + report.id;
-  const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(['notificationHistory', 'publicAlertState']);
-  if (epoch !== stateEpoch || !RadarPublicAlerts.allowed(report, publicAlertState, notificationHistory)) return;
+  const { notificationHistory = {}, publicAlertState, pendingNotifications = [] } = await chrome.storage.local.get(['notificationHistory', 'publicAlertState', 'pendingNotifications']);
+  if (epoch !== stateEpoch || !reportNotificationEnabled(report, settings, schedule, pendingNotifications) || !RadarPublicAlerts.allowed(report, publicAlertState, notificationHistory)) return;
   await createNotification(id, reportNotificationOptions(report), settings, { bypassQuiet: publicResumeBypassesQuiet(report, publicAlertState, settings) });
 }
 
@@ -1014,10 +1022,10 @@ function scheduleNotificationOptions(change) {
 }
 
 async function reconcileScheduleNotifications(schedule, settings, epoch) {
-  const current = new Map(RadarSchedule.changes(schedule).filter(change => scheduleNotificationEnabled(change, settings))
-    .map(change => [RadarSchedule.notificationId(change), change]));
-  const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
+  const { pendingNotifications = [], notificationHistory = {} } = await chrome.storage.local.get(["pendingNotifications", "notificationHistory"]);
   if (epoch !== stateEpoch) return;
+  const current = new Map(RadarSchedule.changes(schedule).filter(change => scheduleNotificationEnabled(change, settings) &&
+    !schedulePostAlreadyNotified(change, notificationHistory)).map(change => [RadarSchedule.notificationId(change), change]));
   await chrome.storage.local.set({ pendingNotifications: pendingNotifications.flatMap(pending => {
     if (!pending.id.startsWith("schedule:")) return [pending];
     const change = current.get(pending.id);
@@ -1029,6 +1037,15 @@ async function reconcileScheduleNotifications(schedule, settings, epoch) {
   }
 }
 
+function schedulePostAlreadyNotified(change, notificationHistory) {
+  const keys = RadarPublicAlerts.notificationKeys(change.post.id, Object.keys(notificationHistory));
+  // Discovering a prior announcement later must not repeat a delivered post.
+  // A later revision of this schedule (including an edit of the original
+  // announcement) can still notify once under its own fingerprint.
+  return change.post.id !== change.original.id && keys.some(key => !key.startsWith('schedule:') && notificationHistory[key]) &&
+    !keys.some(key => key.startsWith('schedule:') && notificationHistory[key]);
+}
+
 async function maybeNotifySchedule(change, epoch) {
   const settings = await loadSettings();
   if (epoch !== stateEpoch || !scheduleNotificationEnabled(change, settings)) return;
@@ -1036,6 +1053,7 @@ async function maybeNotifySchedule(change, epoch) {
   const id = RadarSchedule.notificationId(change);
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(["notificationHistory", "publicAlertState"]);
   if (epoch !== stateEpoch || notificationHistory[id] || !RadarPublicAlerts.allowed(change.post, publicAlertState, {}, { queued: true })) return;
+  if (schedulePostAlreadyNotified(change, notificationHistory)) return;
   await createNotification(id, scheduleNotificationOptions(change), settings,
     { bypassQuiet: publicResumeBypassesQuiet(change.post, publicAlertState, settings) });
   const delivered = (await chrome.storage.local.get('notificationHistory')).notificationHistory || {};
@@ -1266,7 +1284,7 @@ async function notificationStatus() {
     ...(data.hintSnapshot?.items || []).filter(item => item.assessment?.topic !== 'event'),
     ...RadarEvents.notices(data.hintSnapshot?.eventAlerts).map(notice => ({ ...notice.event.item, assessment: { candidate: true } }))];
   for (const item of new Map(candidates.map(item => [item.id, item])).values()) {
-    const keys = ['signal:', 'hint:', 'report:', 'event:'].map(prefix => prefix + item.id);
+    const keys = RadarPublicAlerts.notificationKeys(item.id, [...Object.keys(history), ...pending.map(item => item.id)]);
     if (pending.some(item => keys.includes(item.id))) publicAlerts.pending++;
     else if (keys.some(key => history[key])) publicAlerts.handled++;
     else if (!RadarPublicAlerts.allowed(item, data.publicAlertState)) publicAlerts.expired++;
@@ -1734,9 +1752,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       bypassQuiet = publicResumeBypassesQuiet(item, publicAlertState, settings);
     }
     if (pending.id.startsWith("schedule:")) {
-      const { scheduleSnapshot } = await chrome.storage.local.get("scheduleSnapshot");
+      const { scheduleSnapshot, notificationHistory = {} } = await chrome.storage.local.get(["scheduleSnapshot", "notificationHistory"]);
       const change = RadarSchedule.changes(scheduleSnapshot).find(change => RadarSchedule.notificationId(change) === pending.id);
-      if (!change || !scheduleNotificationEnabled(change, settings) || !RadarPublicAlerts.allowed(change.post, publicAlertState, {}, { queued: true })) return false;
+      if (!change || !scheduleNotificationEnabled(change, settings) || schedulePostAlreadyNotified(change, notificationHistory) || !RadarPublicAlerts.allowed(change.post, publicAlertState, {}, { queued: true })) return false;
       pending.options = { ...pending.options, ...scheduleNotificationOptions(change) };
       bypassQuiet = publicResumeBypassesQuiet(change.post, publicAlertState, settings);
     }
@@ -1759,9 +1777,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
     }
     if (pending.id.startsWith('report:')) {
       if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return false;
-      const { signalSnapshot } = await chrome.storage.local.get('signalSnapshot');
+      const { signalSnapshot, scheduleSnapshot } = await chrome.storage.local.get(['signalSnapshot', 'scheduleSnapshot']);
       const report = RadarSignals.reports(signalSnapshot?.reports || []).find(item => pending.id === 'report:' + item.id);
-      if (!RadarPublicAlerts.allowed(report, publicAlertState, {}, { queued: true })) return false;
+      if (!report || !reportNotificationEnabled(report, settings, scheduleSnapshot, pendingNotifications) || !RadarPublicAlerts.allowed(report, publicAlertState, {}, { queued: true })) return false;
       pending.options = { ...pending.options, ...reportNotificationOptions(report) };
       bypassQuiet = publicResumeBypassesQuiet(report, publicAlertState, settings);
     }

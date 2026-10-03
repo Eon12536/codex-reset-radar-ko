@@ -2,6 +2,14 @@
   const DAY = 86400000;
   const publicId = id => /^(signal|hint|report|schedule|event):/.test(id || '');
 
+  function notificationKeys(itemId, ids = []) {
+    const keys = ['signal:', 'hint:', 'report:', 'event:'].map(prefix => prefix + itemId);
+    // Schedule keys include both the original post and the changed post, plus
+    // a revision fingerprint. Only the changed post shares this notification.
+    return [...keys, ...ids.filter(id => /^schedule:[^:]+:[^:]+:[a-f0-9]+$/.test(id) &&
+      id.split(':')[2] === String(itemId))];
+  }
+
   // A retained news item is not necessarily a newly detected notification.
   // Remember first observation independently of the classifier/category.
   function observe(previous, items, { knownIds = [], now = Date.now(), catchUpSince = null, catchUpUntil = now } = {}) {
@@ -26,9 +34,9 @@
     const recent = Number.isFinite(at) && at >= now - DAY && at <= now + 300000;
     const fresh = entry ? entry.expiresAt > now || (queued && recent) : recent;
     // Reclassification of one post must not produce a second toast.
-    return fresh && (queued || !['signal:', 'hint:', 'report:', 'event:'].some(prefix => history[prefix + item.id]));
+    return fresh && (queued || !notificationKeys(item.id, Object.keys(history)).some(key => history[key]));
   }
 
-  root.RadarPublicAlerts = Object.freeze({ observe, allowed, publicId });
+  root.RadarPublicAlerts = Object.freeze({ observe, allowed, publicId, notificationKeys });
   if (typeof module !== 'undefined') module.exports = root.RadarPublicAlerts;
 })(globalThis);

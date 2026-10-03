@@ -39,3 +39,14 @@ test('all eight countries persist and render their interface language without tr
     '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인', '리셋 예고·후속·완료·리셋권 공지 알림'])assert.doesNotMatch(a.copy.translate(text),/[가-힣]/);
  }
 });
+
+test('completion, credit and publication-time tooltips do not mix Korean into other country languages',async()=>{
+ const texts=['작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인',
+  '리셋권 지급 안내 · 자동 한도 리셋과 구분',
+  '표시 시각은 게시 시각입니다. 실제 지급·계정 반영 시각은 별도 확인이 필요합니다. 게시 10/3 13:00 · 이미 지난 일정일 수 있습니다.'];
+ for(const value of ['en-US','en-GB','ja-JP','zh-CN','fr-FR','es-ES','it-IT']){
+  const a=locale({value});await a.i18n.ready;
+  for(const text of texts)assert.doesNotMatch(a.copy.translate(text),/[가-힣]/,value+': '+text);
+  assert.equal(a.copy.translate('Resets all propagated.'),'Resets all propagated.');
+ }
+});

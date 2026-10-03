@@ -5,7 +5,23 @@
   const at = post => root.RadarTime.parseTimestamp(post?.createdAt) || 0;
   const text = post => String(post?.text || "").toLowerCase().replace(/[’‘]/g, "'");
   const lead = post => post?.source?.id === "codex-lead" && /^@?(thsottiaux|reach_vb|openai)$/i.test(post.author || "");
-  const refs = post => [post?.inReplyToId, post?.quotedStatusId].filter(Boolean).map(String);
+  const directRefs = post => [post?.inReplyToId, post?.quotedStatusId].filter(Boolean).map(String);
+  function linkedContext(post) {
+    const context = post?.replyContext;
+    if (!['quoted-post', 'conversation-before'].includes(context?.relation) || context.targetId !== post.id ||
+        !/^[1-9]\d{0,24}$/.test(context.id || '') || !/^@?(thsottiaux|reach_vb|openai)$/i.test(context.author || '') ||
+        context.url !== `https://x.com/${context.author}/status/${context.id}` || typeof context.text !== 'string' ||
+        !at(context) || at(context) >= at(post)) return null;
+    return context;
+  }
+  const refs = post => directRefs(post).length ? directRefs(post) : linkedContext(post) ? [linkedContext(post).id] : [];
+  function contextMatches(event, post) {
+    const context = linkedContext(post);
+    if (!context || directRefs(post).length) return true;
+    const parent = [event.original, ...event.updates.map(update => update.post)].find(item => item.id === context.id);
+    return parent && String(parent.author).toLowerCase() === String(context.author).toLowerCase() &&
+      at(parent) === at(context) && parent.text === context.text;
+  }
   const unrelated = /\b(?:password|git|database|workspace|cache|config|claude|gemini|swag|merch|giveaway|meeting|launch|release|reset credits?)\b/;
 
   function delay(post) {
@@ -33,7 +49,10 @@
   function copy(post) {
     return { id: String(post.id), text: String(post.text).slice(0, 6000), author: post.author,
       createdAt: post.createdAt, url: post.url, source: { id: "codex-lead", weight: 1 },
-      isReply: Boolean(post.isReply), inReplyToId: post.inReplyToId || null, quotedStatusId: post.quotedStatusId || null };
+      isReply: Boolean(post.isReply), inReplyToId: post.inReplyToId || null, quotedStatusId: post.quotedStatusId || null,
+      ...(linkedContext(post) ? { replyContext: { id: post.replyContext.id, author: post.replyContext.author,
+        text: post.replyContext.text.slice(0, 6000), createdAt: post.replyContext.createdAt, url: post.replyContext.url,
+        relation: post.replyContext.relation, targetId: post.id } } : {}) };
   }
 
   function latest(event) { return event.updates[event.updates.length - 1]?.post || event.original; }
@@ -74,7 +93,7 @@
       if (changed && (own || now - at(post) <= FRESH)) {
         const references = refs(post);
         const matches = own ? [own] : events.filter(event => at(event.original) < at(post) &&
-          (references.length ? references.some(id => hasId(event, id)) : contextualMatch(event, post)));
+          (references.length ? references.some(id => hasId(event, id)) && contextMatches(event, post) : contextualMatch(event, post)));
         if (matches.length === 1) {
           const event = matches[0];
           const index = event.updates.findIndex(update => update.post.id === post.id);
