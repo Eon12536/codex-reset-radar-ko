@@ -49,7 +49,13 @@
       planFamily = result?.family || null;
       scope = next ? result.scope : null;
       if (next) observePlan();
-    } catch { enabled = false; observer.disconnect(); clearInterval(poll); }
+    } catch (error) {
+      enabled = false; scope = null; planFamily = null;
+      observer.disconnect(); clearTimeout(timer); timer = null;
+      // A closed message port may recover with the next worker request. Only
+      // a replaced/removed extension context makes this document unusable.
+      if (/extension context invalidated/i.test(String(error?.message || ''))) clearInterval(poll);
+    }
     finally { checking = false; }
   }
   function arm(event) {

@@ -38,7 +38,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.66";
+const NOTIFICATION_BUILD = "0.2.67";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;

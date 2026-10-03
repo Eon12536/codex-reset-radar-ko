@@ -7,7 +7,8 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 function page({ billing = false, heading = null } = {}) {
   const listeners = {}, messages = [], timers = new Map();
-  let nodes = [], enabled = true, observe, nextTimer = 0, attached = false;
+  let nodes = [], enabled = true, observe, nextTimer = 0, attached = false, syncFailure = null;
+  const intervals = new Map();
   class Element { closest(selector) { return selector === '[data-testid="send-button"]' ? this : null; } }
   const context = vm.createContext({ URL, Date, Element, location: { href: 'https://chatgpt.com/', pathname: '/', hash: billing ? '#settings/Billing' : '' },
     document: { documentElement: {}, querySelectorAll: () => nodes,
@@ -15,12 +16,15 @@ function page({ billing = false, heading = null } = {}) {
       addEventListener: (type, fn) => { listeners[type] = fn; } },
     MutationObserver: class { constructor(fn) { observe = fn; } observe() { attached = true; } disconnect() { attached = false; } },
     setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; }, clearTimeout: id => timers.delete(id),
-    setInterval: () => 1, clearInterval: () => {},
-    chrome: { runtime: { sendMessage: async message => { messages.push(message); return { ok: true, enabled, scope: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }; }, onMessage: { addListener: fn => { listeners.sync = fn; } } } }
+    setInterval: fn => { intervals.set(1, fn); return 1; }, clearInterval: id => intervals.delete(id),
+    chrome: { runtime: { sendMessage: async message => { messages.push(message); if (message.type === 'CHAT_COUNT_STATUS' && syncFailure) throw syncFailure; return { ok: true, enabled, scope: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }; }, onMessage: { addListener: fn => { listeners.sync = fn; } } } }
   });
   for (const file of ['core/chat-counter.js', 'chat-counter.js']) vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../src', file), 'utf8'), context);
   return {
     messages, attached: () => attached,
+    failSync: error => { syncFailure = error; },
+    periodicSync: async () => { await intervals.get(1)?.(); await settle(); },
+    polling: () => intervals.size > 0,
     setEnabled: value => { enabled = value; listeners.sync({ type: 'CHAT_COUNT_SYNC' }); },
     setRows: rows => { nodes = rows.map(([id, role, slug]) => ({
       get textContent() { throw new Error('Must not read message text'); },
@@ -43,6 +47,32 @@ test('content observer records only metadata after a real local send; duplicate 
   assert.equal(records.length, 1);
   assert.equal(records[0].id, 'new-answer');
   assert.deepEqual(Object.keys(records[0]).sort(), ['id', 'model', 'scope', 'type']);
+});
+
+test('one transient worker connection failure recovers on the next periodic sync without counting old responses', async () => {
+  const p = page(); await settle();
+  p.failSync(new Error('The message port closed before a response was received.'));
+  await p.periodicSync();
+  assert.equal(p.attached(), false);
+  p.failSync(null);
+  p.setRows([['offline-u', 'user', ''], ['offline-a', 'assistant', 'gpt-6-pro']]);
+  await p.periodicSync();
+  assert.equal(p.attached(), true);
+  p.mutation();
+  assert.equal(p.messages.filter(m => m.type === 'CHAT_COUNT_RECORD').length, 0);
+  p.send(true); p.setRows([['resumed-u', 'user', ''], ['resumed-a', 'assistant', 'gpt-6-pro']]);
+  p.mutation(); p.mutation();
+  assert.equal(p.messages.filter(m => m.type === 'CHAT_COUNT_RECORD').length, 1);
+});
+
+test('a permanently invalidated extension context stops polling and cannot record new responses', async () => {
+  const p = page(); await settle();
+  p.failSync(new Error('Extension context invalidated.'));
+  await p.periodicSync();
+  assert.equal(p.polling(), false);
+  assert.equal(p.attached(), false);
+  p.send(true); p.setRows([['u', 'user', ''], ['a', 'assistant', 'gpt-6-pro']]); p.mutation();
+  assert.equal(p.messages.filter(m => m.type === 'CHAT_COUNT_RECORD').length, 0);
 });
 
 test('turning counter OFF disconnects observation and ignores new sends', async () => {

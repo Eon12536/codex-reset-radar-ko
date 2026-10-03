@@ -115,7 +115,8 @@
       currentStage = "navigation";
       signal.throwIfAborted();
       if (tab) {
-        if ((await chrome.tabs.get(tab.id)).url !== currentUrl) throw new Error("X_PAGE_UNAVAILABLE");
+        const current = await chrome.tabs.get(tab.id);
+        if (current.url !== currentUrl || current.active) throw new Error("X_PAGE_UNAVAILABLE");
         currentUrl = url; ownedUrls.add(url);
         await chrome.tabs.update(tab.id, { url });
       } else {
@@ -141,12 +142,14 @@
       });
       signal.throwIfAborted();
       const current = await chrome.tabs.get(tab.id);
+      if (current.active) throw new Error("X_PAGE_UNAVAILABLE");
       if (current.url?.startsWith("https://x.com/i/flow/login")) throw new Error("X_LOGIN_REQUIRED");
       if (current.url !== url) throw new Error("X_PAGE_UNAVAILABLE");
       currentStage = "reading";
       const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 14000);
       signal.throwIfAborted();
-      if ((await chrome.tabs.get(tab.id)).url !== url) throw new Error("X_PAGE_UNAVAILABLE");
+      const afterRead = await chrome.tabs.get(tab.id);
+      if (afterRead.url !== url || afterRead.active) throw new Error("X_PAGE_UNAVAILABLE");
       return result?.find(frame => frame.frameId === 0)?.result;
     }
     try {
@@ -171,7 +174,10 @@
         } catch (error) {
           signal.throwIfAborted(); lastError = error;
           diagnostics.timelines.push({ author: timeline.author, kind: timeline.kind, ok: false, error: failureReason(error), stage: currentStage });
-          if (tab && (await chrome.tabs.get(tab.id).catch(() => ({}))).url !== currentUrl) break;
+          if (tab) {
+            const current = await chrome.tabs.get(tab.id).catch(() => ({}));
+            if (current.url !== currentUrl || current.active) break;
+          }
         }
       }
       const items = authors.flatMap(author => [...collected.values()].filter(item => item.author.toLowerCase() === author).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 160)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, authors.length * 160);
@@ -214,7 +220,8 @@
           signal.throwIfAborted();
           diagnostics.conversationFailures++;
           // A user's navigation or login wall must stop subsequent navigation.
-          if ((await chrome.tabs.get(tab.id).catch(() => ({}))).url !== currentUrl) break;
+          const current = await chrome.tabs.get(tab.id).catch(() => ({}));
+          if (current.url !== currentUrl || current.active) break;
         }
       }
       diagnostics.contextPending = pending.length - resolved;
@@ -225,8 +232,8 @@
       if (tab?.id) {
         try {
           const current = await chrome.tabs.get(tab.id);
-          // Never close a user tab, or our tab after the user navigates away.
-          if (ownedUrls.has(current.url) || current.url?.startsWith("https://x.com/i/flow/login") || current.url === "about:blank")
+          // Selecting or navigating this tab transfers control to the user.
+          if (!current.active && (ownedUrls.has(current.url) || current.url?.startsWith("https://x.com/i/flow/login") || current.url === "about:blank"))
             await chrome.tabs.remove(tab.id);
         } catch { /* It may already have been closed. */ }
       }

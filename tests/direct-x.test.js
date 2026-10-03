@@ -32,15 +32,15 @@ test('only bounded recent Tibo posts and validated public status URLs survive no
   assert.equal(Direct.normalize([{ ...good, text: 'a'.repeat(7000) }])[0].text.length, 6000);
 });
 
-function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline } = {}) {
+function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false } = {}) {
   const calls = [];
   let url = finalUrl;
   const chrome = { permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
     tabs: { create: async options => { calls.push(['create', options]); url = finalUrl; return { id: 33 }; },
-      get: async () => ({ id: 33, status: 'complete', url }), remove: async id => calls.push(['remove', id]),
+      get: async () => ({ id: 33, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),
       update: async (id, options) => { calls.push(['update', options]); url = options.url; },
       onUpdated: { addListener() {}, removeListener() {} } },
-    scripting: { executeScript: async value => { calls.push(['script', value]); if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
+    scripting: { executeScript: async value => { calls.push(['script', value]); if (activateOnScript === true || activateOnScript === calls.filter(c => c[0] === 'script').length) active = true; if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
       return [{ frameId: 0, result: url.startsWith('https://x.com/OpenAI') ? { rows: [row('789', 'OpenAI', 'Join us for DevDay tomorrow')] } : url.startsWith('https://x.com/reach_vb') ? vbTimeline || {rows: [row('456','reach_vb','Reset should be reflected for everyone')]} : [PAGE, POST_PAGE].includes(url)
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
@@ -92,6 +92,31 @@ test('failed execution closes only the tab the reader created', async () => {
   const r = reader({ fail: true });
   await assert.rejects(r.core.read(new AbortController().signal), /mock failure/);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('a scan tab activated by the user is left open and never read or navigated again', async () => {
+  const r = reader({ active: true });
+  await assert.rejects(r.core.read(new AbortController().signal), /UNAVAILABLE/);
+  assert.equal(r.calls.some(c => ['script', 'update', 'remove'].includes(c[0])), false);
+});
+
+test('activation during a scan stops later navigation and preserves the tab the user selected', async () => {
+  const r = reader({ activateOnScript: true });
+  await assert.rejects(r.core.read(new AbortController().signal), /UNAVAILABLE/);
+  assert.equal(r.calls.filter(c => c[0] === 'script').length, 1);
+  assert.equal(r.calls.some(c => ['update', 'remove'].includes(c[0])), false);
+});
+
+test('user activation leaves earlier collected posts available and reports an incomplete scan', async () => {
+  const r = reader({ authors: ['thsottiaux', 'reach_vb'], activateOnScript: 2 });
+  const result = await r.core.read(new AbortController().signal);
+  assert.deepEqual(Array.from(result.items, item => item.id), ['123']);
+  assert.equal(result.diagnostics.stopReason, 'partial');
+  assert.equal(result.diagnostics.timelines.length, 2);
+  assert.equal(result.diagnostics.timelines[1].ok, false);
+  assert.equal(r.calls.filter(c => c[0] === 'script').length, 2);
+  assert.equal(r.calls.filter(c => c[0] === 'update').length, 1);
+  assert.equal(r.calls.some(c => c[0] === 'remove'), false);
 });
 
 test('already cancelled reads do not create a tab', async () => {
