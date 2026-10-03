@@ -592,12 +592,24 @@ $("refreshButton").addEventListener("click", async () => {
 chrome.storage.onChanged.addListener(render);
 render();
 
-(async () => {
-  try {
-    await chrome.runtime.sendMessage({ type: "REFRESH_CHAT_ACCOUNT" });
-    await render();
-  } catch { $("chatCountStatus").textContent = "계정 연결을 확인하지 못했어요. 다시 연결해 주세요."; }
-})();
+let popupChatRefreshJob;
+async function refreshPopupChatAccount({ opening = false } = {}) {
+  if (popupChatRefreshJob) return popupChatRefreshJob;
+  popupChatRefreshJob = (async () => {
+    if (document.visibilityState === 'hidden') return;
+    const data = await chrome.storage.local.get(['settings', 'chatAccount']);
+    if (!RadarSettings.sanitize(data.settings).monitorChat) return;
+    const at = data.chatAccount?.checkedAt;
+    // The card needs a verified identity newer than five minutes. Renew that
+    // identity while visible, without opening Billing or syncing history.
+    if (!opening && Number.isFinite(at) && at <= Date.now() && Date.now() - at < 4 * 60000) return;
+    await chrome.runtime.sendMessage({ type: 'REFRESH_CHAT_ACCOUNT' });
+  })().catch(() => {
+    $('chatCountStatus').textContent = '계정 연결을 확인하지 못했어요. 다시 연결해 주세요.';
+  }).finally(() => { popupChatRefreshJob = null; });
+  return popupChatRefreshJob;
+}
+refreshPopupChatAccount({ opening: true }).then(render);
 
 // Reopening after web sign-in retries only the account read, without enabling
 // monitoring or waiting for the next periodic public-feed check.
@@ -626,5 +638,9 @@ render();
   try { await chrome.runtime.sendMessage({ type: "REFRESH_SIGNALS" }); await render(); } catch { /* The worker records source health. */ }
 })();
 
-// Refresh time-bound banners while the popup remains open; this does not fetch.
-setInterval(() => render(), 30000);
+// Refresh time-bound banners and renew opted-in Chat identity before it ages
+// out. Heavy source, Billing and history requests keep their normal cadence.
+setInterval(async () => { await refreshPopupChatAccount(); await render(); }, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') refreshPopupChatAccount().then(render);
+});
