@@ -38,7 +38,7 @@
   function groups(previous = [], incoming = [], { now = Date.now(), seeds = [] } = {}) {
     const posts = new Map([...previous, ...incoming].filter(item => item?.id).map(item => [String(item.id), item]));
     const events = new Map(seeds.map(event => [event.id, { ...event, related: [event.item] }]));
-    for (const item of [...posts.values()].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))) {
+    for (const item of [...posts.values()].sort((a, b) => root.RadarTime.parseTimestamp(a.createdAt) - root.RadarTime.parseTimestamp(b.createdAt))) {
       const context = root.RadarSignals.eventContext(item);
       const name = EVENT.exec(context)?.[0].toLowerCase();
       const matches = [...events.values()].filter(event => EVENT.exec(root.RadarSignals.eventContext(event.item))?.[0].toLowerCase() === name);

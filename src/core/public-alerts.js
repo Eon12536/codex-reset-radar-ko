@@ -17,8 +17,21 @@
       .filter(([, value]) => value.observedAt > now - 8 * DAY));
     if (!previous) for (const id of knownIds) entries[id] = { observedAt: now, expiresAt: 0 };
     for (const item of items) {
-      if (!item?.id || Object.hasOwn(entries, item.id)) continue;
-      const publishedAt = Date.parse(item.createdAt);
+      if (!item?.id) continue;
+      const publishedAt = root.RadarTime.parseTimestamp(item.createdAt);
+      if (Object.hasOwn(entries, item.id)) {
+        const entry = entries[item.id];
+        // Older workers interpreted zone-less UTC feeds in the host zone.
+        // Repair that observation, preserving its original expiry and the
+        // intentionally silent migration baseline (which has no publishedAt).
+        if (Number.isFinite(entry.publishedAt) && Number.isFinite(publishedAt) && entry.publishedAt !== publishedAt) {
+          const fresh = publishedAt >= entry.observedAt - DAY ||
+            entry.catchUp && publishedAt >= entry.observedAt - 7 * DAY;
+          entries[item.id] = { ...entry, publishedAt,
+            expiresAt: fresh && publishedAt <= entry.observedAt + 300000 ? entry.observedAt + DAY : 0 };
+        }
+        continue;
+      }
       const recent = publishedAt >= now - DAY;
       const missed = Number.isFinite(catchUpSince) && publishedAt >= catchUpSince && publishedAt <= catchUpUntil && publishedAt >= now - 7 * DAY;
       const eligible = Number.isFinite(publishedAt) && publishedAt <= now + 300000 && (recent || missed);
@@ -30,7 +43,7 @@
   function allowed(item, state, history = {}, { queued = false, now = Date.now() } = {}) {
     if (!item?.id) return false;
     const entry = state?.entries?.[item.id];
-    const at = Date.parse(item.createdAt);
+    const at = root.RadarTime.parseTimestamp(item.createdAt);
     const recent = Number.isFinite(at) && at >= now - DAY && at <= now + 300000;
     const fresh = entry ? entry.expiresAt > now || (queued && recent) : recent;
     // Reclassification of one post must not produce a second toast.

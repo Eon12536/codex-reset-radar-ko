@@ -62,7 +62,7 @@
   }
 
   function formatDateTime(value, timeZone, selectedLocale = locale()) {
-    const timestamp = parseTimestamp(value) ?? Number(value);
+    const timestamp = parseTimestamp(value);
     if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
     return formatLocalized(new Date(timestamp), {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
@@ -76,7 +76,7 @@
   }
 
   function formatTime(value, timeZone, selectedLocale = locale()) {
-    const timestamp = parseTimestamp(value) ?? Number(value);
+    const timestamp = parseTimestamp(value);
     if (!Number.isFinite(timestamp)) return "--:--";
     return formatLocalized(new Date(timestamp), {
       timeZone: isValidTimeZone(timeZone) ? timeZone : systemTimeZone(),
@@ -87,7 +87,7 @@
   }
 
   function relativeDuration(target, now = Date.now()) {
-    const timestamp = parseTimestamp(target) ?? Number(target);
+    const timestamp = parseTimestamp(target);
     if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
     const seconds = Math.max(0, Math.round((timestamp - now) / 1000));
     if (seconds < 60) return translated("timeSoon", undefined, "soon");
@@ -107,7 +107,7 @@
   }
 
   function elapsedDuration(since, now = Date.now()) {
-    const timestamp = parseTimestamp(since) ?? Number(since);
+    const timestamp = parseTimestamp(since);
     if (!Number.isFinite(timestamp)) return translated("timeUnknown", undefined, "Time unknown");
     const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
     if (seconds < 60) return translated("justNow", undefined, "just now");

@@ -28,6 +28,7 @@ const PUBLIC_RESUME_ALARM = "codex-reset-radar-public-resume";
 const PUBLIC_RETRY_ALARM = "codex-reset-radar-public-retry";
 const PUBLIC_DELIVERY_ALARM = "codex-reset-radar-public-delivery";
 const BADGE_EXPIRY_ALARM = "codex-reset-radar-badge-expiry";
+const INITIALIZATION_RETRY_ALARM = "codex-reset-radar-initialization-retry";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 const SESSION_URLS = [
@@ -38,7 +39,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.67";
+const NOTIFICATION_BUILD = "0.2.68";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -116,7 +117,23 @@ function ensureSecurity() {
     await revalidateCachedSignals(stateEpoch);
     try { await configureChatCounter(settings.monitorChat); }
     catch { await chrome.storage.local.set({ chatCounterError: true }); }
-  })();
+    if (await chrome.alarms.get?.(INITIALIZATION_RETRY_ALARM)) {
+      await ensureAlarm(settings);
+      await chrome.alarms.clear(INITIALIZATION_RETRY_ALARM);
+    }
+  })().catch(async error => {
+    // A rejected startup is not an initialized worker. Let the next trusted
+    // request/alarm retry the whole initialization instead of caching failure.
+    // First startup may fail before the regular poll alarm exists. Keep a
+    // recovery alarm across worker restarts, without resetting its due time.
+    try {
+      if (!(await chrome.alarms.get?.(INITIALIZATION_RETRY_ALARM))) await chrome.alarms.create(INITIALIZATION_RETRY_ALARM, {
+        delayInMinutes: 1, periodInMinutes: RadarSettings.DEFAULTS.pollMinutes
+      });
+    } catch { /* The next trusted request can still retry if alarms are unavailable. */ }
+    readyPromise = undefined;
+    throw error;
+  });
 }
 
 async function loadSettings() {
@@ -1628,7 +1645,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, RESUME_ALARM].includes(alarm.name)) {
     await preparePublicResume({ onlyIfDelayed: true, scheduledTime: alarm.scheduledTime });
   }
-  if (alarm.name === BADGE_EXPIRY_ALARM) {
+  if (alarm.name === INITIALIZATION_RETRY_ALARM) {
+    await preparePublicResume();
+    await pollAll({ quiet: true });
+  } else if (alarm.name === BADGE_EXPIRY_ALARM) {
     await mutate(async () => {
       const settings = await loadSettings();
       const { accountSnapshot, signalSnapshot, adviceSnapshot } = await chrome.storage.local.get(["accountSnapshot", "signalSnapshot", "adviceSnapshot"]);

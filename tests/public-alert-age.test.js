@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeWorker, json } = require('./helpers/worker');
+global.RadarTime = require('../src/core/time');
 const Alerts = require('../src/core/public-alerts');
 const DAY = 86400000;
 const now = Date.parse('2026-09-27T12:00:00+09:00');

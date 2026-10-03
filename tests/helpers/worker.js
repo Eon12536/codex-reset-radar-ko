@@ -10,6 +10,7 @@ function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
   const local = structuredClone({ settings: { monitorAccount: true, quietHoursEnabled: false }, securitySchema: 1, ...stored });
   const session = { sessionAccessToken: "OLD_TOKEN", sessionAccessTokenExpiresAt: 99 };
   const requests = [], tabs = [], notifications = {}, access = {}, events = {};
+  const alarms = new Map();
   const event = name => ({ addListener(fn) { events[name] = fn; } });
   function area(name, values) {
     return {
@@ -45,7 +46,8 @@ function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
       runtime, i18n:{getMessage:()=>"",getUILanguage:()=>"ko-KR"},
       permissions: { contains: async () => false },
       storage:{local:area("local",local),session:area("session",session)},
-      alarms:{onAlarm:event("alarm"),clear:async()=>{},create:async()=>{}},
+      alarms:{onAlarm:event("alarm"), get:async name=>structuredClone(alarms.get(name)),
+        clear:async name=>alarms.delete(name), create:async(name, options)=>{alarms.set(name, {name, ...options});}},
       action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{},setTitle:async()=>{}},
       notifications:{onClicked:event("notificationClick"),onButtonClicked:event("notificationButton"),getAll:async()=>({...notifications}),clear:async id=>{delete notifications[id];},create:async(id,options)=>{notifications[id]=structuredClone(options);}},
       tabs:{create:async options=>tabs.push(options)}

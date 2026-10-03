@@ -29,6 +29,15 @@ test("seconds and milliseconds resolve to the same timestamp", () => {
   assert.equal(Time.parseTimestamp(1_800_000_000), Time.parseTimestamp(1_800_000_000_000));
 });
 
+test('missing or invalid times never become January 1970, a countdown, or a formatter crash', () => {
+  for (const value of [null, undefined, '', ' ', false, true, [], {}, 1e300, -1]) {
+    assert.equal(Time.formatDateTime(value, 'UTC'), 'Time unknown', String(value));
+    assert.equal(Time.formatTime(value, 'UTC'), '--:--', String(value));
+    assert.equal(Time.relativeDuration(value), 'Time unknown', String(value));
+    assert.equal(Time.elapsedDuration(value), 'Time unknown', String(value));
+  }
+});
+
 test("manual valid timezone overrides system timezone", () => {
   assert.equal(Time.resolveTimeZone({ timezoneMode: "manual", timezoneOverride: "Asia/Shanghai" }), "Asia/Shanghai");
 });
