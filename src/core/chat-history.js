@@ -4,11 +4,11 @@
   const ID = /^[a-zA-Z0-9_-]{6,160}$/;
   const HASH = /^[a-f0-9]{64}$/;
   const MAX_DETAILS = 20;
-  const CLASSIFICATION_VERSION = 2;
+  const CLASSIFICATION_VERSION = 3;
   function timestamp(value) {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value < 1e12 ? value * 1000 : value;
     if (typeof value === 'string' && /^\d{4}-\d\d-\d\dT/.test(value)) {
-      const at = Date.parse(value); return Number.isFinite(at) ? at : null;
+      return root.RadarTime.parseTimestamp(value);
     }
     return null;
   }
@@ -79,7 +79,7 @@
     return 'network';
   }
   async function collect({ read, hash, previous = {}, now = Date.now(), signal, family }) {
-    // Revisit unchanged conversations once after model-classification updates.
+    // Revisit unchanged conversations once after metadata interpretation updates.
     const cache = {}, oldCache = previous.historyClassificationVersion === CLASSIFICATION_VERSION ? previous.historyCache || {} : {};
     for (const [key, v] of Object.entries(oldCache).slice(-200)) if (HASH.test(key) &&
       Number.isFinite(v?.updatedAt) && v.updatedAt > now - 30 * DAY && v.updatedAt <= now &&

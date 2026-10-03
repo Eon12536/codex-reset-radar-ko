@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeWorker, json } = require('./helpers/worker');
 const Counter = require('../src/core/chat-counter');
+require('../src/core/time');
 const History = require('../src/core/chat-history');
 const crypto = require('node:crypto');
 const hash = async value => crypto.createHash('sha256').update(value).digest('hex');

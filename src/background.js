@@ -39,7 +39,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.68";
+const NOTIFICATION_BUILD = "0.2.69";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -361,14 +361,15 @@ async function refreshChatAccount({ force = false } = {}) {
 
 async function chatCountStatus(sender) {
   const account = await refreshChatAccount();
-  if (account.status !== "connected") return { enabled: false };
+  if (account.status !== "connected") return { enabled: false, reason: account.status === "off" ? "off" : "unverified" };
   return mutate(async () => {
     const { chatAccount } = await chrome.storage.local.get("chatAccount");
-    if (!(await loadSettings()).monitorChat || chatAccount?.status !== "connected" || chatAccount.key !== account.key) return { enabled: false };
+    if (!(await loadSettings()).monitorChat) return { enabled: false, reason: "off" };
+    if (chatAccount?.status !== "connected" || chatAccount.key !== account.key) return { enabled: false, reason: "unverified" };
     const document = chatDocument(sender);
     let binding = chatBindings.get(document);
     // A tab from a previous login must reload before contributing to the new login.
-    if (binding && binding.key !== account.key) return { enabled: false };
+    if (binding && binding.key !== account.key) return { enabled: false, reason: "account-changed" };
     if (!binding) {
       binding = { key: account.key, scope: crypto.randomUUID() };
       if (chatBindings.size >= 200) chatBindings.delete(chatBindings.keys().next().value);

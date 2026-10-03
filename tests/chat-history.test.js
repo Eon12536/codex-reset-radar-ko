@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const Counter = require('../src/core/chat-counter.js');
+require('../src/core/time.js');
 const History = require('../src/core/chat-history.js');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { makeWorker, json } = require('./helpers/worker.js');
 const NOW = 1800000000000;
 const DAY = 86400000;
@@ -10,6 +13,41 @@ const hash = async value => crypto.createHash('sha256').update(value).digest('he
 const answer = (id = 'answer-001', model = 'gpt-6-pro', at = NOW - 1000) => ({ id, author: { role: 'assistant' },
   create_time: at / 1000, status: 'finished_successfully', end_turn: true, metadata: { model_slug: model },
   content: { parts: ['PRIVATE_BODY_DO_NOT_STORE'] } });
+
+test('history timestamps and period boundaries are independent of the computer timezone', () => {
+  for (const offset of ['+09:00', '-08:00', '+00:00']) {
+    class HostDate extends Date {
+      static parse(value) { return Date.parse(typeof value === 'string' && /^\d{4}-\d\d-\d\dT[\d:.]+$/.test(value) ? value + offset : value); }
+    }
+    const context = vm.createContext({ Date: HostDate, Intl, URL });
+    for (const file of ['time', 'chat-counter', 'chat-history']) vm.runInContext(fs.readFileSync(require.resolve('../src/core/' + file), 'utf8'), context);
+    for (const age of [1000, 30 * DAY - 1000, 30 * DAY + 1000]) {
+      const at = NOW - age, iso = new Date(at).toISOString();
+      for (const value of [at, at / 1000, iso, iso.slice(0, -1)]) {
+        const result = context.RadarChatHistory.project({ messages: [{ ...answer(), create_time: value }] }, NOW);
+        assert.equal(result.entries.length, age < 30 * DAY ? 1 : 0, `${offset}: ${value}`);
+        if (result.entries.length) assert.equal(result.entries[0].at, at, `${offset}: ${value}`);
+      }
+    }
+  }
+});
+
+test('the timestamp interpretation upgrade revisits version-2 history without losing or duplicating counts', async () => {
+  const at = NOW - 3600000;
+  const fixture = readFixture({ messages: [{ ...answer(), create_time: new Date(at).toISOString().slice(0, -1) }] });
+  const key = await hash('answer-001');
+  const previous = { historyClassificationVersion: 2,
+    historyCache: { [await hash('conversation:conversation-001')]: { updatedAt: NOW, unknown: 0 } },
+    historyEvents: [{ key, model: 'astra', at: at - 9 * 3600000 }],
+    events: [{ key, model: 'astra', at }] };
+  const result = await History.collect({ ...fixture, hash, previous, now: NOW });
+  assert.equal(result.history.scanned, 1); assert.equal(result.history.reused, 0);
+  assert.equal(result.historyClassificationVersion, 3);
+  assert.equal(result.historyEvents.length, 1); assert.equal(result.historyEvents[0].at, at);
+  assert.equal(Counter.summary({ ...previous, ...result }, 'pro100', NOW).used, 1);
+  const again = await History.collect({ ...fixture, hash, previous: result, now: NOW });
+  assert.equal(again.history.reused, 1); assert.equal(again.historyEvents.length, 1);
+});
 const list = (ids = ['conversation-001']) => ({ items: ids.map(id => ({ id, update_time: NOW / 1000, title: 'PRIVATE_TITLE' })), total: ids.length });
 function readFixture(detail, { ids, fail } = {}) {
   const calls = [];

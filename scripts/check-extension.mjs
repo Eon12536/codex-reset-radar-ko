@@ -6,6 +6,10 @@ import vm from "node:vm";
 const root = path.resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 const errors = [];
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+if (manifest.version !== packageJson.version) errors.push('Manifest and package versions must match');
+if (!readme.includes(`CodexReset-Radar-KO-${manifest.version}.zip`)) errors.push('README download filename must use the current version');
 
 function exists(relativePath) {
   if (!fs.existsSync(path.join(root, relativePath))) errors.push(`Missing: ${relativePath}`);
