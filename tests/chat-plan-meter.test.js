@@ -34,11 +34,11 @@ test('dated plan fallback is bounded, labelled, and restricted to the same famil
 });
 
 function worker() {
-  const login = { account: 'account-a' };
+  const login = { account: 'account-a', family: 'pro' };
   const w = makeWorker({ stored: { chatCounterSchema: 2, chatPolicySchema: 1,
     settings: { monitorChat: true, syncChatHistory: false, monitorAccount: false, monitorSignals: false } }, fetcher: async () => json({
     accessToken: 'test.' + Buffer.from(JSON.stringify({ sub: 'user', 'https://api.openai.com/auth': {
-      chatgpt_user_id: 'user', chatgpt_account_id: login.account, chatgpt_plan_type: 'pro' }
+      chatgpt_user_id: 'user', chatgpt_account_id: login.account, chatgpt_plan_type: login.family }
     })).toString('base64url') + '.sig'
   }) });
   return { w, login };
@@ -57,6 +57,8 @@ test('user plan selection applies only to the verified account without changing 
   assert.deepEqual(w.local.chatCounters[key].events, [event]);
   assert.ok(w.requests.every(request => request.options.method === 'GET' && request.url.endsWith('/auth/session')));
   assert.equal((await w.send({ ...select, plan: 'businessStandard' }, w.sender('popup'))).ok, false);
+  for (const plan of ['free', 'go', 'plus', 'enterprise', 'edu'])
+    assert.equal((await w.send({ ...select, plan }, w.sender('popup'))).ok, false);
   assert.equal((await w.send(select, { ...w.sender('popup'), url: 'https://chatgpt.com/' })).ok, false);
   assert.equal((await w.send({ ...select, plan: 'fake' }, w.sender('popup'))).ok, false);
   login.account = 'account-b';
@@ -81,6 +83,32 @@ test('an older popup cannot restore a retired Pro 200 allowance through a stale 
   assert.equal(view.count.remaining, null);
   assert.deepEqual(view.meters, []);
   assert.deepEqual(w.local.chatCounters[accountKey].events, events);
+});
+
+test('account-level plans support manual and automatic selection without billing access or losing counts', async () => {
+  for (const family of ['free', 'go', 'plus', 'enterprise', 'edu']) {
+    const { w, login } = worker();
+    login.family = family;
+    await w.context.ensureSecurity(); await w.context.refreshChatAccount({ force: true });
+    const accountKey = w.local.chatAccount.key;
+    const events = [{ key: 'c'.repeat(64), model: family === 'free' || family === 'go' ? 'luna' : 'solStandard', at: now }];
+    w.local.chatCounters[accountKey].events = events;
+    assert.equal(Counter.view(w.local).plan, family);
+    assert.equal((await w.send({ type: 'SET_CHAT_PLAN_CHOICE', accountKey, plan: family }, w.sender('popup'))).ok, true);
+    assert.equal(Counter.view(w.local).planSource, 'selected');
+    assert.equal((await w.send({ type: 'SET_CHAT_PLAN_CHOICE', accountKey, plan: 'pro100' }, w.sender('popup'))).ok, false);
+    assert.equal((await w.send({ type: 'SET_CHAT_PLAN_CHOICE', accountKey, plan: 'auto' }, w.sender('popup'))).ok, true);
+    const view = Counter.view(w.local);
+    assert.equal(view.plan, family);
+    assert.equal(view.planSource, 'account');
+    assert.equal(view.modelCounts[events[0].model], 1);
+    assert.equal(view.count.remaining, null);
+    assert.deepEqual(view.meters, []);
+    assert.deepEqual(w.local.chatCounters[accountKey].events, events);
+    assert.equal(w.local.chatCounters[accountKey].planChoice, null);
+    assert.equal(w.tabs.length, 0);
+    assert.ok(w.requests.every(request => request.options.method === 'GET' && request.url.endsWith('/auth/session')));
+  }
 });
 
 test('refresh preserves dated plan evidence instead of erasing it after one day', async () => {

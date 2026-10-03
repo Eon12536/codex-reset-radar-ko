@@ -203,7 +203,7 @@ function renderChat(data, settings) {
   $("enableChatCounter").hidden = Boolean(view.connected && (view.plan || !needsTier) && !data.chatCounterError);
   $("enableChatCounter").textContent = !settings.monitorChat ? "계정 연결" : !view.connected ? "연결 확인" : "요금제 확인";
   $("enableChatCounter").dataset.action = !settings.monitorChat || data.chatCounterError ? "enable" : "connect";
-  const allowance = count.limit ? (view.plan === "businessStandard" ? "공유 월 " : "공유 주 ") + count.limit + "회" : view.plan ? "고정 잔여 횟수 미공개" : ['enterprise', 'edu'].includes(view.family) ? "워크스페이스별 한도" : needsTier ? "한도 확인 전" : "고정 잔여 횟수 미공개";
+  const allowance = count.limit ? (view.plan === "businessStandard" ? "공유 월 " : "공유 주 ") + count.limit + "회" : ['enterprise', 'edu'].includes(view.family) ? "워크스페이스별 한도" : view.plan ? "고정 잔여 횟수 미공개" : needsTier ? "한도 확인 전" : "고정 잔여 횟수 미공개";
   $("chatOtherModels").hidden = !view.connected;
   $("chatOtherModels").textContent = `최근 7일 · Sol 일반 ${view.modelCounts.solStandard}회 · Luna ${view.modelCounts.luna}회`;
   $("chatOtherModels").title = '일반 Sol·Luna는 Astra·Sol Pro 한도에서 차감하지 않습니다. 모델이 명확한 기록만 집계합니다.';
@@ -243,18 +243,22 @@ function renderChatMeters(view) {
     card.append(head, values, bar); grid.append(card);
   }
   const controls = $("chatPlanControls"), select = $("chatPlanChoice");
-  controls.hidden = !view.connected || !['pro', 'business'].includes(view.family);
+  controls.hidden = !view.connected;
   if (controls.dataset.account !== view.accountKey) { controls.open = !view.plan; controls.dataset.account = view.accountKey || ''; }
   if (!view.plan) controls.open = true;
   const family = view.family;
   if (select.dataset.family !== family) {
     select.replaceChildren();
-    const options = [['auto', '자동 확인'], ...Object.entries(RadarChatCounter.PLANS).filter(([, policy]) => policy.family === family && !policy.retired).map(([id, policy]) => [id, policy.label])];
-    for (const [value, label] of options) { const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option); }
+    const options = [['auto', '자동 확인'], ...Object.entries(RadarChatCounter.PLANS).filter(([, policy]) => !policy.retired).map(([id, policy]) => [id, policy.label])];
+    for (const [value, label] of options) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label;
+      option.disabled = value !== 'auto' && RadarChatCounter.PLANS[value].family !== family;
+      select.append(option);
+    }
     select.dataset.family = family;
   }
   select.dataset.account = view.accountKey || '';
-  select.dataset.saved = view.planSource === 'selected' ? view.plan : 'auto';
+  select.dataset.saved = view.plan || 'auto';
   if (!select.disabled) select.value = select.dataset.saved;
   $("chatPlanSource").textContent = view.planSource === 'selected' ? '직접 선택 기준 · 변경' :
     view.planSource === 'cached' ? '최근 확인 기준 · 재확인 필요' : view.plan ? '요금제 자동 확인 · 변경' : '한도 기준 선택';

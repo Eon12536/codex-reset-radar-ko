@@ -1,7 +1,8 @@
 // Local interface translations only. Country labels and original posts stay intact.
 (function(root){
   const languages=['ja','zh_CN','fr','es','it'];
-  const rows=`Official schedule · Pinned|公式日程・固定|官方日程 · 置顶|Programme officiel · Épinglé|Programa oficial · Fijado|Programma ufficiale · In evidenza
+  const rows=`Only plans matching your signed-in account type can be selected.|ログイン中のアカウントと同じ種類のプランのみ選択できます。|只能选择与已登录账户类型相同的套餐。|Seuls les forfaits correspondant au type de votre compte connecté peuvent être sélectionnés.|Solo puedes seleccionar planes del mismo tipo que tu cuenta conectada.|Puoi selezionare solo piani dello stesso tipo del tuo account connesso.
+Official schedule · Pinned|公式日程・固定|官方日程 · 置顶|Programme officiel · Épinglé|Programa oficial · Fijado|Programma ufficiale · In evidenza
 Ends · Korea|終了・韓国|结束 · 韩国|Fin · Corée|Fin · Corea|Fine · Corea
 Event schedule|イベント日程|活动日程|Calendrier des événements|Calendario de eventos|Calendario eventi
 Related posts|関連投稿を見る|查看相关帖子|Voir les publications liées|Ver publicaciones relacionadas|Vedi i post correlati

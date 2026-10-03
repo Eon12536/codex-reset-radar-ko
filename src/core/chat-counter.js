@@ -5,13 +5,18 @@
   // Pro-tier change makes a price or usage multiplier insufficient evidence
   // of the legacy Pro 200 Chat allowance.
   const PLANS = Object.freeze({
+    free: { label: 'Free', family: 'free' },
+    go: { label: 'Go', family: 'go' },
+    plus: { label: 'Plus', family: 'plus' },
     pro100: { label: 'Pro $100 · 5x', family: 'pro', shared: 50, days: 7 },
     // Retained only for historical reference; never offered as a current plan.
     pro200: { label: 'Pro $200 · 9/27', family: 'pro', retired: true, astraWeekly: 200, solDaily: 170, combinedDaily: 200 },
     pro200Current: { label: 'Pro $200', family: 'pro' },
     pro500: { label: 'Pro $500', family: 'pro' },
     businessStandard: { label: 'Business Standard', family: 'business', shared: 15, days: 30 },
-    businessPremium: { label: 'Business Premium', family: 'business', shared: 50, days: 7 }
+    businessPremium: { label: 'Business Premium', family: 'business', shared: 50, days: 7 },
+    enterprise: { label: 'Enterprise', family: 'enterprise' },
+    edu: { label: 'Edu', family: 'edu' }
   });
   const POLICY = Object.freeze({ checkedAt: '2026-09-27', reviewedAt: '2026-10-02',
     url: 'https://help.openai.com/en/articles/20001354-gpt-56-and-gpt-6-pro-in-chatgpt',
@@ -61,6 +66,8 @@
     if (fresh) return { plan: fresh, source: 'verified', at: profile.planAt };
     if (PLANS[profile?.plan]?.family === accountFamily && profile.planAt <= now && now - profile.planAt < WEEK)
       return { plan: currentPlan(profile.plan), source: 'cached', at: profile.planAt };
+    if (PLANS[accountFamily]?.family === accountFamily)
+      return { plan: accountFamily, source: 'account', at: null };
     return { plan: null, source: null, at: null };
   }
   function meters(count, plan) {

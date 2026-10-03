@@ -34,6 +34,7 @@
     "최근 확인 기준 · 재확인 필요":"Last verified plan · Recheck needed",
     "요금제 자동 확인 · 변경":"Verified plan · Change",
     "선택은 이 계정에만 적용되며, 구독을 변경하지 않습니다.":"Applies only to this account. Does not change your subscription.",
+    "로그인 계정과 같은 유형의 요금제만 선택할 수 있어요.":"Only plans matching your signed-in account type can be selected.",
     "자동 확인 실패 · 위에서 요금제를 선택해 주세요.":"Automatic check failed. Select your plan above.",
     "저장했습니다.":"Saved.",
     "저장하지 못했어요. 계정을 확인하고 다시 선택해 주세요.":"Could not save. Check your account and select again.",

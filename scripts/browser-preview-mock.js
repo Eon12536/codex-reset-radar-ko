@@ -184,13 +184,14 @@
     state.lastCheckedAt = now;
   }
   const chatMode = new URLSearchParams(globalThis.location?.search || "").get("chat");
-  if (["reset", "on", "full", "pro100", "pro200", "pro200Current", "pro500", "generic", "plus", "businessStandard", "businessPremium"].includes(chatMode)) {
+  if (["reset", "on", "full", "pro100", "pro200", "pro200Current", "pro500", "generic", "free", "go", "plus", "enterprise", "edu", "businessStandard", "businessPremium"].includes(chatMode)) {
     state.settings.monitorChat = true;
-    const plan = ["reset", "on", "full", "pro100"].includes(chatMode) ? "pro100" : ["generic", "plus"].includes(chatMode) ? null : chatMode;
-    const family = chatMode === "plus" ? "plus" : chatMode.startsWith("business") ? "business" : "pro";
+    const basic = ['free', 'go', 'plus', 'enterprise', 'edu'].includes(chatMode);
+    const plan = ["reset", "on", "full", "pro100"].includes(chatMode) ? "pro100" : chatMode === 'generic' || basic ? null : chatMode;
+    const family = basic ? chatMode : chatMode.startsWith("business") ? "business" : "pro";
     const key = "a".repeat(64);
     state.chatAccount = { key, family, status: "connected", checkedAt: now };
-    state.chatCounters = { [key]: { plan, planAt: now, family, events: Array.from({ length: chatMode === "full" ? 50 : chatMode === "plus" ? 0 : 8 }, (_, index) => ({ key: index.toString(16).padStart(64, "0"), model: index < 6 ? "astra" : "sol", at: now - 60000 })) } };
+    state.chatCounters = { [key]: { plan, planAt: now, family, events: Array.from({ length: chatMode === "full" ? 50 : basic ? 0 : 8 }, (_, index) => ({ key: index.toString(16).padStart(64, "0"), model: index < 6 ? "astra" : "sol", at: now - 60000 })) } };
     state.chatCounters[key].events.push(...Array.from({ length: 7 }, (_, i) => ({ key: (100 + i).toString(16).padStart(64, '0'), model: i < 5 ? 'solStandard' : 'luna', at: now - 60000 })));
   }
   if (chatMode === "reset") {
@@ -428,19 +429,24 @@
         }
         if (message?.type === 'SET_CHAT_PLAN_CHOICE') {
           if (mode === 'planError' || message.accountKey !== state.chatAccount?.key) return { ok: false };
+          const plan = globalThis.RadarChatCounter.currentPlan(message.plan);
+          if (plan !== 'auto' && globalThis.RadarChatCounter.PLANS[plan]?.family !== state.chatAccount.family) return { ok: false };
           const profile = state.chatCounters[message.accountKey];
           const changed = () => storageListeners.forEach(listener => listener({ chatCounters: { newValue: state.chatCounters } }, 'local'));
-          if (message.plan === 'auto') {
+          if (plan === 'auto') {
+            if (globalThis.RadarChatCounter.PLANS[state.chatAccount.family]?.family === state.chatAccount.family) {
+              profile.planChoice = null; profile.planCheck = null; changed(); return { ok: true };
+            }
             profile.planCheck = { status: 'running', checkedAt: Date.now() }; changed();
             await new Promise(resolve => setTimeout(resolve, 1000));
             if (mode === 'planAutoFailure') {
               profile.planCheck = { status: 'failed', checkedAt: Date.now() }; changed();
               return { ok: false, code: 'plan-check-failed', preserved: Boolean(profile.planChoice || profile.plan) };
             }
-            profile.plan = 'pro100'; profile.planAt = Date.now(); profile.planChoice = null;
+            profile.plan = state.chatAccount.family === 'business' ? 'businessStandard' : 'pro100'; profile.planAt = Date.now(); profile.planChoice = null;
             profile.planCheck = { status: 'confirmed', checkedAt: Date.now() };
           } else {
-            profile.planChoice = { plan: message.plan, at: Date.now() }; profile.planCheck = null;
+            profile.planChoice = { plan, at: Date.now() }; profile.planCheck = null;
           }
           changed();
           return { ok: true };
@@ -456,10 +462,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.62", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.63", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.62", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.63", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

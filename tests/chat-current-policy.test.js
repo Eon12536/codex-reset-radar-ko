@@ -6,6 +6,25 @@ const now = Date.parse('2026-10-02T07:00:00Z');
 const event = { key: 'a'.repeat(64), model: 'astra', at: now - 60000 };
 const profile = plan => ({ plan, planAt: now, events: [event] });
 
+test('current account type supplies Free, Go, Plus and managed plans without inventing numeric allowances', () => {
+  for (const family of ['free', 'go', 'plus', 'enterprise', 'edu']) {
+    const data = { settings: { monitorChat: true },
+      chatAccount: { status: 'connected', checkedAt: now, key: 'account', family },
+      chatCounters: { account: profile('pro100') } };
+    const before = structuredClone(data);
+    const view = Counter.view(data, now);
+    assert.equal(view.plan, family);
+    assert.equal(view.label, Counter.PLANS[family].label);
+    assert.equal(view.planSource, 'account');
+    assert.equal(view.count.astra, 1);
+    assert.equal(view.count.remaining, null);
+    assert.deepEqual(view.meters, []);
+    assert.deepEqual(data, before);
+    data.chatAccount.status = 'disconnected';
+    assert.equal(Counter.view(data, now).plan, null);
+  }
+});
+
 test('new Pro 200 and Pro 500 Billing headings identify the tier without inventing a Chat allowance', () => {
   for (const heading of ['ChatGPT Pro $200', 'ChatGPT Pro 200', 'ChatGPT Pro 20x', 'ChatGPT Pro $500', 'ChatGPT Pro 500']) {
     const plan = Counter.planFromHeading(heading);

@@ -72,6 +72,7 @@
           <label for="chatPlanChoice">현재 계정의 요금제</label>
           <select id="chatPlanChoice" aria-describedby="chatCountStatus"><option value="auto">자동 확인</option></select>
           <small>선택은 이 계정에만 적용되며, 구독을 변경하지 않습니다.</small>
+          <small>로그인 계정과 같은 유형의 요금제만 선택할 수 있어요.</small>
         </details>
         <p id="chatCountBreakdown"></p><small id="chatOtherModels"></small><small id="chatCountNote"></small>
         <small id="chatResetNote" hidden></small>
@@ -111,7 +112,7 @@
         </div>
       </details>
       <footer class="footer">
-        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.62</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
+        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.63</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
         <button id="refreshButton" class="refresh-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg><span data-i18n="refreshNow">지금 확인</span></button>
       </footer>
       <p id="refreshStatus" class="refresh-status" role="status" aria-live="polite"></p>

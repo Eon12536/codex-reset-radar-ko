@@ -4,7 +4,7 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 
 ## 설치와 업데이트
 
-1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.62.zip`을 내려받아 압축을 풉니다.
+1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.63.zip`을 내려받아 압축을 풉니다.
 2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
 4. 확장을 고정하고 필요한 조회 기능을 직접 켭니다. 계정 조회와 선택형 화면 접근은 동의 후에만 작동합니다.
@@ -20,6 +20,7 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 - 출시 후보, 작성자 사진, 원문 링크, 긴 글 말줄임
 - 8개국·7개 언어, 대표 지역 시간대 자동 변환, 라이트·다크 테마
 - 일반 Chat 모델별 기록과 추정 잔여량
+- Free·Go·Plus부터 Pro·Business·Enterprise·Edu까지 전체 요금제 표시, 현재 계정의 요금제 선택 상태 표시
 - 알림 대기열, 전송 재시도, Chrome 재시작·절전 복귀 후 확인
 
 ## 사용 전 알아두기
