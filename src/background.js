@@ -39,7 +39,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.69";
+const NOTIFICATION_BUILD = "0.2.70";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -86,6 +86,9 @@ function ensureSecurity() {
     await RadarI18n.ready;
     await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
     await chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+    // Reclaim a scan interrupted by worker suspension without opening an X tab.
+    // Cleanup failure blocks only direct X reads and retains its retry alarm.
+    await RadarDirectX.cleanup({ recover: true }).catch(() => {});
     const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema"]);
     const settings = RadarSettings.sanitize(stored.settings);
     // Chat has independent allowances. Keep records, but stop treating an
@@ -1575,6 +1578,7 @@ async function openSchedule(id, original = false) {
 async function clearLocalData() {
   invalidateRequests();
   await ensureSecurity();
+  await RadarDirectX.cleanup({ force: true });
   return mutate(async () => {
     const settings = await loadSettings();
     // Preserve appearance without a read-clear-restore race with the popup.
@@ -1643,6 +1647,10 @@ async function schedulePublicRetry() {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   await ensureSecurity();
+  if (alarm.name === RadarDirectX.CLEANUP_ALARM) {
+    await RadarDirectX.cleanup().catch(() => {});
+    return;
+  }
   if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, RESUME_ALARM].includes(alarm.name)) {
     await preparePublicResume({ onlyIfDelayed: true, scheduledTime: alarm.scheduledTime });
   }

@@ -34,17 +34,20 @@ test('only bounded recent Tibo posts and validated public status URLs survive no
 
 function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false } = {}) {
   const calls = [];
+  const session = {}, alarms = new Map();
   let url = finalUrl;
   const chrome = { permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
-    tabs: { create: async options => { calls.push(['create', options]); url = finalUrl; return { id: 33 }; },
-      get: async () => ({ id: 33, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),
+    storage: { session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, structuredClone(value)), remove: async key => { delete session[key]; } } },
+    alarms: { create: async (name, options) => alarms.set(name, options), clear: async name => alarms.delete(name) },
+    tabs: { create: async options => { calls.push(['create', options]); url = finalUrl; return { id: 33, windowId: 1, active }; },
+      get: async () => ({ id: 33, windowId: 1, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),
       update: async (id, options) => { calls.push(['update', options]); url = options.url; },
       onUpdated: { addListener() {}, removeListener() {} } },
     scripting: { executeScript: async value => { calls.push(['script', value]); if (activateOnScript === true || activateOnScript === calls.filter(c => c[0] === 'script').length) active = true; if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
       return [{ frameId: 0, result: url.startsWith('https://x.com/OpenAI') ? { rows: [row('789', 'OpenAI', 'Join us for DevDay tomorrow')] } : url.startsWith('https://x.com/reach_vb') ? vbTimeline || {rows: [row('456','reach_vb','Reset should be reflected for everyone')]} : [PAGE, POST_PAGE].includes(url)
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
-  const context = vm.createContext({ chrome, Date, setTimeout, clearTimeout });
+  const context = vm.createContext({ chrome, URL, Date, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/direct-x'), 'utf8'), context);
   return { core: { ...context.RadarDirectX, read: (signal, options = {}) => context.RadarDirectX.read(signal, {authors, ...options}) }, calls };
 }
@@ -92,6 +95,15 @@ test('failed execution closes only the tab the reader created', async () => {
   const r = reader({ fail: true });
   await assert.rejects(r.core.read(new AbortController().signal), /mock failure/);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('automatic X home/timeline redirects do not accumulate inactive scan tabs across repeated polls', async () => {
+  for (const finalUrl of ['https://x.com/home', 'https://x.com/i/timeline', 'https://x.com/home/?from=login', 'https://x.com/THSOTTIAUX/']) {
+    const r = reader({ finalUrl });
+    for (let i = 0; i < 3; i++) await assert.rejects(r.core.read(new AbortController().signal), /UNAVAILABLE/);
+    assert.equal(r.calls.filter(c => c[0] === 'create').length, 3);
+    assert.equal(r.calls.filter(c => c[0] === 'remove').length, 3, 'each failed scan must close its own automatically redirected tab');
+  }
 });
 
 test('a scan tab activated by the user is left open and never read or navigated again', async () => {

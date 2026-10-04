@@ -4,6 +4,92 @@
   const AUTHORS = ['thsottiaux', 'reach_vb', 'openai'];
   const trusted = author => AUTHORS.includes(String(author || '').toLowerCase());
   const PERMISSION = { permissions: ["scripting"], origins: ["https://x.com/*"] };
+  const TAB_KEY = 'directXScanTabV1';
+  const CLEANUP_ALARM = 'codex-reset-radar-x-tab-cleanup';
+  const scanUrl = value => typeof value === 'string' && /^https:\/\/x\.com\/(?:thsottiaux|reach_vb|OpenAI)(?:\/with_replies|\/status\/[1-9]\d{0,24})?$/i.test(value);
+  function ownedUrl(value, urls) {
+    if (value === 'about:blank') return true;
+    try {
+      const url = new globalThis.URL(value);
+      if (url.origin !== 'https://x.com' || url.username || url.password) return false;
+      const path = url.pathname.replace(/\/$/, '').toLowerCase();
+      return ['/home', '/i/timeline', '/i/flow/login'].includes(path) ||
+        urls.some(requested => new globalThis.URL(requested).pathname.toLowerCase() === path);
+    } catch { return false; }
+  }
+  let scanTab, readJob, restoringTab = false, creatingTab = false, tabOperations = Promise.resolve();
+  const claimsDuringRestore = new Set();
+  const claimsDuringCreate = new Set();
+  function tabOperation(action) {
+    const result = tabOperations.then(action);
+    tabOperations = result.catch(() => {});
+    return result;
+  }
+  function validTab(value) {
+    return value && Number.isInteger(value.id) && value.id >= 0 && Number.isInteger(value.windowId) && value.windowId >= 0 &&
+      Number.isFinite(value.startedAt) && Number.isFinite(value.expiresAt) && value.startedAt > 0 &&
+      value.expiresAt > value.startedAt && value.expiresAt - value.startedAt <= 300000 &&
+      typeof value.claimed === 'boolean' && Array.isArray(value.urls) && value.urls.length > 0 && value.urls.length <= 12 && value.urls.every(scanUrl);
+  }
+  async function watchTab(when) {
+    await chrome.alarms.create(CLEANUP_ALARM, { when: Math.max(Date.now() + 60000, when) });
+  }
+  async function forgetTab() {
+    await chrome.storage.session.remove(TAB_KEY);
+    scanTab = undefined;
+    await chrome.alarms.clear(CLEANUP_ALARM);
+  }
+  // Session storage survives worker suspension but does not carry recycled tab
+  // IDs into a new browser session. Never discover or close arbitrary X tabs.
+  function cleanup({ force = false, recover = false } = {}) {
+    return tabOperation(async () => {
+      try {
+        if (!scanTab) {
+          restoringTab = true;
+          try {
+            const value = (await chrome.storage.session.get(TAB_KEY))[TAB_KEY];
+            if (!value) { await chrome.alarms.clear(CLEANUP_ALARM); return true; }
+            if (!validTab(value)) { await forgetTab(); return true; }
+            scanTab = value;
+            if (claimsDuringRestore.has(scanTab.id)) scanTab.claimed = true;
+          } finally { restoringTab = false; claimsDuringRestore.clear(); }
+        }
+        if (!force && !(recover && !readJob) && Date.now() < scanTab.expiresAt) {
+          await watchTab(scanTab.expiresAt); return false;
+        }
+        let current;
+        try { current = await chrome.tabs.get(scanTab.id); }
+        catch (error) {
+          if (!/No tab with id|Invalid tab ID/i.test(String(error?.message))) throw error;
+          await forgetTab(); return true;
+        }
+        // A selection permanently transfers this tab to the user, even after
+        // they select another tab. Pinning/moving/navigation also preserves it.
+        if (!scanTab.claimed && !current.active && !current.pinned && current.windowId === scanTab.windowId &&
+            ownedUrl(current.url, scanTab.urls)) {
+          await chrome.tabs.remove(scanTab.id);
+        }
+        await forgetTab(); return true;
+      } catch {
+        // Retain ownership after an API failure. A later poll must clean this
+        // tab before creating another; the watchdog can retry independently.
+        try { await watchTab(Date.now() + 60000); } catch { /* A later poll retries. */ }
+        throw new Error('X_TAB_CLEANUP_FAILED');
+      }
+    });
+  }
+  if (typeof chrome !== 'undefined') chrome.tabs?.onActivated?.addListener(({ tabId }) => {
+    if (restoringTab) claimsDuringRestore.add(tabId);
+    if (creatingTab) claimsDuringCreate.add(tabId);
+    if (scanTab?.id === tabId) scanTab.claimed = true;
+    void tabOperation(async () => {
+      const value = scanTab || (await chrome.storage.session.get(TAB_KEY))[TAB_KEY];
+      if (validTab(value) && value.id === tabId) {
+        value.claimed = true; scanTab = value;
+        await chrome.storage.session.set({ [TAB_KEY]: value });
+      }
+    }).catch(() => {});
+  });
   const day = 86400000;
   const resetContext = text => /\b(?:banked resets?|reset credits?|codex.{0,60}(?:reset|limits?|quota)|(?:reset|limits?|quota).{0,60}codex|(?:usage|weekly|rate) limits?.{0,40}reset)\b/i.test(text || "");
   const publicContext = text => resetContext(text) || /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*)\b/i.test(text || "");
@@ -88,15 +174,21 @@
     return "page-unavailable";
   }
 
-  async function read(signal, { authors = AUTHORS, contextCache = {} } = {}) {
+  function read(signal, options) {
+    return readJob ||= runRead(signal, options).finally(() => { readJob = undefined; });
+  }
+  async function runRead(signal, { authors = AUTHORS, contextCache = {} } = {}) {
     if (!Array.isArray(authors) || !authors.length || authors.some(author => !AUTHORS.includes(author))) throw new Error('X_UNSUPPORTED_AUTHOR');
     // Scan originals for every monitored author before replies so one busy reply feed cannot starve the other author.
     const TIMELINES = ['posts', 'replies'].flatMap(kind => authors.map(author => ({author, kind,
       url: 'https://x.com/' + (author === 'openai' ? 'OpenAI' : author) + (kind === 'replies' ? '/with_replies' : '')})));
     if (!await chrome.permissions.contains(PERMISSION)) throw new Error("X_PERMISSION_REQUIRED");
     signal.throwIfAborted();
+    // Any persisted tab belongs to an interrupted previous scan. Cleanup must
+    // succeed before another tab is opened, including after worker restarts.
+    await cleanup({ force: true });
+    signal.throwIfAborted();
     let tab, currentUrl = TIMELINES[0].url, currentStage = "navigation";
-    const ownedUrls = new Set([TIMELINES[0].url]);
     const deadline = Date.now() + authors.length * 90000;
     const diagnostics = { posts: 0, contexts: 0, conversations: 0, conversationFailures: 0, pages: 0, stopReason: "unknown", timelines: [] };
     async function bounded(promise, limit) {
@@ -116,12 +208,28 @@
       signal.throwIfAborted();
       if (tab) {
         const current = await chrome.tabs.get(tab.id);
-        if (current.url !== currentUrl || current.active) throw new Error("X_PAGE_UNAVAILABLE");
-        currentUrl = url; ownedUrls.add(url);
+        if (current.url !== currentUrl || current.active || current.pinned || current.windowId !== scanTab?.windowId || scanTab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
+        currentUrl = url;
+        await tabOperation(async () => {
+          if (!scanTab || scanTab.claimed) throw new Error('X_PAGE_UNAVAILABLE');
+          if (!scanTab.urls.includes(url)) scanTab.urls.push(url);
+          await chrome.storage.session.set({ [TAB_KEY]: scanTab });
+        });
+        signal.throwIfAborted();
+        if (scanTab?.claimed) throw new Error('X_PAGE_UNAVAILABLE');
         await chrome.tabs.update(tab.id, { url });
       } else {
-        currentUrl = url; ownedUrls.add(url);
-        tab = await chrome.tabs.create({ url, active: false });
+        currentUrl = url;
+        creatingTab = true;
+        try {
+          tab = await chrome.tabs.create({ url, active: false });
+          scanTab = { id: tab.id, windowId: tab.windowId, startedAt: Date.now(), expiresAt: deadline + 30000, urls: [url], claimed: Boolean(tab.active) || claimsDuringCreate.has(tab.id) };
+        } finally { creatingTab = false; claimsDuringCreate.clear(); }
+        await tabOperation(async () => {
+          await watchTab(scanTab.expiresAt);
+          await chrome.storage.session.set({ [TAB_KEY]: scanTab });
+        });
+        signal.throwIfAborted();
       }
       currentStage = "loading";
       await new Promise((resolve, reject) => {
@@ -142,14 +250,14 @@
       });
       signal.throwIfAborted();
       const current = await chrome.tabs.get(tab.id);
-      if (current.active) throw new Error("X_PAGE_UNAVAILABLE");
+      if (current.active || current.pinned || current.windowId !== scanTab?.windowId || scanTab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
       if (current.url?.startsWith("https://x.com/i/flow/login")) throw new Error("X_LOGIN_REQUIRED");
       if (current.url !== url) throw new Error("X_PAGE_UNAVAILABLE");
       currentStage = "reading";
       const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 14000);
       signal.throwIfAborted();
       const afterRead = await chrome.tabs.get(tab.id);
-      if (afterRead.url !== url || afterRead.active) throw new Error("X_PAGE_UNAVAILABLE");
+      if (afterRead.url !== url || afterRead.active || afterRead.pinned || afterRead.windowId !== scanTab?.windowId || scanTab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
       return result?.find(frame => frame.frameId === 0)?.result;
     }
     try {
@@ -176,7 +284,7 @@
           diagnostics.timelines.push({ author: timeline.author, kind: timeline.kind, ok: false, error: failureReason(error), stage: currentStage });
           if (tab) {
             const current = await chrome.tabs.get(tab.id).catch(() => ({}));
-            if (current.url !== currentUrl || current.active) break;
+            if (current.url !== currentUrl || current.active || current.pinned || current.windowId !== scanTab?.windowId || scanTab?.claimed) break;
           }
         }
       }
@@ -221,7 +329,7 @@
           diagnostics.conversationFailures++;
           // A user's navigation or login wall must stop subsequent navigation.
           const current = await chrome.tabs.get(tab.id).catch(() => ({}));
-          if (current.url !== currentUrl || current.active) break;
+          if (current.url !== currentUrl || current.active || current.pinned || current.windowId !== scanTab?.windowId || scanTab?.claimed) break;
         }
       }
       diagnostics.contextPending = pending.length - resolved;
@@ -229,17 +337,10 @@
       return { items: linkQuotedContexts(items), diagnostics, contextCache: Object.fromEntries(Object.entries(cache)
         .sort((a, b) => b[1].checkedAt - a[1].checkedAt).slice(0, 160)) };
     } finally {
-      if (tab?.id) {
-        try {
-          const current = await chrome.tabs.get(tab.id);
-          // Selecting or navigating this tab transfers control to the user.
-          if (!current.active && (ownedUrls.has(current.url) || current.url?.startsWith("https://x.com/i/flow/login") || current.url === "about:blank"))
-            await chrome.tabs.remove(tab.id);
-        } catch { /* It may already have been closed. */ }
-      }
+      if (tab?.id !== undefined) await cleanup({ force: true });
     }
   }
 
-  root.RadarDirectX = Object.freeze({ normalize, conversationContext, linkQuotedContexts, failureReason, read, PERMISSION, AUTHORS });
+  root.RadarDirectX = Object.freeze({ normalize, conversationContext, linkQuotedContexts, failureReason, read, cleanup, CLEANUP_ALARM, PERMISSION, AUTHORS });
   if (typeof module !== "undefined") module.exports = root.RadarDirectX;
 })(globalThis);
