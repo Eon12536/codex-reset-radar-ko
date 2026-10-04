@@ -43,6 +43,7 @@
       const country=countries.find(item=>item.locale===root.RadarI18n.uiLanguage()) || countries[0];
       document.getElementById('countryFlag').src='../../assets/flag-'+country.code+'.svg';
       document.getElementById('countryName').textContent=country.name;
+      options.setAttribute('aria-label',root.RadarUiCopy.translate('국가 선택'));
       for(const option of options.children) option.setAttribute('aria-selected',String(option.dataset.locale===country.locale));
     }
     observer.observe(document.body,{subtree:true,childList:true,characterData:true});

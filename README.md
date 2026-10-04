@@ -4,7 +4,7 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 
 ## 설치와 업데이트
 
-1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.70.zip`을 내려받아 압축을 풉니다.
+1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.71.zip`을 내려받아 압축을 풉니다.
 2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
 4. 확장을 고정하고 필요한 조회 기능을 직접 켭니다. 계정 조회와 선택형 화면 접근은 동의 후에만 작동합니다.

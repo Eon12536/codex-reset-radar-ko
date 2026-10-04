@@ -374,8 +374,8 @@ function renderUnreadBadges(unread) {
   displayedBadgeReceipt = unread.receipt;
   const banked = unread.bankedItems.length > 0;
   for (const [id, visible, label] of [
-    ['weeklyUnread', unread.hasUnread, msg('badgeUnreadReset', undefined, '확인하지 않은 리셋 소식 · +로 확인')],
-    ['newsUnread', unread.hasUnread, msg('badgeUnreadReset', undefined, '확인하지 않은 리셋 소식 · +로 확인')],
+    ['weeklyUnread', unread.hasUnread, msg(banked ? 'badgeUnreadBanked' : 'badgeUnreadReset')],
+    ['newsUnread', unread.publicItems.length > 0, msg('badgeUnreadReset', undefined, '확인하지 않은 리셋 소식 · +로 확인')],
     ['creditsUnread', unread.hasUnread, msg(banked ? 'badgeUnreadBanked' : 'badgeUnreadReset')],
     ['bankedArrivalUnread', unread.notice?.unread, msg(banked ? 'badgeUnreadBanked' : 'badgeUnreadReset')]
   ]) {

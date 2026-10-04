@@ -5,12 +5,12 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require.resolve('../src/options/notification-test.js'), 'utf8');
 const version = require('../manifest.json').version;
 const settle = () => new Promise(resolve => setImmediate(resolve));
-function page(reply) {
+function page(reply, dependencies = {}) {
   const elements = Object.fromEntries(['testNotification', 'notificationTestStatus', 'notificationWorkerStatus'].map(id => [id, { textContent: '', disabled: false, addEventListener(_, fn) { this.click = fn; } }]));
   const timers = new Map(); let next = 0;
   const context = vm.createContext({ document: { getElementById: id => elements[id] },
     chrome: { runtime: { sendMessage: reply } },
-    setTimeout(fn) { timers.set(++next, fn); return next; }, clearTimeout(id) { timers.delete(id); } });
+    setTimeout(fn) { timers.set(++next, fn); return next; }, clearTimeout(id) { timers.delete(id); }, ...dependencies });
   vm.runInContext(source, context);
   return { elements, timers };
 }
@@ -65,4 +65,20 @@ test('real delivery time and exclusions remain visible after a successful test a
   await settle();
   assert.match(p.elements.notificationWorkerStatus.textContent, /실제 알림:.*전송 실패/);
   assert.match(p.elements.notificationWorkerStatus.textContent, /대기 1 \/ 처리 기록 2 \/ 기존·기한 지난 글 3/);
+});
+
+test('diagnostics wait for country preferences and update time after a country change', async () => {
+  let release, changed, locale = 'en-US', zone = 'America/New_York', calls = 0;
+  const ready = new Promise(resolve => { release = resolve; });
+  const p = page(async () => {
+    calls++;
+    return { ...status, realDelivery: { status: 'accepted', at: Date.parse('2026-10-04T01:15:00Z') } };
+  }, { RadarI18n: { ready, uiLanguage: () => locale, subscribe: fn => { changed = fn; } },
+    RadarTime: { countryZone: () => ({ zone }) } });
+  await settle(); assert.equal(calls, 0);
+  release(); await settle();
+  assert.match(p.elements.notificationWorkerStatus.textContent, /10\/3.*9:15 PM/);
+  locale = 'en-GB'; zone = 'Europe/London'; changed(); await settle();
+  assert.equal(calls, 2);
+  assert.match(p.elements.notificationWorkerStatus.textContent, /04\/10.*2:15 am/);
 });

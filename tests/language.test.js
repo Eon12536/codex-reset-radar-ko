@@ -3,7 +3,7 @@ function locale({value='ko-KR',fail=false}={}) {
  const storage={uiLocale:value,settings:{monitorAccount:false,timezoneOverride:'Asia/Seoul'},appearanceTheme:'dark'},events=[];
  const context=vm.createContext({chrome:{storage:{local:{get:async()=>({...storage}),set:async values=>{if(fail)throw Error('storage');Object.assign(storage,values);}},onChanged:{addListener:fn=>events.push(fn)}}}});
  for(const file of ['translations','i18n','ui-copy-locales','ui-copy'])vm.runInContext(fs.readFileSync(require.resolve('../src/core/'+file),'utf8'),context);
- return {i18n:context.RadarI18n,copy:context.RadarUiCopy,storage,events};
+ return {i18n:context.RadarI18n,copy:context.RadarUiCopy,storage,events,context};
 }
 test('country language persists independently from consent, theme and timezone',async()=>{
  const a=locale();await a.i18n.ready;await a.i18n.save('en-US');
@@ -48,5 +48,61 @@ test('completion, credit and publication-time tooltips do not mix Korean into ot
   const a=locale({value});await a.i18n.ready;
   for(const text of texts)assert.doesNotMatch(a.copy.translate(text),/[가-힣]/,value+': '+text);
   assert.equal(a.copy.translate('Resets all propagated.'),'Resets all propagated.');
+ }
+});
+
+test('forecast basis and accessible labels contain no leftover Korean in other countries',async()=>{
+ for(const value of ['en-US','en-GB','ja-JP','zh-CN','fr-FR','es-ES','it-IT']) {
+  const a=locale({value});await a.i18n.ready;
+  for(const text of ['공개 글 기준','커뮤니티 기록 기준','참고 예상'])
+   assert.doesNotMatch(a.copy.translate(text),/[가-힣]/,value+': '+text);
+ }
+});
+
+test('actual settings collection diagnostics translate off, error, legacy and partial-scan states',async()=>{
+ const source=fs.readFileSync(require.resolve('../src/options/options.js'),'utf8');
+ const render=source.slice(source.indexOf('async function renderPublicConnection()'),source.indexOf('chrome.storage.onChanged.addListener',source.indexOf('async function renderPublicConnection()')));
+ const base={monitorSignals:true,monitorLeadSource:true,monitorDirectX:true};
+ const cases=[{settings:{...base,monitorSignals:false}},{settings:{...base,monitorDirectX:false}},
+  ...['permission','login','timeout','no-posts','page-unavailable','unknown'].map(directError=>({settings:base,signalSnapshot:{leadStatus:{directError}}})),
+  {settings:base,signalSnapshot:{leadStatus:{directOk:true}}},
+  {settings:base,signalSnapshot:{leadStatus:{directOk:true,latestPostAt:Date.now(),directScan:{posts:12,conversations:3,truncated:2,contextPending:2,conversationFailures:1,
+   timelines:[{author:'thsottiaux',kind:'posts',ok:true,posts:12,stopReason:'time-budget'},{author:'reach_vb',kind:'replies',ok:false,error:'timeout',stage:'reading'}]}}}}];
+ for(const value of ['en-US','en-GB','ja-JP','zh-CN','fr-FR','es-ES','it-IT']) {
+  const a=locale({value});await a.i18n.ready;
+  for(const file of ['settings','time','signals']) vm.runInContext(fs.readFileSync(require.resolve('../src/core/'+file),'utf8'),a.context);
+  const status={textContent:''};a.context.control=()=>status;
+  vm.runInContext(render,a.context);
+  for(const data of cases) {
+   a.context.chrome.storage.local.get=async()=>data;
+   await a.context.renderPublicConnection();
+   assert.doesNotMatch(a.copy.translate(status.textContent),/[가-힣]/,value+': '+status.textContent);
+  }
+  const html=fs.readFileSync(require.resolve('../src/options/options.html'),'utf8');
+  const resumeHelp=html.match(/Chrome을 다시 켰을 때 놓친 예고·암시[^<]+/)[0];
+  assert.doesNotMatch(a.copy.translate(resumeHelp),/[가-힣]/,value+': resume help');
+  assert.doesNotMatch(a.copy.translate('리셋 예고·완료·리셋권 공지 알림'),/[가-힣]/,value+': reset alert label');
+ }
+});
+
+test('notification diagnostics use the selected country time and translate delivery and queue status',async()=>{
+ const source=fs.readFileSync(require.resolve('../src/options/notification-test.js'),'utf8');
+ const at=Date.parse('2026-10-04T01:15:00Z');
+ for(const value of ['en-US','en-GB','ja-JP','zh-CN','fr-FR','es-ES','it-IT']) {
+  const a=locale({value});await a.i18n.ready;
+  vm.runInContext(fs.readFileSync(require.resolve('../src/core/time'),'utf8'),a.context);
+  const elements=Object.fromEntries(['testNotification','notificationTestStatus','notificationWorkerStatus'].map(id=>[id,{textContent:'',addEventListener(){}}]));
+  a.context.document={getElementById:id=>elements[id]};
+  a.context.setTimeout=setTimeout;a.context.clearTimeout=clearTimeout;
+  a.context.chrome.runtime={sendMessage:async()=>({ok:true,version:require('../manifest.json').version,
+   permission:'granted',hintAlerts:false,pending:0,quiet:false,realDelivery:{status:'accepted',at},
+   publicAlerts:{pending:0,handled:3,expired:7,disabled:2,eligible:0}})};
+  vm.runInContext(source,a.context);
+  await new Promise(resolve=>setImmediate(resolve));
+  const text=elements.notificationWorkerStatus.textContent;
+  if(value==='en-US') { assert.match(text,/10\/3/);assert.match(text,/9:15 PM/); }
+  assert.doesNotMatch(a.copy.translate(text),/[가-힣]/,value+': '+text);
+  for(const match of source.matchAll(/"([^"\r\n]*[가-힣][^"\r\n]*)"/g))
+   assert.doesNotMatch(a.copy.translate(match[1]),/[가-힣]/,value+': '+match[1]);
  }
 });

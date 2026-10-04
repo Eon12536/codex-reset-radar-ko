@@ -71,10 +71,10 @@ function worker({ family = 'pro', reply = true, activeAfter = false, settings = 
   w.context.chrome.permissions.contains = async () => true;
   w.context.chrome.scripting = { getRegisteredContentScripts: async () => [{ id: 'radar-chat-counter' }], unregisterContentScripts: async () => {} };
   w.context.chrome.tabs.query = async () => [];
-  w.context.chrome.tabs.get = async id => ({ id, url: 'https://chatgpt.com/#settings/Billing', active: activeAfter });
+  w.context.chrome.tabs.get = async id => ({ id, windowId: 1, url: 'https://chatgpt.com/#settings/Billing', active: activeAfter });
   w.context.chrome.tabs.remove = async id => removed.push(id);
   w.context.chrome.tabs.create = async options => {
-    const tab = { ...options, id: 80 + w.tabs.length }; w.tabs.push(tab);
+    const tab = { ...options, windowId: 1, id: 80 + w.tabs.length }; w.tabs.push(tab);
     if (reply) setTimeout(async () => {
       const sender = { id: w.runtime.id, frameId: 0, tab: { id: tab.id }, url: tab.url, documentId: 'plan-' + tab.id };
       const status = await w.send({ type: 'CHAT_COUNT_STATUS' }, sender);
@@ -249,4 +249,104 @@ test('migration restores stored Chat counts excluded by an unrelated Codex reset
   assert.equal(Counter.view(w.local).count.astra, 1);
   assert.equal(profile.events.length, 1);
   assert.equal(Counter.view(w.local).codexReset, null);
+});
+
+test('billing tab persistence failure cannot accumulate temporary tabs on repeated plan checks', async () => {
+  const { w, removed } = worker({ reply: false });
+  await selected(w, 'pro100');
+  const original = w.context.chrome.storage.session.set;
+  w.context.chrome.storage.session.set = async data => {
+    if ('chatPlanTabsV2' in data) throw new Error('Session temporarily unavailable');
+    return original(data);
+  };
+  for (let i = 0; i < 3; i++) {
+    const result = await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+    assert.equal(result.chatPlan.ok, false);
+  }
+  assert.equal(w.tabs.length, 3);
+  assert.deepEqual(removed, [80, 81, 82]);
+  assert.equal(Counter.view(w.local).plan, 'pro100');
+});
+
+test('selecting a temporary billing tab and returning to another tab preserves it', async () => {
+  const { w, removed } = worker({ reply: false });
+  await selected(w, 'pro100');
+  const create = w.context.chrome.tabs.create;
+  w.context.chrome.tabs.create = async options => {
+    const tab = await create(options);
+    w.events.tabActivated({ tabId: tab.id }); w.events.tabActivated({ tabId: 99 });
+    return tab;
+  };
+  await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  assert.equal(w.tabs.length, 1);
+  assert.deepEqual(removed, []);
+  assert.equal(w.session.chatPlanScanTabV1, undefined);
+});
+
+test('a restarted worker reclaims an interrupted automatic billing tab independently of plan evidence', async () => {
+  const { w } = worker({ reply: false });
+  await selected(w, 'pro100');
+  w.context.setTimeout = () => 0;
+  void w.context.refreshChatPlan().catch(() => {});
+  for (let i = 0; i < 100 && !w.session.chatPlanTabsV2?.[80]; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(w.session.chatPlanScanTabV1.id, 80);
+  const restarted = worker({ reply: false });
+  Object.assign(restarted.w.session, structuredClone(w.session));
+  await restarted.w.context.ensureSecurity();
+  assert.deepEqual(restarted.removed, [80]);
+  assert.equal(restarted.w.tabs.length, 0);
+  assert.equal(restarted.w.session.chatPlanScanTabV1, undefined);
+});
+
+test('billing ownership persistence failure cleans its tab before returning a rejected connection', async () => {
+  const { w, removed } = worker({ reply: false });
+  await selected(w, 'pro100');
+  const original = w.context.chrome.storage.session.set;
+  w.context.chrome.storage.session.set = async data => {
+    if ('chatPlanScanTabV1' in data) throw new Error('Session write failed');
+    return original(data);
+  };
+  for (let i = 0; i < 3; i++) await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  assert.deepEqual(removed, [80, 81, 82]);
+  assert.equal(w.session.chatPlanScanTabV1, undefined);
+  assert.equal(Counter.view(w.local).plan, 'pro100');
+});
+
+test('failed billing cleanup blocks further tab creation until removal succeeds', async () => {
+  const { w, removed } = worker({ reply: false });
+  await selected(w, 'pro100');
+  const remove = w.context.chrome.tabs.remove;
+  w.context.chrome.tabs.remove = async () => { throw new Error('Removal failed'); };
+  await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  assert.equal(w.tabs.length, 1);
+  assert.equal(w.session.chatPlanScanTabV1.id, 80);
+  assert.ok(await w.context.chrome.alarms.get('codex-reset-radar-chat-plan-tab-cleanup'));
+  w.context.chrome.tabs.remove = remove;
+  await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  assert.equal(w.tabs.length, 2);
+  assert.deepEqual(removed, [80, 81]);
+  assert.equal(w.session.chatPlanScanTabV1, undefined);
+});
+
+test('billing cleanup preserves pinned, moved and independently navigated user tabs', async () => {
+  for (const patch of [{ pinned: true }, { windowId: 2 }, { url: 'https://chatgpt.com/c/private' }]) {
+    const { w, removed } = worker({ reply: false });
+    const get = w.context.chrome.tabs.get;
+    w.context.chrome.tabs.get = async id => ({ ...await get(id), ...patch });
+    await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+    assert.deepEqual(removed, [], JSON.stringify(patch));
+    assert.equal(w.session.chatPlanScanTabV1, undefined);
+  }
+});
+
+test('an expired billing cleanup alarm only reclaims its own tab without collecting account or feed data', async () => {
+  const { w, removed } = worker({ reply: false });
+  w.session.chatPlanScanTabV1 = { id: 80, windowId: 1, startedAt: Date.now() - 60000,
+    expiresAt: Date.now() - 1, urls: ['https://chatgpt.com/#settings/Billing'], claimed: false };
+  await w.events.alarm({ name: 'codex-reset-radar-chat-plan-tab-cleanup' });
+  assert.deepEqual(removed, [80]);
+  assert.equal(w.tabs.length, 0);
+  assert.equal(w.requests.length, 0);
+  assert.equal(w.session.chatPlanScanTabV1, undefined);
 });

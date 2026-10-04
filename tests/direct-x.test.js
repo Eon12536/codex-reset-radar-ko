@@ -48,6 +48,7 @@ function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timelin
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
   const context = vm.createContext({ chrome, URL, Date, setTimeout, clearTimeout });
+  vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/direct-x'), 'utf8'), context);
   return { core: { ...context.RadarDirectX, read: (signal, options = {}) => context.RadarDirectX.read(signal, {authors, ...options}) }, calls };
 }

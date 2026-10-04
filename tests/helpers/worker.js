@@ -11,6 +11,8 @@ function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
   const session = { sessionAccessToken: "OLD_TOKEN", sessionAccessTokenExpiresAt: 99 };
   const requests = [], tabs = [], notifications = {}, access = {}, events = {};
   const alarms = new Map();
+  const activated = new Set();
+  events.tabActivated = info => { for (const listener of activated) listener(info); };
   const event = name => ({ addListener(fn) { events[name] = fn; } });
   function area(name, values) {
     return {
@@ -50,7 +52,7 @@ function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
         clear:async name=>alarms.delete(name), create:async(name, options)=>{alarms.set(name, {name, ...options});}},
       action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{},setTitle:async()=>{}},
       notifications:{onClicked:event("notificationClick"),onButtonClicked:event("notificationButton"),getAll:async()=>({...notifications}),clear:async id=>{delete notifications[id];},create:async(id,options)=>{notifications[id]=structuredClone(options);}},
-      tabs:{create:async options=>tabs.push(options)}
+      tabs:{create:async options=>tabs.push(options), onActivated:{addListener:fn=>activated.add(fn),removeListener:fn=>activated.delete(fn)}}
     }
   });
   context.importScripts = (...files) => files.forEach(file => vm.runInContext(fs.readFileSync(path.join(src,file),"utf8"),context,{filename:file}));

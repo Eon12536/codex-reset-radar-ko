@@ -87,6 +87,23 @@ test('a verified new Banked grant retains its real amount after the combined ack
   assert.match(p.elements.bankedArrivalTitle.textContent, /\+1/);
 });
 
+test('a Banked-only arrival marks quota and credits without implying an unread public tweet', async () => {
+  const p = page({ read: true, creditGrantState: { accountKey: KEY, count: 3, events: [{
+    id: 'banked:account:2', accountKey: KEY, observedAt: NOW - 60000, added: 1, notify: true }] } });
+  await p.context.ensureSecurity();
+  await p.context.updateBadge(p.local.accountSnapshot, null, null);
+  const unread = p.render();
+  assert.equal(unread.publicItems.length, 0);
+  assert.equal(p.elements.newsUnread.hidden, true);
+  for (const id of ['weeklyUnread', 'creditsUnread', 'bankedArrivalUnread']) {
+    assert.equal(p.elements[id].hidden, false);
+    assert.equal(p.elements[id]['aria-label'], p.context.RadarI18n.t('badgeUnreadBanked'));
+  }
+  assert.equal(p.labels.at(-1), '40%!');
+  await p.ack(); p.render(); markers(p, false);
+  assert.equal(p.labels.at(-1), '40%');
+});
+
 test('account monitoring opt-out cannot expose a cached Banked amount but public news remains reviewable', () => {
   const p = page({ monitorAccount: false });
   assert.equal(p.render().notice.kind, 'public'); markers(p, true);

@@ -14,6 +14,7 @@ importScripts(
   "core/events.js",
   "core/schedule.js",
   "core/sources.js",
+  "core/tab-owner.js",
   "core/direct-x.js",
   "core/public-alerts.js",
   "core/badge.js",
@@ -29,6 +30,10 @@ const PUBLIC_RETRY_ALARM = "codex-reset-radar-public-retry";
 const PUBLIC_DELIVERY_ALARM = "codex-reset-radar-public-delivery";
 const BADGE_EXPIRY_ALARM = "codex-reset-radar-badge-expiry";
 const INITIALIZATION_RETRY_ALARM = "codex-reset-radar-initialization-retry";
+const CHAT_PLAN_CLEANUP_ALARM = "codex-reset-radar-chat-plan-tab-cleanup";
+const chatPlanOwner = RadarTabOwner.create({ key: 'chatPlanScanTabV1', alarm: CHAT_PLAN_CLEANUP_ALARM,
+  accepts: url => url === 'https://chatgpt.com/#settings/Billing',
+  matches: url => url === 'https://chatgpt.com/#settings/Billing' || url === 'about:blank', prefix: 'CHAT_PLAN' });
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 const SESSION_URLS = [
@@ -39,7 +44,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.70";
+const NOTIFICATION_BUILD = "0.2.71";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -86,9 +91,10 @@ function ensureSecurity() {
     await RadarI18n.ready;
     await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
     await chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
-    // Reclaim a scan interrupted by worker suspension without opening an X tab.
-    // Cleanup failure blocks only direct X reads and retains its retry alarm.
+    // Reclaim temporary readers interrupted by worker suspension. A failed
+    // cleanup retains its retry alarm and blocks only that reader's new tabs.
     await RadarDirectX.cleanup({ recover: true }).catch(() => {});
+    await chatPlanOwner.cleanup({ recover: true }).catch(() => {});
     const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema"]);
     const settings = RadarSettings.sanitize(stored.settings);
     // Chat has independent allowances. Keep records, but stop treating an
@@ -433,7 +439,8 @@ async function connectChatAccount({ active = true } = {}) {
   const account = await refreshChatAccount({ force: true });
   if (!(await loadSettings()).monitorChat) return { ok: false };
   const { chatCounters = {} } = await chrome.storage.local.get('chatCounters');
-  const tab = await chrome.tabs.create({ url: "https://chatgpt.com/#settings/Billing", active });
+  const tab = active ? await chrome.tabs.create({ url: "https://chatgpt.com/#settings/Billing", active }) :
+    await chatPlanOwner.open('https://chatgpt.com/#settings/Billing', Date.now() + 60000);
   if (epoch !== stateEpoch || !(await loadSettings()).monitorChat) return { ok: false, tabId: tab.id };
   for (const [id, request] of chatPlanTabs) if (request.expiresAt < Date.now()) chatPlanTabs.delete(id);
   chatPlanTabs.set(tab.id, { key: account.key || null, choiceRevision: chatCounters[account.key]?.planChoiceRevision || null, expiresAt: Date.now() + 5 * 60000 });
@@ -530,12 +537,12 @@ async function runChatPlan(expectedAccountKey = null) {
   } catch { await mark('error'); return { ok: false, code: 'error' }; }
   finally {
     clearTimeout(timer); activeRequests.delete(controller);
-    if (Number.isInteger(tabId)) {
-      chatPlanWaiters.delete(tabId); chatPlanTabs.delete(tabId);
-      await chrome.storage.session.set({ chatPlanTabsV2: Object.fromEntries(chatPlanTabs) });
-      const tab = await chrome.tabs.get(tabId).catch(() => null);
-      if (tab?.url === 'https://chatgpt.com/#settings/Billing' && !tab.active) await chrome.tabs.remove(tabId).catch(() => {});
-    }
+    try {
+      if (Number.isInteger(tabId)) {
+        chatPlanWaiters.delete(tabId); chatPlanTabs.delete(tabId);
+        await chrome.storage.session.set({ chatPlanTabsV2: Object.fromEntries(chatPlanTabs) });
+      }
+    } finally { await chatPlanOwner.cleanup({ force: true }); }
   }
 }
 
@@ -1579,6 +1586,7 @@ async function clearLocalData() {
   invalidateRequests();
   await ensureSecurity();
   await RadarDirectX.cleanup({ force: true });
+  await chatPlanOwner.cleanup({ force: true });
   return mutate(async () => {
     const settings = await loadSettings();
     // Preserve appearance without a read-clear-restore race with the popup.
@@ -1649,6 +1657,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await ensureSecurity();
   if (alarm.name === RadarDirectX.CLEANUP_ALARM) {
     await RadarDirectX.cleanup().catch(() => {});
+    return;
+  }
+  if (alarm.name === CHAT_PLAN_CLEANUP_ALARM) {
+    await chatPlanOwner.cleanup().catch(() => {});
     return;
   }
   if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, RESUME_ALARM].includes(alarm.name)) {

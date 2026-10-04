@@ -1,6 +1,6 @@
 // This module intentionally has no dependency on the rest of the settings UI.
 (() => {
-  const BUILD = "0.2.70";
+  const BUILD = "0.2.71";
   const button = document.getElementById("testNotification");
   const status = document.getElementById("notificationTestStatus");
   const worker = document.getElementById("notificationWorkerStatus");
@@ -22,7 +22,8 @@
       return;
     }
     const previous = result.realDelivery;
-    const at = previous?.at ? new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric',
+    const at = previous?.at ? new Intl.DateTimeFormat(globalThis.RadarI18n?.uiLanguage?.() || 'ko-KR', {
+      timeZone: globalThis.RadarTime?.countryZone?.().zone, month: 'numeric', day: 'numeric',
       hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(previous.at)).replace(/(오전|오후)\s*0(\d):/g, '$1 $2:') : '';
     const latest = previous ? ` · 실제 알림: ${at} ${previous.status === "accepted" ? "Chrome 접수" : "전송 실패"}` : " · 실제 알림: 전송 기록 없음";
     worker.textContent = `실행 v${result.version} · Chrome 알림 ${result.permission === "granted" ? "허용" : "차단"} · 후보 알림 ${result.hintAlerts ? "켜짐" : "꺼짐"} · 대기 ${result.pending}개${result.quiet ? " · 확장 방해 금지 중" : ""}${latest}`;
@@ -65,5 +66,8 @@
   });
 
   status.textContent = `v${BUILD} 테스트 버튼 준비 완료. 테스트 버튼으로 Windows 알림을 확인하세요.`;
-  refreshWorker();
+  // The test controls still work when localization is unavailable. On normal
+  // pages, wait for saved preferences and refresh dates after country changes.
+  Promise.resolve(globalThis.RadarI18n?.ready).then(refreshWorker, refreshWorker);
+  globalThis.RadarI18n?.subscribe?.(refreshWorker);
 })();

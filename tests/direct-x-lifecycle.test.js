@@ -9,7 +9,7 @@ const PAGE = 'https://x.com/thsottiaux';
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const lease = (extra = {}) => ({ id: 7, windowId: 1, startedAt: Date.now() - 60000, expiresAt: Date.now() + 120000, urls: [PAGE], claimed: false, ...extra });
 
-function browser({ stored, tab, failRemove = false, failGet = false, failSet = false, script, create, created, getStored } = {}) {
+function browser({ stored, tab, failRemove = false, failGet = false, failSet = false, script, create, created, getStored, setStored } = {}) {
   const session = stored ? { [KEY]: structuredClone(stored) } : {};
   const tabs = new Map(tab ? [[tab.id, { status: 'complete', active: false, pinned: false, windowId: 1, ...tab }]] : []);
   const alarms = new Map(), calls = [], listeners = {}, timers = new Set();
@@ -19,7 +19,7 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     permissions: { contains: async () => true },
     storage: { session: {
       get: async key => { await getStored?.(); return structuredClone({ [key]: session[key] }); },
-      set: async value => { if (faults.failSet) throw new Error('Storage failed'); Object.assign(session, structuredClone(value)); },
+      set: async value => { if (faults.failSet) throw new Error('Storage failed'); await setStored?.(value); Object.assign(session, structuredClone(value)); },
       remove: async key => { delete session[key]; }
     } },
     alarms: { create: async (name, value) => alarms.set(name, value), clear: async name => alarms.delete(name) },
@@ -49,6 +49,7 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
       setTimeout: (fn, delay) => { const timer = setTimeout(fn, delay); timer.unref(); timers.add(timer); return timer; },
       clearTimeout: timer => { clearTimeout(timer); timers.delete(timer); }
     });
+    vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
     vm.runInContext(source, context);
     return context.RadarDirectX;
   }
@@ -239,4 +240,33 @@ test('clearing local data cannot erase ownership when tab cleanup fails', async 
   assert.equal(result.ok, false);
   assert.equal(w.session[KEY].id, 7);
   assert.ok(await w.context.chrome.alarms.get(w.context.RadarDirectX.CLEANUP_ALARM));
+});
+
+test('200 sequential scans with transient cleanup failures never accumulate owned tabs', async () => {
+  const b = browser(), core = b.load();
+  for (let i = 0; i < 200; i++) {
+    if (i % 5 === 0) {
+      b.faults.failRemove = true;
+      await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+      const created = b.calls.filter(c => c[0] === 'create').length;
+      await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+      assert.equal(b.calls.filter(c => c[0] === 'create').length, created);
+      b.faults.failRemove = false;
+    }
+    await read(core);
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.session[KEY], undefined);
+    assert.equal(b.alarms.size, 0);
+  }
+  assert.equal(b.maxTabs(), 1);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 240);
+});
+
+test('cancellation while saving the next page prevents navigation and still removes the scan tab', async () => {
+  const controller = new AbortController(); let writes = 0;
+  const b = browser({ setStored: value => { if (value[KEY] && ++writes === 2) controller.abort(); } });
+  await assert.rejects(b.load().read(controller.signal, { authors: ['thsottiaux'] }));
+  assert.equal(b.calls.filter(c => c[0] === 'update').length, 0);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.session[KEY], undefined);
 });
