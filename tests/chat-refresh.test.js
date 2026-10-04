@@ -285,12 +285,19 @@ test('selecting a temporary billing tab and returning to another tab preserves i
   assert.equal(w.tabs.length, 1);
 });
 
-test('a restarted worker reclaims an interrupted automatic billing tab independently of plan evidence', async () => {
+test('a restarted worker reclaims an interrupted automatic billing tab independently of plan evidence', { timeout: 10000 }, async () => {
   const { w } = worker({ reply: false });
   await selected(w, 'pro100');
   w.context.setTimeout = () => 0;
+  let persisted;
+  const ready = new Promise(resolve => { persisted = resolve; });
+  const set = w.context.chrome.storage.session.set;
+  w.context.chrome.storage.session.set = async data => {
+    await set(data);
+    if (data.chatPlanTabsV2?.[80]) persisted();
+  };
   void w.context.refreshChatPlan().catch(() => {});
-  for (let i = 0; i < 100 && !w.session.chatPlanTabsV2?.[80]; i++) await new Promise(resolve => setImmediate(resolve));
+  await ready;
   assert.equal(w.session.chatPlanScanTabV1.id, 80);
   const restarted = worker({ reply: false });
   Object.assign(restarted.w.session, structuredClone(w.session));
