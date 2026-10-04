@@ -9,15 +9,20 @@ const PAGE = 'https://x.com/thsottiaux';
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const lease = (extra = {}) => ({ id: 7, windowId: 1, startedAt: Date.now() - 60000, expiresAt: Date.now() + 120000, urls: [PAGE], claimed: false, ...extra });
 
-function browser({ stored, tab, failRemove = false, failGet = false, failSet = false, script, create, created, getStored, setStored } = {}) {
+function browser({ stored, tab, failRemove = false, failGet = false, failSet = false, failLocalSet = false, script, create, created, getStored, setStored } = {}) {
   const session = stored ? { [KEY]: structuredClone(stored) } : {};
+  const local = {};
   const tabs = new Map(tab ? [[tab.id, { status: 'complete', active: false, pinned: false, windowId: 1, ...tab }]] : []);
   const alarms = new Map(), calls = [], listeners = {}, timers = new Set();
   let nextId = 10, maxTabs = tabs.size;
-  const faults = { failRemove, failGet, failSet };
+  const faults = { failRemove, failGet, failSet, failLocalSet };
   const chrome = {
     permissions: { contains: async () => true },
-    storage: { session: {
+    storage: { local: {
+      get: async key => structuredClone({ [key]: local[key] }),
+      set: async value => { if (faults.failLocalSet) throw new Error('Durable storage failed'); Object.assign(local, structuredClone(value)); },
+      remove: async key => { delete local[key]; }
+    }, session: {
       get: async key => { await getStored?.(); return structuredClone({ [key]: session[key] }); },
       set: async value => { if (faults.failSet) throw new Error('Storage failed'); await setStored?.(value); Object.assign(session, structuredClone(value)); },
       remove: async key => { delete session[key]; }
@@ -53,7 +58,7 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     vm.runInContext(source, context);
     return context.RadarDirectX;
   }
-  return { load, session, tabs, alarms, calls, faults, listeners, maxTabs: () => maxTabs,
+  return { load, session, local, tabs, alarms, calls, faults, listeners, maxTabs: () => maxTabs,
     stopWorker: () => { for (const timer of timers) clearTimeout(timer); timers.clear(); } };
 }
 const read = core => core.read(new AbortController().signal, { authors: ['thsottiaux'] });
@@ -126,7 +131,9 @@ test('a user selection followed by deselection permanently preserves the scan ta
   await assert.rejects(read(core), /X_PAGE_UNAVAILABLE/);
   assert.equal(b.tabs.size, 1);
   assert.equal(b.calls.some(c => ['update', 'remove'].includes(c[0])), false);
-  assert.equal(b.session[KEY], undefined);
+  assert.equal(b.session[KEY].claimed, true);
+  for (let i = 0; i < 20; i++) await assert.rejects(read(core), /X_TAB_BLOCKED/);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
 });
 
 test('selected, pinned, moved, claimed and privately navigated tabs are preserved during recovery', async () => {
@@ -135,7 +142,9 @@ test('selected, pinned, moved, claimed and privately navigated tabs are preserve
     await b.load().cleanup({ recover: true });
     assert.equal(b.tabs.size, 1, JSON.stringify(patch));
     assert.equal(b.calls.length, 0);
-    assert.equal(b.session[KEY], undefined);
+    assert.equal(b.session[KEY].claimed, true);
+    await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+    assert.equal(b.calls.length, 0);
   }
 });
 
@@ -150,13 +159,22 @@ test('a temporary tab lookup failure retains ownership and prevents another scan
   assert.equal(b.tabs.size, 0);
 });
 
-test('already closed tabs and malformed ownership records do not target unrelated tabs', async () => {
+test('closed tabs release ownership; malformed records block new tabs without targeting unrelated tabs', async () => {
   for (const stored of [lease(), lease({ id: -1 }), lease({ windowId: '1' }), lease({ urls: ['https://x.com/i/chat'] }), lease({ expiresAt: Date.now() + 86400000 }), lease({ urls: Array(13).fill(PAGE) }), { id: 7 }]) {
     const b = browser({ stored, tab: { id: 8, url: PAGE } });
-    await b.load().cleanup({ recover: true });
+    const core = b.load();
+    const cleaned = await core.cleanup({ recover: true });
     assert.equal(b.calls.length, 0);
     assert.equal(b.tabs.size, 1);
-    assert.equal(b.session[KEY], undefined);
+    if (stored.id === 7 && stored.windowId === 1 && stored.urls[0] === PAGE && stored.urls.length === 1 && stored.expiresAt - stored.startedAt <= 300000) {
+      assert.equal(cleaned, true);
+      assert.equal(b.session[KEY], undefined);
+    } else {
+      assert.equal(cleaned, false);
+      assert.equal(b.local[core.GUARD_KEY].blocked, true);
+      await assert.rejects(read(core), /X_TAB_BLOCKED/);
+      assert.equal(b.calls.length, 0);
+    }
   }
 });
 
@@ -269,4 +287,87 @@ test('cancellation while saving the next page prevents navigation and still remo
   assert.equal(b.calls.filter(c => c[0] === 'update').length, 0);
   assert.equal(b.tabs.size, 0);
   assert.equal(b.session[KEY], undefined);
+});
+
+test('an unreadable Chrome tab URL blocks repeated scans instead of orphaning each tab', async () => {
+  const b = browser({ stored: lease(), tab: { id: 7 } }), core = b.load();
+  for (let i = 0; i < 30; i++) await assert.rejects(read(core), /X_TAB_BLOCKED/);
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.calls.length, 0);
+  assert.equal(b.session[KEY].id, 7);
+  assert.equal(b.local[core.GUARD_KEY].blocked, true);
+});
+
+test('reload and browser restart losing session ownership cannot open another scan tab', async () => {
+  const b = browser({ script: id => b.listeners.activate({ tabId: id }) });
+  await assert.rejects(read(b.load()), /X_PAGE_UNAVAILABLE/);
+  for (let i = 0; i < 20; i++) {
+    delete b.session[KEY];
+    await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+  }
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
+  assert.equal(b.calls.some(c => c[0] === 'remove'), false);
+});
+
+test('termination inside tabs.create is fenced before Chrome returns its new tab ID', async () => {
+  const reached = deferred(), abandoned = deferred();
+  const b = browser({ created: async () => { reached.resolve(); await abandoned.promise; } });
+  void read(b.load()).catch(() => {});
+  await reached.promise; b.stopWorker();
+  assert.equal(b.session[KEY], undefined);
+  assert.equal(b.tabs.size, 1);
+  const restarted = b.load();
+  for (let i = 0; i < 20; i++) await assert.rejects(read(restarted), /X_TAB_BLOCKED/);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
+  b.tabs.delete(10); // The user closes the orphan before confirming recovery.
+  assert.equal(await restarted.resume(), true);
+  assert.equal(b.local[restarted.GUARD_KEY], undefined);
+});
+
+test('recovery refuses an open protected tab and only resumes after it has closed', async () => {
+  const b = browser({ stored: lease({ claimed: true }), tab: { id: 7, url: PAGE } }), core = b.load();
+  assert.equal(await core.cleanup({ recover: true }), false);
+  assert.equal(await core.resume(), false);
+  await assert.rejects(read(core), /X_TAB_BLOCKED/);
+  b.tabs.delete(7);
+  assert.equal(await core.resume(), true);
+  await read(core);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.local[core.GUARD_KEY], undefined);
+});
+
+test('lost-session recovery is restricted to explicit confirmation on the options page', async () => {
+  const w = makeWorker({ stored: { directXScanTabV1GuardV1: { blocked: true, reason: 'session-lost' } } });
+  for (const [message, sender] of [
+    [{ type: 'RESUME_CHECK_TABS', confirmed: true }, w.sender('popup')],
+    [{ type: 'RESUME_CHECK_TABS' }, w.sender('options')],
+    [{ type: 'RESUME_CHECK_TABS', confirmed: false }, w.sender('options')],
+    [{ type: 'RESUME_CHECK_TABS', confirmed: true, url: PAGE }, w.sender('options')],
+    [{ type: 'RESUME_CHECK_TABS', confirmed: true }, { id: w.runtime.id, url: PAGE }]
+  ]) {
+    assert.equal((await w.send(message, sender)).ok, false);
+    assert.ok(w.local.directXScanTabV1GuardV1);
+  }
+  assert.equal((await w.send({ type: 'RESUME_CHECK_TABS', confirmed: true }, w.sender('options'))).ok, true);
+  assert.equal(w.local.directXScanTabV1GuardV1, undefined);
+  assert.equal(w.tabs.length, 0);
+});
+
+test('durable-fence storage failure prevents any Chrome tab creation', async () => {
+  const b = browser({ failLocalSet: true });
+  const core = b.load();
+  await assert.rejects(read(core), /Durable storage failed/);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 0);
+  b.faults.failLocalSet = false;
+  await read(core);
+  assert.equal(b.tabs.size, 0);
+});
+
+test('clearing local history cannot erase a fence after session ownership is lost', async () => {
+  const w = makeWorker({ stored: { directXScanTabV1GuardV1: { blocked: true, reason: 'session-lost' }, signalSnapshot: { saved: true } } });
+  assert.equal((await w.send({ type: 'CLEAR_LOCAL_DATA' }, w.sender('options'))).ok, false);
+  assert.equal(w.local.directXScanTabV1GuardV1.blocked, true);
+  assert.equal(w.local.signalSnapshot.saved, true);
+  assert.equal(w.tabs.length, 0);
 });

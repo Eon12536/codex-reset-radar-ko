@@ -12,6 +12,7 @@
     TEST_NOTIFICATION: ["src/options/options.html"],
     NOTIFICATION_STATUS: ["src/options/options.html"],
     CLEAR_LOCAL_DATA: ["src/options/options.html"],
+    RESUME_CHECK_TABS: ["src/options/options.html"],
     ENABLE_ACCOUNT: ["src/welcome/welcome.html"],
     OPEN_ACCOUNT_LOGIN: ["src/popup/popup.html", "src/options/options.html", "src/welcome/welcome.html"],
     REFRESH_ACCOUNT: ["src/popup/popup.html", "src/options/options.html", "src/welcome/welcome.html"],
@@ -45,8 +46,9 @@
     }
     const pages = PAGES[message.type];
     if (!Array.isArray(pages) || !pages.some(page => sender.url === runtime.getURL(page))) return false;
-    const allowedKeys = message.type === "ACK_VISIBLE_BADGES" ? ["type", "receipt"] : message.type === 'SET_CHAT_PLAN_CHOICE' ? ['type', 'plan', 'accountKey'] : message.type === "SAVE_SETTINGS" ? ["type", "settings"] : message.type === "SAVE_THEME" ? ["type", "theme"] : message.type === "OPEN_NEWS" ? ["type", "id"] : ["type"];
+    const allowedKeys = message.type === "RESUME_CHECK_TABS" ? ["type", "confirmed"] : message.type === "ACK_VISIBLE_BADGES" ? ["type", "receipt"] : message.type === 'SET_CHAT_PLAN_CHOICE' ? ['type', 'plan', 'accountKey'] : message.type === "SAVE_SETTINGS" ? ["type", "settings"] : message.type === "SAVE_THEME" ? ["type", "theme"] : message.type === "OPEN_NEWS" ? ["type", "id"] : ["type"];
     if (Object.keys(message).some(key => !allowedKeys.includes(key))) return false;
+    if (message.type === "RESUME_CHECK_TABS") return message.confirmed === true;
     if (message.type === "ACK_VISIBLE_BADGES") return Boolean(root.RadarBadge?.validReceipt(message.receipt));
     if (message.type === 'SET_CHAT_PLAN_CHOICE') return typeof message.accountKey === 'string' && /^[a-f0-9]{64}$/.test(message.accountKey) &&
       (message.plan === 'auto' || Object.hasOwn(root.RadarChatCounter.PLANS, message.plan));

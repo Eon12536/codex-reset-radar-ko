@@ -44,7 +44,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.71";
+const NOTIFICATION_BUILD = "0.2.72";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -948,7 +948,7 @@ async function runSignalRefresh(quiet) {
         await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
         await chrome.storage.local.remove("publicRetryCheck");
         await chrome.alarms.clear(PUBLIC_RETRY_ALARM);
-      } else if (settings.monitorDirectX && !state.publicResumeCheck && !['login', 'permission'].includes(directError)) {
+      } else if (settings.monitorDirectX && !state.publicResumeCheck && !['login', 'permission', 'tab-blocked'].includes(directError)) {
         await schedulePublicRetry();
       }
       await reconcileSignalNotifications(activeSignals, currentSettings, epoch, [...existingSignals, ...items]);
@@ -1585,8 +1585,7 @@ async function openSchedule(id, original = false) {
 async function clearLocalData() {
   invalidateRequests();
   await ensureSecurity();
-  await RadarDirectX.cleanup({ force: true });
-  await chatPlanOwner.cleanup({ force: true });
+  if (!await RadarDirectX.cleanup({ force: true }) || !await chatPlanOwner.cleanup({ force: true })) throw new Error('CHECK_TABS_OPEN');
   return mutate(async () => {
     const settings = await loadSettings();
     // Preserve appearance without a read-clear-restore race with the popup.
@@ -1885,6 +1884,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message.type === "SAVE_THEME") return { ok: true, settings: await saveTheme(message.theme) };
     if (message.type === "CLEAR_LOCAL_DATA") return clearLocalData();
+    if (message.type === "RESUME_CHECK_TABS") {
+      if (message.confirmed !== true) return { ok: false };
+      const x = await RadarDirectX.resume();
+      const chat = await chatPlanOwner.resume();
+      return { ok: x && chat };
+    }
     if (message.type === "ENABLE_ACCOUNT") {
       await saveSettings({ ...await loadSettings(), monitorAccount: true });
       return { ok: true };

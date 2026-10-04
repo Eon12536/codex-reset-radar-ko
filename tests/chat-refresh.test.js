@@ -280,7 +280,9 @@ test('selecting a temporary billing tab and returning to another tab preserves i
   await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
   assert.equal(w.tabs.length, 1);
   assert.deepEqual(removed, []);
-  assert.equal(w.session.chatPlanScanTabV1, undefined);
+  assert.equal(w.session.chatPlanScanTabV1.claimed, true);
+  await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+  assert.equal(w.tabs.length, 1);
 });
 
 test('a restarted worker reclaims an interrupted automatic billing tab independently of plan evidence', async () => {
@@ -336,7 +338,9 @@ test('billing cleanup preserves pinned, moved and independently navigated user t
     w.context.chrome.tabs.get = async id => ({ ...await get(id), ...patch });
     await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
     assert.deepEqual(removed, [], JSON.stringify(patch));
-    assert.equal(w.session.chatPlanScanTabV1, undefined);
+    assert.equal(w.session.chatPlanScanTabV1.claimed, true);
+    await w.send({ type: 'REFRESH_NOW' }, w.sender('popup'));
+    assert.equal(w.tabs.length, 1);
   }
 });
 

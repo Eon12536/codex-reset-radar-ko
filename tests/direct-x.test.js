@@ -34,10 +34,10 @@ test('only bounded recent Tibo posts and validated public status URLs survive no
 
 function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false } = {}) {
   const calls = [];
-  const session = {}, alarms = new Map();
+  const session = {}, local = {}, alarms = new Map();
   let url = finalUrl;
   const chrome = { permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
-    storage: { session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, structuredClone(value)), remove: async key => { delete session[key]; } } },
+    storage: { local: { get: async key => ({ [key]: local[key] }), set: async value => Object.assign(local, structuredClone(value)), remove: async key => { delete local[key]; } }, session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, structuredClone(value)), remove: async key => { delete session[key]; } } },
     alarms: { create: async (name, options) => alarms.set(name, options), clear: async name => alarms.delete(name) },
     tabs: { create: async options => { calls.push(['create', options]); url = finalUrl; return { id: 33, windowId: 1, active }; },
       get: async () => ({ id: 33, windowId: 1, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),

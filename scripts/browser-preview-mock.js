@@ -136,6 +136,10 @@
   };
 
   const mode = new URLSearchParams(globalThis.location?.search || "").get("mode");
+  if (mode === 'checkTabsPaused') {
+    state.directXScanTabV1GuardV1 = { blocked: true, reason: 'session-lost' };
+    state.settings.monitorDirectX = true;
+  }
   if (mode === 'resetUpdates') {
     const parent = { id: '2106233145163141249', author: 'thsottiaux', createdAt: new Date(now - 3600000).toISOString(),
       text: 'Seeing some reports that the Pro 500 didn’t get the reset as expected earlier. Investigating and will make up for it',
@@ -421,6 +425,11 @@
       openOptionsPage: async () => { location.href = `/src/options/options.html?lang=${encodeURIComponent(previewLanguage)}`; },
       sendMessage: async (message) => {
         messages.push(message);
+        if (message?.type === 'RESUME_CHECK_TABS' && message.confirmed === true) {
+          delete state.directXScanTabV1GuardV1; delete state.chatPlanScanTabV1GuardV1;
+          storageListeners.forEach(listener => listener({ directXScanTabV1GuardV1: { newValue: undefined } }, 'local'));
+          return { ok: true };
+        }
         if (mode === "workerUnavailable") throw new Error("Preview: background worker unavailable");
         if (message?.type === 'ACK_VISIBLE_BADGES') {
           if (mode === 'badgeReadError') return { ok: false };
@@ -482,10 +491,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.71", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.72", permission: "granted", hintAlerts: false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.71", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.72", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

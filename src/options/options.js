@@ -127,6 +127,10 @@ async function saveAppearance() {
 }
 
 form.addEventListener("input", (event) => {
+  if (event.target.id === "checkTabsClosed") {
+    control("resumeCheckTabs").disabled = !event.target.checked;
+    return;
+  }
   if (event.target.id === "syncChatHistory") {
     clearTimeout(saveTimer); saveTimer = null;
     return; // Dedicated handler saves only this consent switch.
@@ -275,7 +279,8 @@ async function changeDirectX() {
 }
 
 async function renderPublicConnection() {
-  const data = await chrome.storage.local.get(["settings", "signalSnapshot", "signalError"]);
+  const data = await chrome.storage.local.get(["settings", "signalSnapshot", "signalError", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"]);
+  control("checkTabRecovery").hidden = ![data.directXScanTabV1GuardV1, data.chatPlanScanTabV1GuardV1].some(value => value?.blocked);
   const settings = RadarSettings.sanitize(data.settings);
   const lead = data.signalSnapshot?.leadStatus;
   const status = control("publicConnectionState");
@@ -293,14 +298,26 @@ async function renderPublicConnection() {
       : "이전 수집 기록입니다. 공개 소식 확인을 눌러 새 답글 수집 결과를 확인하세요.";
     if (scan?.contextPending) status.textContent += ` 답글 문맥 ${scan.contextPending}개는 다음 조회에서 이어서 확인합니다.`;
   } else {
-    const reason = { permission: "X 직접 확인 권한이 없습니다. 위 설정을 껐다 켜 권한을 허용해 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
+    const reason = { "tab-blocked": msg("checkTabsRecoveryHelp"), permission: "X 직접 확인 권한이 없습니다. 위 설정을 껐다 켜 권한을 허용해 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
     status.textContent = reason[lead?.directError] || "아직 답글 직접 수집을 확인하지 못했습니다. 공개 소식 확인을 눌러 주세요.";
   }
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && ["signalSnapshot", "signalError", "settings"].some(key => key in changes) && !control("checkPublic").disabled) renderPublicConnection();
+  if (area === "local" && ["signalSnapshot", "signalError", "settings", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"].some(key => key in changes) && !control("checkPublic").disabled) renderPublicConnection();
 });
 renderPublicConnection();
+
+control("resumeCheckTabs").addEventListener("click", async () => {
+  if (!control("checkTabsClosed").checked) return;
+  const button = control("resumeCheckTabs"); button.disabled = true;
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "RESUME_CHECK_TABS", confirmed: true });
+    if (result?.ok) control("checkTabsClosed").checked = false;
+    control("checkTabRecoveryState").textContent = result?.ok ? "" : msg("checkTabsStillOpen", undefined, "A check tab is still open or running. Close it and try again.");
+    await renderPublicConnection();
+  } catch { control("checkTabRecoveryState").textContent = msg("retryAfterRefresh"); }
+  finally { button.disabled = !control("checkTabsClosed").checked; }
+});
 
 control("checkPublic").addEventListener("click", async () => {
   const button = control("checkPublic"); button.disabled = true;

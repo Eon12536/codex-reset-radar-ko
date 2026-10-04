@@ -105,3 +105,4 @@ html[dir="rtl"] .switch input:checked + span::after { transform: translateX(-18p
 
 :root[data-theme="light"] .appearance-panel,
 :root[data-theme="light"] .settings-card { box-shadow: var(--light-panel-shadow); }
+[hidden] { display: none !important; }

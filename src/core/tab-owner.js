@@ -1,6 +1,7 @@
 (function initTabOwner(root) {
   function create({ key, alarm, accepts, matches, prefix }) {
     const chrome = root.chrome;
+    const guardKey = key + 'GuardV1';
     let tab, inUse = false, creating = false, restoring = false, creationJob, operations = Promise.resolve();
     const selectedDuringCreate = new Set(), selectedDuringRestore = new Set();
     const error = name => new Error(prefix + '_' + name);
@@ -19,6 +20,10 @@
       await chrome.alarms.create(alarm, { when: Math.max(Date.now() + 60000, when) });
     }
     async function forget() {
+      // Clear the durable fence first, only after the tab is known to be gone.
+      // If interrupted between removals, the surviving session record is safe
+      // to recover; the reverse order could strand a fence after every scan.
+      await chrome.storage.local.remove(guardKey);
       await chrome.storage.session.remove(key);
       tab = undefined; inUse = false;
       await chrome.alarms.clear(alarm);
@@ -26,12 +31,20 @@
     function cleanup({ force = false, recover = false } = {}) {
       return operation(async () => {
         try {
+          if (force || recover) inUse = false;
           if (!tab) {
             restoring = true;
             try {
               const value = (await chrome.storage.session.get(key))[key];
-              if (!value) { await chrome.alarms.clear(alarm); return true; }
-              if (!valid(value)) { await forget(); return true; }
+              const guard = (await chrome.storage.local.get(guardKey))[guardKey];
+              if (!value && !guard) { await chrome.alarms.clear(alarm); return true; }
+              // Reload/update/browser restart clears storage.session. Tab IDs
+              // from another browser session must never authorize deletion.
+              if (!valid(value)) {
+                await chrome.storage.local.set({ [guardKey]: { blocked: true, reason: 'session-lost' } });
+                await chrome.alarms.clear(alarm);
+                return false;
+              }
               tab = value;
               if (selectedDuringRestore.has(tab.id)) tab.claimed = true;
             } finally { restoring = false; selectedDuringRestore.clear(); }
@@ -45,12 +58,20 @@
             if (!/No tab with id|Invalid tab ID/i.test(String(cause?.message))) throw cause;
             await forget(); return true;
           }
-          // A selected, pinned, moved or independently navigated tab belongs
-          // to the user. Never find or remove arbitrary tabs with a similar URL.
-          if (!tab.claimed && !current.active && !current.pinned && current.windowId === tab.windowId && matches(current.url, tab.urls))
-            await chrome.tabs.remove(tab.id);
+          // Preserve user/ambiguous tabs AND the ownership record. Forgetting
+          // that record previously allowed every retry to leave one more tab.
+          if (tab.claimed || current.active || current.pinned || current.windowId !== tab.windowId || !matches(current.url, tab.urls)) {
+            inUse = false;
+            tab.claimed = true;
+            await chrome.storage.local.set({ [guardKey]: { blocked: true, reason: 'tab-open' } });
+            await chrome.storage.session.set({ [key]: tab });
+            await watch(Date.now() + 60000);
+            return false;
+          }
+          await chrome.tabs.remove(tab.id);
           await forget(); return true;
         } catch {
+          try { await chrome.storage.local.set({ [guardKey]: { blocked: true, reason: 'cleanup-failed' } }); } catch { /* Existing records still fence creation. */ }
           try { await watch(Date.now() + 60000); } catch { /* The next caller retries. */ }
           throw error('TAB_CLEANUP_FAILED');
         }
@@ -70,10 +91,13 @@
     });
     async function runCreate(url, expiresAt) {
       if (!accepts(url)) throw error('UNSUPPORTED_PAGE');
-      await cleanup({ force: true });
+      if (!await cleanup({ force: true })) throw error('TAB_BLOCKED');
       let created;
       creating = true;
       try {
+        // Persist BEFORE calling Chrome: termination during tabs.create can
+        // otherwise lose the ID while still leaving the real tab open.
+        await chrome.storage.local.set({ [guardKey]: { blocked: false, reason: 'creating' } });
         created = await chrome.tabs.create({ url, active: false });
         tab = { id: created.id, windowId: created.windowId, startedAt: Date.now(), expiresAt, urls: [url], claimed: Boolean(created.active) || selectedDuringCreate.has(created.id) };
         inUse = true;
@@ -86,6 +110,7 @@
         // Creation may have succeeded even though persisting its ID failed.
         // Keep cleanup inside this method so a rejected caller cannot lose it.
         if (created?.id !== undefined) await cleanup({ force: true });
+        else await chrome.storage.local.set({ [guardKey]: { blocked: true, reason: 'creation-unconfirmed' } }).catch(() => {});
         throw cause;
       } finally { creating = false; selectedDuringCreate.clear(); }
     }
@@ -102,7 +127,21 @@
         return chrome.tabs.update(id, { url });
       });
     }
-    return Object.freeze({ cleanup, open, navigate, get tab() { return tab; } });
+    async function resume() {
+      // Only an explicit options-page confirmation may release a lost-session
+      // fence. A tab still tracked in this session must actually be closed.
+      return operation(async () => {
+        if (creating || creationJob || inUse) return false;
+        const value = tab || (await chrome.storage.session.get(key))[key];
+        if (valid(value)) {
+          try { await chrome.tabs.get(value.id); return false; }
+          catch (cause) { if (!/No tab with id|Invalid tab ID/i.test(String(cause?.message))) throw cause; }
+        }
+        await forget();
+        return true;
+      });
+    }
+    return Object.freeze({ cleanup, open, navigate, resume, guardKey, get tab() { return tab; } });
   }
   root.RadarTabOwner = Object.freeze({ create });
   if (typeof module !== 'undefined') module.exports = root.RadarTabOwner;

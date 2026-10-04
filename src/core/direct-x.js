@@ -97,6 +97,7 @@
   function failureReason(error) {
     const message = String(error?.message || "");
     if (/PERMISSION/.test(message)) return "permission";
+    if (/TAB_BLOCKED|TAB_CLEANUP_FAILED/.test(message)) return "tab-blocked";
     if (/LOGIN/.test(message)) return "login";
     if (/TIMEOUT/.test(message)) return "timeout";
     if (/NO_PUBLIC_POSTS/.test(message)) return "no-posts";
@@ -115,7 +116,7 @@
     signal.throwIfAborted();
     // Any persisted tab belongs to an interrupted previous scan. Cleanup must
     // succeed before another tab is opened, including after worker restarts.
-    await owner.cleanup({ force: true });
+    if (!await owner.cleanup({ force: true })) throw new Error('X_TAB_BLOCKED');
     signal.throwIfAborted();
     let tab, currentUrl = TIMELINES[0].url, currentStage = "navigation";
     const deadline = Date.now() + authors.length * 90000;
@@ -260,6 +261,6 @@
     }
   }
 
-  root.RadarDirectX = Object.freeze({ normalize, conversationContext, linkQuotedContexts, failureReason, read, cleanup: owner.cleanup, CLEANUP_ALARM, PERMISSION, AUTHORS });
+  root.RadarDirectX = Object.freeze({ normalize, conversationContext, linkQuotedContexts, failureReason, read, cleanup: owner.cleanup, resume: owner.resume, GUARD_KEY: owner.guardKey, CLEANUP_ALARM, PERMISSION, AUTHORS });
   if (typeof module !== "undefined") module.exports = root.RadarDirectX;
 })(globalThis);

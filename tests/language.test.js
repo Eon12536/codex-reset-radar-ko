@@ -64,7 +64,7 @@ test('actual settings collection diagnostics translate off, error, legacy and pa
  const render=source.slice(source.indexOf('async function renderPublicConnection()'),source.indexOf('chrome.storage.onChanged.addListener',source.indexOf('async function renderPublicConnection()')));
  const base={monitorSignals:true,monitorLeadSource:true,monitorDirectX:true};
  const cases=[{settings:{...base,monitorSignals:false}},{settings:{...base,monitorDirectX:false}},
-  ...['permission','login','timeout','no-posts','page-unavailable','unknown'].map(directError=>({settings:base,signalSnapshot:{leadStatus:{directError}}})),
+  ...['permission','login','timeout','no-posts','page-unavailable','tab-blocked','unknown'].map(directError=>({settings:base,signalSnapshot:{leadStatus:{directError}}})),
   {settings:base,signalSnapshot:{leadStatus:{directOk:true}}},
   {settings:base,signalSnapshot:{leadStatus:{directOk:true,latestPostAt:Date.now(),directScan:{posts:12,conversations:3,truncated:2,contextPending:2,conversationFailures:1,
    timelines:[{author:'thsottiaux',kind:'posts',ok:true,posts:12,stopReason:'time-budget'},{author:'reach_vb',kind:'replies',ok:false,error:'timeout',stage:'reading'}]}}}}];
@@ -72,6 +72,7 @@ test('actual settings collection diagnostics translate off, error, legacy and pa
   const a=locale({value});await a.i18n.ready;
   for(const file of ['settings','time','signals']) vm.runInContext(fs.readFileSync(require.resolve('../src/core/'+file),'utf8'),a.context);
   const status={textContent:''};a.context.control=()=>status;
+  a.context.msg=(...args)=>a.i18n.t(...args);
   vm.runInContext(render,a.context);
   for(const data of cases) {
    a.context.chrome.storage.local.get=async()=>data;
