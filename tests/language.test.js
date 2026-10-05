@@ -80,7 +80,7 @@ test('actual settings collection diagnostics translate off, error, legacy and pa
    assert.doesNotMatch(a.copy.translate(status.textContent),/[가-힣]/,value+': '+status.textContent);
   }
   const html=fs.readFileSync(require.resolve('../src/options/options.html'),'utf8');
-  const resumeHelp=html.match(/Chrome을 다시 켰을 때 놓친 예고·암시[^<]+/)[0];
+  const resumeHelp=html.match(/<strong>놓친 공개 소식 복귀 알림<\/strong><small>([^<]+)<\/small>/)[1];
   assert.doesNotMatch(a.copy.translate(resumeHelp),/[가-힣]/,value+': resume help');
   assert.doesNotMatch(a.copy.translate('리셋 예고·완료·리셋권 공지 알림'),/[가-힣]/,value+': reset alert label');
  }
@@ -96,7 +96,7 @@ test('notification diagnostics use the selected country time and translate deliv
   a.context.document={getElementById:id=>elements[id]};
   a.context.setTimeout=setTimeout;a.context.clearTimeout=clearTimeout;
   a.context.chrome.runtime={sendMessage:async()=>({ok:true,version:require('../manifest.json').version,
-   permission:'granted',hintAlerts:false,pending:0,quiet:false,realDelivery:{status:'accepted',at},
+   permission:'granted',hintAlerts:false,pending:0,quiet:false,resumeReadyAt:Date.now()+60000,realDelivery:{status:'accepted',at},
    publicAlerts:{pending:0,handled:3,expired:7,disabled:2,eligible:0}})};
   vm.runInContext(source,a.context);
   await new Promise(resolve=>setImmediate(resolve));

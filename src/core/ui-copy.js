@@ -187,6 +187,8 @@
     '리셋 예고·완료·리셋권 공지 알림':'Reset announcements, updates and credit grants',
     '실제 알림:':'Last desktop alert:', '소식 분류:':'Update classification:',
     '처리 기록':'Handled', '기존·기한 지난 글':'Older or expired', '설정 제외':'Disabled by settings', '발송 대상':'Eligible',
+    '시작·절전 복귀 후 알림 준비 중 (1분 대기)':'Preparing alerts after startup or wake (1-minute wait)',
+    'Chrome을 다시 켜거나 절전에서 복귀하면 놓친 공개 소식을 수집하고 최소 1분 뒤 한 번 알립니다. 원문이 늦게 수집돼도 보관된 누락 구간의 글은 대상입니다. 해당 알림 항목이 켜져 있어야 하며 복귀 알림은 확장 방해 금지 시간을 예외 처리합니다. 미전달 알림은 !의 24시간 표시 기한과 별도로 보관합니다. 후보 보관은 최근 7일·최대 100개이며 리셋 확정이 아닙니다. 아래 후보 알림을 꺼도 팝업에는 표시됩니다.':'After Chrome starts or wakes, collects missed public updates and notifies once after at least 1 minute. Late posts within a saved offline interval also qualify. Enable the relevant alert categories. Catch-up alerts bypass extension quiet hours. Undelivered alerts are stored separately from the 24-hour ! marker. Stores up to 100 candidates from the last 7 days. Candidates do not confirm resets and remain visible with candidate alerts off.',
     'OpenAI · Tibo · VB 공개 소식 감시가 꺼져 있습니다.':'OpenAI · Tibo · VB monitoring is off.',
     '답글 직접 확인 꺼짐 · 공개 피드만 사용 중입니다. 답글 누락을 줄이려면 위의 X 글·답글 직접 확인을 켜 주세요.':'Direct replies off · Only public feeds are in use. Enable X posts and replies above to reduce missed replies.',
     'X 직접 확인 권한이 없습니다. 위 설정을 껐다 켜 권한을 허용해 주세요.':'X access is not allowed. Toggle the setting above and grant access.',
