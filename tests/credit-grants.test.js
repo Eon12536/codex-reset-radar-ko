@@ -181,13 +181,81 @@ test('Windows delivery failures retry durably after worker restart without dupli
   assert.equal(restarted.delivered.length, 1); assert.equal(restarted.local.pendingNotifications.length, 0);
 });
 
+test('an undelivered Banked arrival survives two days offline without renewing the badge', async () => {
+  const h = harness(); await h.refresh();
+  h.context.chrome.notifications.create = async () => { throw new Error('desktop unavailable'); };
+  h.source.credits = credits(1); await h.refresh();
+  const pending = structuredClone(h.local.pendingNotifications[0]);
+  const resumed = harness(h.local); resumed.clock(START + 2 * DAY);
+  resumed.source.credits = credits(1);
+  resumed.source.creditsStatus = 500;
+  await resumed.refresh();
+  assert.equal(resumed.local.pendingNotifications.length, 1);
+  assert.equal(resumed.delivered.length, 0, 'Cached private data cannot authorize delivery');
+  assert.equal(resumed.badges.at(-1), '75%');
+  resumed.source.creditsStatus = 200;
+  await resumed.refresh(); await resumed.refresh();
+  assert.equal(resumed.delivered.length, 1);
+  assert.equal(resumed.delivered[0].id, pending.id);
+  assert.equal(resumed.local.pendingNotifications.length, 0);
+  assert.equal(resumed.badges.at(-1), '75%', 'Delivery must not revive the expired !');
+});
+
+test('an old pending Banked arrival is cancelled when the verified account changes', async () => {
+  const h = harness(); await h.refresh();
+  h.context.chrome.notifications.create = async () => { throw new Error('desktop unavailable'); };
+  h.source.credits = credits(1); await h.refresh();
+  const resumed = harness(h.local); resumed.clock(START + 2 * DAY);
+  resumed.source.token = jwt('other', 'account'); resumed.source.credits = credits(1);
+  await resumed.refresh();
+  assert.equal(resumed.delivered.length, 0);
+  assert.equal(resumed.local.pendingNotifications.length, 0);
+});
+
+test('expired unqueued Banked observations are not turned into new alerts', async () => {
+  const h = harness(); await h.refresh();
+  h.source.credits = credits(1); await h.refresh();
+  h.local.notificationHistory = {}; h.local.pendingNotifications = [];
+  const resumed = harness(h.local); resumed.clock(START + 2 * DAY);
+  resumed.source.credits = credits(1); await resumed.refresh();
+  assert.equal(resumed.delivered.length, 0);
+  assert.equal(resumed.badges.at(-1), '75%');
+});
+
+test('reading a Banked arrival does not erase its undelivered toast across two days offline', async () => {
+  const h = harness(); await h.refresh();
+  h.context.chrome.notifications.create = async () => { throw new Error('desktop unavailable'); };
+  h.source.credits = credits(1); await h.refresh();
+  const receipt = h.context.RadarBadge.view(h.local, h.local.settings).receipt;
+  assert.equal((await h.send({ type: 'ACK_VISIBLE_BADGES', receipt }, h.sender('popup'))).ok, true);
+  assert.equal(h.badges.at(-1), '75%');
+  assert.equal(h.local.pendingNotifications.length, 1);
+  const resumed = harness(h.local); resumed.clock(START + 2 * DAY);
+  resumed.source.credits = credits(1); await resumed.refresh(); await resumed.refresh();
+  assert.equal(resumed.delivered.length, 1);
+  assert.equal(resumed.badges.at(-1), '75%');
+});
+
+test('an old Banked queue without a valid original queue time cannot revive an expired observation', async () => {
+  for (const queuedAt of [undefined, START - 1, START + DAY, START + 3 * DAY]) {
+    const h = harness(); await h.refresh();
+    h.context.chrome.notifications.create = async () => { throw new Error('desktop unavailable'); };
+    h.source.credits = credits(1); await h.refresh();
+    h.local.pendingNotifications[0].queuedAt = queuedAt;
+    const resumed = harness(h.local); resumed.clock(START + 2 * DAY);
+    resumed.source.credits = credits(1); await resumed.refresh();
+    assert.equal(resumed.delivered.length, 0);
+    assert.equal(resumed.local.pendingNotifications.length, 0);
+  }
+});
+
 test('a quiet queue is cancelled on account change, opt-out, or expiry instead of ringing for an old grant', async () => {
   for (const change of ['account', 'off', 'expired']) {
     const h = harness({ settings: { quietHoursEnabled: true, quietStart: '00:00', quietEnd: '23:59', timezoneMode: 'manual', timezoneOverride: 'UTC' } });
     await h.refresh(); h.source.credits = credits(1); await h.refresh();
     if (change === 'account') h.source.token = jwt('other', 'account');
     if (change === 'off') await h.save({ notifyBankedReset: false });
-    if (change === 'expired') h.clock(START + DAY);
+    if (change === 'expired') h.clock(START + 30 * DAY);
     await h.save({ quietHoursEnabled: false }); await h.refresh();
     assert.equal(h.delivered.length, 0); assert.equal(h.local.pendingNotifications.length, 0);
   }

@@ -22,7 +22,9 @@
     if (!reading || !key) return previous;
     const same = previous?.accountKey === key && previous.observedAt <= now && now - previous.observedAt <= MAX_GAP;
     const state = same ? { ...previous } : { accountKey: key, sequence: 0, seenIds: [], identitiesReady: false, events: [] };
-    state.events = currentEvents(state, now);
+    // Keep delivery evidence independently of the popup/badge's 24-hour TTL.
+    // Only an originally queued notice may use these older observations.
+    state.events = retainedEvents(state, now);
     const addedIds = same && state.identitiesReady && reading.ids ? reading.ids.filter(id => !state.seenIds.includes(id)) : [];
     const countAdded = same ? Math.max(0, reading.count - state.count) : 0;
     // A count-only response may already have announced credits whose IDs arrive
@@ -45,9 +47,20 @@
     return { ...state, count: reading.count, observedAt: now };
   }
 
-  function currentEvents(state, now = Date.now()) {
+  function retainedEvents(state, now = Date.now()) {
     return (state?.events || []).filter(event => event.accountKey === state.accountKey &&
-      Number.isInteger(event.added) && event.added > 0 && event.observedAt <= now && now - event.observedAt < TTL);
+      Number.isInteger(event.added) && event.added > 0 && Number.isFinite(event.observedAt) &&
+      event.observedAt <= now && now - event.observedAt < MAX_GAP);
+  }
+
+  function currentEvents(state, now = Date.now()) {
+    return retainedEvents(state, now).filter(event => now - event.observedAt < TTL);
+  }
+
+  function pendingEvent(state, pending, now = Date.now()) {
+    if (!Number.isFinite(pending?.queuedAt) || pending.queuedAt > now) return null;
+    return retainedEvents(state, now).find(event => event.id === pending.id && event.notify &&
+      event.observedAt <= pending.queuedAt && pending.queuedAt - event.observedAt < TTL) || null;
   }
 
   function latest(state, snapshot, now = Date.now()) {
@@ -55,6 +68,6 @@
     return currentEvents(state, now).at(-1) || null;
   }
 
-  root.RadarCreditGrants = Object.freeze({ TTL, inventory, advance, currentEvents, latest });
+  root.RadarCreditGrants = Object.freeze({ TTL, inventory, advance, retainedEvents, currentEvents, pendingEvent, latest });
   if (typeof module !== "undefined") module.exports = root.RadarCreditGrants;
 })(globalThis);

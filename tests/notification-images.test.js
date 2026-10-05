@@ -31,7 +31,7 @@ test('the worker CSP permits its own image fetch without allowing additional net
 
 test('queued notifications from previous versions replace their stale icon URL at delivery', async () => {
   const w = makeWorker({ stored: { pendingNotifications: [{ id: 'signal:111', options: { title: '기존 알림', message: '본문', iconUrl: 'assets/icons/icon128.png' } }] } });
-  w.local.signalSnapshot = { activeSignals: [{ id: '111', createdAt: new Date().toISOString() }] };
+  w.local.signalSnapshot = { activeSignals: [{ id: '111', createdAt: new Date().toISOString(), assessment: { confidence: 'high' } }] };
   await w.context.flushPendingNotifications();
   checkIcon(w, w.notifications['signal:111']);
   assert.equal(w.notifications['signal:111'].type, 'basic');
@@ -40,7 +40,7 @@ test('queued notifications from previous versions replace their stale icon URL a
 
 test('notification failure queues a single retry without rejecting and retries successfully once', async () => {
   const w = makeWorker(); const original = w.context.chrome.notifications.create;
-  w.local.signalSnapshot = { activeSignals: [{ id: '111', createdAt: new Date().toISOString() }] };
+  w.local.signalSnapshot = { activeSignals: [{ id: '111', createdAt: new Date().toISOString(), assessment: { confidence: 'high' } }] };
   w.context.chrome.notifications.create = async () => { throw new Error(imageError); };
   await w.context.createNotification('signal:111', { title: '알림', message: '본문' }, { quietHoursEnabled: false });
   await w.context.createNotification('signal:111', { title: '알림', message: '수정' }, { quietHoursEnabled: false });

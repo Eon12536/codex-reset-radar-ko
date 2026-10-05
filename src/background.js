@@ -44,7 +44,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.74";
+const NOTIFICATION_BUILD = "0.2.75";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -777,7 +777,7 @@ function reclassifiedSignals(cached = [], incoming = []) {
 }
 
 async function reconcileSignalNotifications(signals, settings, epoch, reviewed = []) {
-  const current = new Set((settings.monitorSignals ? signals : []).map(item => "signal:" + item.id));
+  const current = new Set(signals.filter(item => signalNotificationEnabled(item, settings)).map(item => "signal:" + item.id));
   const invalid = new Set(reviewed.map(item => "signal:" + item.id).filter(id => !current.has(id)));
   const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
   if (epoch !== stateEpoch) return;
@@ -992,6 +992,11 @@ function confidenceAllowed(confidence, threshold) {
   if (threshold === "all") return true;
   if (threshold === "medium") return confidence === "high" || confidence === "medium";
   return confidence === "high";
+}
+
+function signalNotificationEnabled(signal, settings) {
+  return Boolean(signal && settings.monitorSignals && settings.notifyOfficialReset &&
+    confidenceAllowed(signal.assessment?.confidence, settings.confidenceThreshold));
 }
 
 function reportNotificationOptions(report) {
@@ -1264,14 +1269,16 @@ async function reconcileBankedNotifications(settings, epoch) {
   if (epoch !== stateEpoch) return;
   const current = new Map((settings.monitorAccount && settings.notifyBankedReset ?
     RadarCreditGrants.currentEvents(creditGrantState).filter(event => event.notify) : []).map(event => [event.id, event]));
+  const retained = new Set((settings.monitorAccount && settings.notifyBankedReset ?
+    RadarCreditGrants.retainedEvents(creditGrantState).filter(event => event.notify) : []).map(event => event.id));
   await chrome.storage.local.set({
     pendingNotifications: pendingNotifications.flatMap(pending => {
       if (!pending.id.startsWith("banked:")) return [pending];
-      const event = current.get(pending.id);
+      const event = retained.has(pending.id) ? RadarCreditGrants.pendingEvent(creditGrantState, pending) : null;
       return event ? [{ ...pending, options: { ...pending.options, ...bankedNotificationOptions(event) } }] : [];
     }),
     notificationHistory: Object.fromEntries(Object.entries(notificationHistory)
-      .filter(([id]) => !id.startsWith("banked:") || current.has(id)))
+      .filter(([id]) => !id.startsWith("banked:") || retained.has(id)))
   });
   for (const id of Object.keys(await chrome.notifications.getAll())) {
     if (epoch !== stateEpoch) return;
@@ -1446,7 +1453,7 @@ async function testNotification() {
 
 async function maybeNotifySignal(signal) {
   const settings = await loadSettings();
-  if (!settings.monitorSignals || !settings.notifyOfficialReset || !confidenceAllowed(signal.assessment.confidence, settings.confidenceThreshold)) return;
+  if (!signalNotificationEnabled(signal, settings)) return;
   const dedupeKey = `signal:${signal.id}`;
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(["notificationHistory", "publicAlertState"]);
   if (!RadarPublicAlerts.allowed(signal, publicAlertState, notificationHistory)) return;
@@ -1772,7 +1779,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       if (!settings.monitorSignals || !settings.notifyOfficialReset) return;
       const { signalSnapshot } = await chrome.storage.local.get("signalSnapshot");
       const cached = signalSnapshot?.activeSignals || (signalSnapshot?.signal ? [signalSnapshot.signal] : []);
-      if (!reclassifiedSignals(cached).some(signal => alarm.name === "snooze:signal:" + signal.id)) return;
+      if (!reclassifiedSignals(cached).some(signal => alarm.name === "snooze:signal:" + signal.id &&
+        signalNotificationEnabled(signal, settings))) return;
       await createNotification(alarm.name.slice("snooze:".length), {
         title: msg("notificationReminderTitle", undefined, "Codex reset-signal reminder"),
         message: msg("notificationReminderMessage", undefined, "Open the extension for the latest evidence and advice."),
@@ -1816,7 +1824,7 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
     if (pending.id.startsWith("banked:")) {
       if (!settings.notifyBankedReset) return false;
       const { creditGrantState, accountSnapshot } = await chrome.storage.local.get(["creditGrantState", "accountSnapshot"]);
-      const event = RadarCreditGrants.currentEvents(creditGrantState).find(event => event.id === pending.id && event.notify);
+      const event = RadarCreditGrants.pendingEvent(creditGrantState, pending);
       if (!event) return false;
       if (!creditsVerified || accountSnapshot?.accountKey !== event.accountKey) return true;
       pending.options = { ...pending.options, ...bankedNotificationOptions(event) };
@@ -1836,6 +1844,7 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
     if (pending.id.startsWith("signal:")) {
       const { signalSnapshot } = await chrome.storage.local.get('signalSnapshot');
       const item = (signalSnapshot?.activeSignals || [signalSnapshot?.signal]).find(item => item && pending.id === 'signal:' + item.id);
+      if (!signalNotificationEnabled(item, settings)) return false;
       if (!queuedPublicAllowed(item, publicAlertState, pending)) return false;
       const { scheduleSnapshot } = await chrome.storage.local.get("scheduleSnapshot");
       if (RadarSchedule.supersededIds(scheduleSnapshot).has(pending.id.slice(7))) return false;

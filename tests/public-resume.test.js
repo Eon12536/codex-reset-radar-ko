@@ -426,6 +426,26 @@ test('startup queues catch-up until the desktop grace period ends, across worker
   assert.equal(restarted.local.pendingNotifications.length, 0);
 });
 
+test('repeated manual checks during startup grace do not postpone the pending desktop notification', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  w.local.signalSnapshot = { checkedAt: at.value - HOUR };
+  source.items = [post('We have now reset all Codex usage limits.', '507', 0.1)];
+  await w.events.startup();
+  const deadline = w.local.publicDeliveryReadyAt;
+  for (let i = 0; i < 10; i++) {
+    at.value += 5000;
+    await w.context.refreshSignals();
+    assert.equal(w.local.publicDeliveryReadyAt, deadline);
+    assert.equal(Object.keys(w.notifications).length, 0);
+  }
+  at.value = deadline;
+  await w.events.alarm({ name: 'codex-reset-radar-public-delivery', scheduledTime: deadline });
+  assert.ok(w.notifications['report:507']);
+  assert.equal(w.local.pendingNotifications.length, 0);
+});
+
 test('an overdue delivery alarm after sleep reopens the desktop grace period without fetching', async () => {
   const { w, source } = publicWorker();
   const at = { value: Date.now() };
