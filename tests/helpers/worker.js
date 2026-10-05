@@ -63,4 +63,9 @@ function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
     send(message, sender) { return new Promise(resolve => { const keep = events.message(message,sender,resolve); if (keep===false) resolve({ok:false}); }); }
   };
 }
-module.exports = { makeWorker, FAKE_TOKEN, RAW_USAGE, json };
+async function finishPublicResume(worker) {
+  const WorkerDate = worker.context.Date;
+  worker.context.Date = class extends WorkerDate { static now() { return WorkerDate.now() + 60000; } };
+  await worker.events.alarm({ name: 'codex-reset-radar-public-delivery' });
+}
+module.exports = { makeWorker, FAKE_TOKEN, RAW_USAGE, json, finishPublicResume };

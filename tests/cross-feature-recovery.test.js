@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeWorker, FAKE_TOKEN, RAW_USAGE, json } = require('./helpers/worker');
+const { makeWorker, FAKE_TOKEN, RAW_USAGE, json, finishPublicResume } = require('./helpers/worker');
 const START = Date.parse('2026-10-03T06:00:00Z');
 
 test('quiet reset news and Banked arrivals survive read acknowledgement, delivery failure and two worker restarts without duplicate toasts', async () => {
@@ -54,6 +54,7 @@ test('quiet reset news and Banked arrivals survive read acknowledgement, deliver
   quiet = false;
   const second = create(structuredClone(first.local));
   await second.events.startup();
+  await finishPublicResume(second);
   await second.send({ type: 'REFRESH_NOW' }, second.sender('popup'));
   assert.equal(accepted.get('report:123'), 1);
   assert.equal(accepted.get(bankedId), 1);
@@ -66,6 +67,7 @@ test('quiet reset news and Banked arrivals survive read acknowledgement, deliver
     published_at: new Date(now - 60000).toISOString(), metadata: { author_user_name: 'reach_vb' } });
   const third = create(structuredClone(second.local));
   await third.events.startup();
+  await finishPublicResume(third);
   await third.send({ type: 'REFRESH_NOW' }, third.sender('popup'));
   assert.equal(accepted.get('report:125'), 1);
   assert.equal(accepted.size, 3);

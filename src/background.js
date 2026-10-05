@@ -44,7 +44,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.72";
+const NOTIFICATION_BUILD = "0.2.73";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -123,6 +123,7 @@ function ensureSecurity() {
       }
       for (const [id, request] of Object.entries(session.chatPlanTabsV2 || {})) if (request?.expiresAt > Date.now()) chatPlanTabs.set(Number(id), request);
     }
+    await restorePublicQueueReceipts();
     await revalidateCachedSignals(stateEpoch);
     try { await configureChatCounter(settings.monitorChat); }
     catch { await chrome.storage.local.set({ chatCounterError: true }); }
@@ -169,7 +170,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
     }
     else await injectChatCounter();
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource) {
-      await chrome.storage.local.remove("publicResumeCheck");
+      await chrome.storage.local.remove(["publicResumeCheck", "publicDeliveryReadyAt"]);
       await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
       await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
     }
@@ -727,7 +728,7 @@ async function storeAccountSnapshot(usage, credits, epoch, identity) {
 }
 
 async function clearSignalState() {
-  await chrome.storage.local.remove("publicResumeCheck");
+  await chrome.storage.local.remove(["publicResumeCheck", "publicDeliveryReadyAt"]);
   await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
   await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
   await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache"]);
@@ -1020,18 +1021,48 @@ async function reconcileReportNotifications(reports, settings, epoch, schedule) 
   }
 }
 
-function publicResumeBypassesQuiet(item, state, settings) {
+function publicResumeBypassesQuiet(item, state, settings, pending = null) {
   const entry = state?.entries?.[item?.id];
-  // Delivery retries retain their original recovery authorization and expiry;
+  // Delivery retries retain their original recovery authorization;
   // a later ordinary poll must not silently turn them into quiet-hours waits.
-  return Boolean(settings.notifyPublicOnResume && entry?.catchUp && entry.expiresAt > Date.now());
+  return Boolean(settings.notifyPublicOnResume && ((entry?.catchUp && entry.expiresAt > Date.now()) ||
+    (RadarPublicAlerts.validReceipt(item, pending?.publicReceipt, pending?.queuedAt) &&
+      (pending.publicReceipt.catchUp || pending.publicResumed))));
+}
+
+function queuedPublicAllowed(item, state, pending) {
+  return RadarPublicAlerts.allowed(item, state, {}, { queued: true,
+    receipt: pending.publicReceipt, queuedAt: pending.queuedAt });
+}
+
+async function restorePublicQueueReceipts() {
+  const { pendingNotifications = [], publicAlertState, signalSnapshot, hintSnapshot, scheduleSnapshot } =
+    await chrome.storage.local.get(['pendingNotifications', 'publicAlertState', 'signalSnapshot', 'hintSnapshot', 'scheduleSnapshot']);
+  // Older versions also persisted the queue before delivery. Recover only
+  // entries whose original observation proves eligibility at that queue time;
+  // a silent migration baseline or unknown historical queue is not proof.
+  const items = [...(signalSnapshot?.activeSignals || [signalSnapshot?.signal].filter(Boolean)),
+    ...(signalSnapshot?.reports || []), ...(hintSnapshot?.items || []),
+    ...RadarSchedule.changes(scheduleSnapshot, { freshOnly: false }).map(change => change.post),
+    ...RadarEvents.notices(hintSnapshot?.eventAlerts).map(notice => notice.event.item)];
+  let changed = false;
+  const restored = pendingNotifications.map(pending => {
+    if (!RadarPublicAlerts.publicId(pending.id) || pending.publicReceipt || !Number.isFinite(pending.queuedAt) || pending.queuedAt > Date.now()) return pending;
+    const item = items.find(item => RadarPublicAlerts.notificationKeys(item.id, [pending.id]).includes(pending.id));
+    const publicReceipt = RadarPublicAlerts.receipt(item, publicAlertState, pending.queuedAt);
+    if (!RadarPublicAlerts.validReceipt(item, publicReceipt, pending.queuedAt)) return pending;
+    changed = true;
+    return { ...pending, publicReceipt };
+  });
+  if (changed) await chrome.storage.local.set({ pendingNotifications: restored });
 }
 
 async function maybeNotifyReport(report, settings, epoch, schedule) {
   const id = 'report:' + report.id;
   const { notificationHistory = {}, publicAlertState, pendingNotifications = [] } = await chrome.storage.local.get(['notificationHistory', 'publicAlertState', 'pendingNotifications']);
   if (epoch !== stateEpoch || !reportNotificationEnabled(report, settings, schedule, pendingNotifications) || !RadarPublicAlerts.allowed(report, publicAlertState, notificationHistory)) return;
-  await createNotification(id, reportNotificationOptions(report), settings, { bypassQuiet: publicResumeBypassesQuiet(report, publicAlertState, settings) });
+  await createNotification(id, reportNotificationOptions(report), settings,
+    { bypassQuiet: publicResumeBypassesQuiet(report, publicAlertState, settings), publicItem: report });
 }
 
 function scheduleNotificationEnabled(change, settings) {
@@ -1052,16 +1083,19 @@ function scheduleNotificationOptions(change) {
 async function reconcileScheduleNotifications(schedule, settings, epoch) {
   const { pendingNotifications = [], notificationHistory = {} } = await chrome.storage.local.get(["pendingNotifications", "notificationHistory"]);
   if (epoch !== stateEpoch) return;
-  const current = new Map(RadarSchedule.changes(schedule).filter(change => scheduleNotificationEnabled(change, settings) &&
+  const current = new Map(RadarSchedule.changes(schedule, { freshOnly: false }).filter(change => scheduleNotificationEnabled(change, settings) &&
     !schedulePostAlreadyNotified(change, notificationHistory)).map(change => [RadarSchedule.notificationId(change), change]));
   await chrome.storage.local.set({ pendingNotifications: pendingNotifications.flatMap(pending => {
     if (!pending.id.startsWith("schedule:")) return [pending];
     const change = current.get(pending.id);
-    return change ? [{ ...pending, options: { ...pending.options, ...scheduleNotificationOptions(change) } }] : [];
+    const eligible = change && (Date.now() - RadarTime.parseTimestamp(change.post.createdAt) <= 48 * 3600000 ||
+      RadarPublicAlerts.validReceipt(change.post, pending.publicReceipt, pending.queuedAt));
+    return eligible ? [{ ...pending, options: { ...pending.options, ...scheduleNotificationOptions(change) } }] : [];
   }) });
+  const displayed = new Set(RadarSchedule.changes(schedule).map(RadarSchedule.notificationId));
   for (const id of Object.keys(await chrome.notifications.getAll())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith("schedule:") && !current.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith("schedule:") && (!current.has(id) || !displayed.has(id))) await chrome.notifications.clear(id);
   }
 }
 
@@ -1083,7 +1117,7 @@ async function maybeNotifySchedule(change, epoch) {
   if (epoch !== stateEpoch || notificationHistory[id] || !RadarPublicAlerts.allowed(change.post, publicAlertState, {}, { queued: true })) return;
   if (schedulePostAlreadyNotified(change, notificationHistory)) return;
   await createNotification(id, scheduleNotificationOptions(change), settings,
-    { bypassQuiet: publicResumeBypassesQuiet(change.post, publicAlertState, settings) });
+    { bypassQuiet: publicResumeBypassesQuiet(change.post, publicAlertState, settings), publicItem: change.post });
   const delivered = (await chrome.storage.local.get('notificationHistory')).notificationHistory || {};
   // Keep only the latest 100 schedule revision keys; preserve other dedupes.
   const entries = Object.entries(delivered).filter(([key]) => key.startsWith("schedule:"))
@@ -1129,7 +1163,7 @@ async function maybeNotifyHint(hint, epoch = stateEpoch) {
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(["notificationHistory", "publicAlertState"]);
   if (epoch !== stateEpoch || !RadarPublicAlerts.allowed(hint, publicAlertState, notificationHistory)) return;
   await createNotification(id, hintNotificationOptions({ ...hint, assessment }), settings,
-    { bypassQuiet: publicResumeBypassesQuiet(hint, publicAlertState, settings) });
+    { bypassQuiet: publicResumeBypassesQuiet(hint, publicAlertState, settings), publicItem: hint });
 }
 
 function eventNotificationOptions(notice) {
@@ -1159,7 +1193,7 @@ async function maybeNotifyEvent(notice, settings, epoch) {
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(['notificationHistory', 'publicAlertState']);
   if (epoch !== stateEpoch || !RadarPublicAlerts.allowed(notice.event.item, publicAlertState, notificationHistory)) return;
   await createNotification(notice.id, eventNotificationOptions(notice), settings,
-    { bypassQuiet: publicResumeBypassesQuiet(notice.event.item, publicAlertState, settings) });
+    { bypassQuiet: publicResumeBypassesQuiet(notice.event.item, publicAlertState, settings), publicItem: notice.event.item });
 }
 
 function recoveryNotificationOptions(event, settings) {
@@ -1302,7 +1336,7 @@ async function notificationStatus() {
   const [permission, data] = await Promise.all([
     chrome.notifications.getPermissionLevel(),
     chrome.storage.local.get(["settings", "notificationDelivery", "notificationRealDelivery", "pendingNotifications",
-      "notificationHistory", "publicAlertState", "signalSnapshot", "hintSnapshot"])
+      "notificationHistory", "publicAlertState", "signalSnapshot", "hintSnapshot", "publicDeliveryReadyAt"])
   ]);
   const settings = RadarSettings.sanitize(data.settings);
   const pending = data.pendingNotifications || [];
@@ -1324,18 +1358,21 @@ async function notificationStatus() {
     realDelivery: data.notificationRealDelivery || (data.notificationDelivery?.test === false ? data.notificationDelivery : null),
     publicAlerts, publicCheckedAt: data.signalSnapshot?.checkedAt || null,
     hintAlerts: Boolean(settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints),
-    quiet: RadarTime.isQuietHours(settings), pending: (data.pendingNotifications || []).length };
+    quiet: RadarTime.isQuietHours(settings), pending: (data.pendingNotifications || []).length,
+    resumeReadyAt: data.publicDeliveryReadyAt > Date.now() ? data.publicDeliveryReadyAt : null };
 }
 
-async function queueNotification(id, options, accountKey = null) {
-  const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
+async function queueNotification(id, options, accountKey = null, publicItem = null) {
+  const { pendingNotifications = [], publicAlertState } = await chrome.storage.local.get(["pendingNotifications", "publicAlertState"]);
   if (pendingNotifications.some(item => item.id === id)) {
     await chrome.storage.local.set({ pendingNotifications: pendingNotifications.map(item => item.id === id ? { ...item, options } : item) });
     return false;
   }
+  const publicReceipt = RadarPublicAlerts.publicId(id) ? RadarPublicAlerts.receipt(publicItem, publicAlertState) : null;
   await chrome.storage.local.set({
     pendingNotifications: [...pendingNotifications.filter(item => item.id !== id),
-      { id, options, queuedAt: Date.now(), ...(accountKey ? { accountKey } : {}) }].slice(-100)
+      { id, options, queuedAt: Date.now(), ...(accountKey ? { accountKey } : {}),
+        ...(publicReceipt ? { publicReceipt } : {}) }].slice(-100)
   });
   return true;
 }
@@ -1365,10 +1402,19 @@ async function retryPublicDelivery(id) {
   } catch { /* The original durable entry remains for ordinary polling. */ }
 }
 
-async function createNotification(id, options, settings, { bypassQuiet = false, accountKey = null } = {}) {
+async function deferPublicDelivery(id) {
+  if (!RadarPublicAlerts.publicId(id)) return false;
+  const { publicDeliveryReadyAt } = await chrome.storage.local.get('publicDeliveryReadyAt');
+  if (!(publicDeliveryReadyAt > Date.now())) return false;
+  await chrome.alarms.create(PUBLIC_DELIVERY_ALARM, { when: publicDeliveryReadyAt });
+  return true;
+}
+
+async function createNotification(id, options, settings, { bypassQuiet = false, accountKey = null, publicItem = null } = {}) {
   const fullOptions = notificationOptions(options);
   // Persist before any Chrome call, and keep the original age on retries.
-  if (!await queueNotification(id, fullOptions, accountKey)) return;
+  if (!await queueNotification(id, fullOptions, accountKey, publicItem)) return;
+  if (await deferPublicDelivery(id)) return;
   if (!bypassQuiet && RadarTime.isQuietHours(settings)) return;
   try {
     await deliverNotification(id, fullOptions);
@@ -1415,7 +1461,7 @@ async function maybeNotifySignal(signal) {
       { title: msg("viewEvidence", undefined, "View evidence") },
       { title: msg("remindLater", undefined, "Remind me later") }
     ]
-  }, settings, { bypassQuiet: publicResumeBypassesQuiet(signal, publicAlertState, settings) });
+  }, settings, { bypassQuiet: publicResumeBypassesQuiet(signal, publicAlertState, settings), publicItem: signal });
 }
 
 function expiryNotificationId(accountKey, nearest) {
@@ -1630,7 +1676,7 @@ async function preparePublicResume({ onlyIfDelayed = false, scheduledTime = null
   await mutate(async () => {
     const settings = await loadSettings();
     if (!settings.monitorSignals || !settings.monitorLeadSource) return;
-    const { signalSnapshot, publicResumeCheck } = await chrome.storage.local.get(['signalSnapshot', 'publicResumeCheck']);
+    const { signalSnapshot, publicResumeCheck, pendingNotifications = [] } = await chrome.storage.local.get(['signalSnapshot', 'publicResumeCheck', 'pendingNotifications']);
     const lastCheck = signalSnapshot?.checkedAt;
     // Chrome dispatches an overdue alarm on wake without firing onStartup.
     // Allow two minutes of ordinary scheduling jitter before treating it as
@@ -1640,7 +1686,13 @@ async function preparePublicResume({ onlyIfDelayed = false, scheduledTime = null
     const gap = lastCheck && Date.now() - lastCheck > settings.pollMinutes * 2 * 60000;
     if (onlyIfDelayed && ((!overdue && !gap) || (publicResumeCheck && !publicResumeCheck.collectedAt))) return;
     const since = Math.min(publicResumeCheck?.since || Infinity, signalSnapshot?.checkedAt || Date.now() - 86400000);
-    await chrome.storage.local.set({ publicResumeCheck: { attempts: 0, since } });
+    const publicDeliveryReadyAt = Date.now() + 60000;
+    await chrome.storage.local.set({ publicResumeCheck: { attempts: 0, since }, publicDeliveryReadyAt,
+      pendingNotifications: pendingNotifications.map(pending => RadarPublicAlerts.publicId(pending.id) && pending.publicReceipt ?
+        { ...pending, publicResumed: true } : pending) });
+    // Collect immediately, but let Windows/Chrome finish waking before the
+    // first desktop submission. This deadline survives worker suspension.
+    await chrome.alarms.create(PUBLIC_DELIVERY_ALARM, { when: publicDeliveryReadyAt });
     await chrome.alarms.create(PUBLIC_RESUME_ALARM, { delayInMinutes: 1 });
   });
 }
@@ -1662,7 +1714,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await chatPlanOwner.cleanup().catch(() => {});
     return;
   }
-  if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, RESUME_ALARM].includes(alarm.name)) {
+  if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, PUBLIC_DELIVERY_ALARM, RESUME_ALARM].includes(alarm.name)) {
     await preparePublicResume({ onlyIfDelayed: true, scheduledTime: alarm.scheduledTime });
   }
   if (alarm.name === INITIALIZATION_RETRY_ALARM) {
@@ -1735,7 +1787,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
   const quiet = RadarTime.isQuietHours(settings);
   const { pendingNotifications = [], publicAlertState } = await chrome.storage.local.get(["pendingNotifications", "publicAlertState"]);
   async function release(pending) {
-    if ((RadarPublicAlerts.publicId(pending.id) || /^(expiry|advice):/.test(pending.id)) &&
+    const receiptValid = RadarPublicAlerts.validReceipt({ id: pending.publicReceipt?.itemId,
+      createdAt: pending.publicReceipt?.publishedAt }, pending.publicReceipt, pending.queuedAt);
+    if (((RadarPublicAlerts.publicId(pending.id) && !receiptValid) || /^(expiry|advice):/.test(pending.id)) &&
       pending.queuedAt && Date.now() - pending.queuedAt >= 86400000) return false;
     let bypassQuiet = false;
     if (accountNotification(pending.id) && !settings.monitorAccount) return false;
@@ -1782,48 +1836,49 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
     if (pending.id.startsWith("signal:")) {
       const { signalSnapshot } = await chrome.storage.local.get('signalSnapshot');
       const item = (signalSnapshot?.activeSignals || [signalSnapshot?.signal]).find(item => item && pending.id === 'signal:' + item.id);
-      if (!RadarPublicAlerts.allowed(item, publicAlertState, {}, { queued: true })) return false;
+      if (!queuedPublicAllowed(item, publicAlertState, pending)) return false;
       const { scheduleSnapshot } = await chrome.storage.local.get("scheduleSnapshot");
       if (RadarSchedule.supersededIds(scheduleSnapshot).has(pending.id.slice(7))) return false;
       if (publicResumed) {
         const { signalSnapshot } = await chrome.storage.local.get("signalSnapshot");
         if (!reclassifiedSignals(signalSnapshot?.activeSignals || []).some(item => pending.id === "signal:" + item.id)) return false;
       }
-      bypassQuiet = publicResumeBypassesQuiet(item, publicAlertState, settings);
+      bypassQuiet = publicResumeBypassesQuiet(item, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith("schedule:")) {
       const { scheduleSnapshot, notificationHistory = {} } = await chrome.storage.local.get(["scheduleSnapshot", "notificationHistory"]);
-      const change = RadarSchedule.changes(scheduleSnapshot).find(change => RadarSchedule.notificationId(change) === pending.id);
-      if (!change || !scheduleNotificationEnabled(change, settings) || schedulePostAlreadyNotified(change, notificationHistory) || !RadarPublicAlerts.allowed(change.post, publicAlertState, {}, { queued: true })) return false;
+      const change = RadarSchedule.changes(scheduleSnapshot, { freshOnly: false }).find(change => RadarSchedule.notificationId(change) === pending.id);
+      if (!change || !scheduleNotificationEnabled(change, settings) || schedulePostAlreadyNotified(change, notificationHistory) || !queuedPublicAllowed(change.post, publicAlertState, pending)) return false;
       pending.options = { ...pending.options, ...scheduleNotificationOptions(change) };
-      bypassQuiet = publicResumeBypassesQuiet(change.post, publicAlertState, settings);
+      bypassQuiet = publicResumeBypassesQuiet(change.post, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith("hint:")) {
       if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints) return false;
       const { hintSnapshot } = await chrome.storage.local.get("hintSnapshot");
       const hint = RadarSignals.hintCandidates(hintSnapshot?.items || [], { limit: 100 }).find(item => pending.id === "hint:" + item.id);
       if (hint?.assessment?.topic === 'event') return false;
-      if (!RadarPublicAlerts.allowed(hint, publicAlertState, {}, { queued: true })) return false;
+      if (!queuedPublicAllowed(hint, publicAlertState, pending)) return false;
       pending.options = { ...pending.options, ...hintNotificationOptions(hint) };
-      bypassQuiet = publicResumeBypassesQuiet(hint, publicAlertState, settings);
+      bypassQuiet = publicResumeBypassesQuiet(hint, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith('event:')) {
       if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints) return false;
       const { hintSnapshot } = await chrome.storage.local.get('hintSnapshot');
       const notice = RadarEvents.notices(hintSnapshot?.eventAlerts).find(notice => notice.id === pending.id);
-      if (!notice || !RadarPublicAlerts.allowed(notice.event.item, publicAlertState, {}, { queued: true })) return false;
+      if (!notice || !queuedPublicAllowed(notice.event.item, publicAlertState, pending)) return false;
       pending.options = { ...pending.options, ...eventNotificationOptions(notice) };
-      bypassQuiet = publicResumeBypassesQuiet(notice.event.item, publicAlertState, settings);
+      bypassQuiet = publicResumeBypassesQuiet(notice.event.item, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith('report:')) {
       if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return false;
       const { signalSnapshot, scheduleSnapshot } = await chrome.storage.local.get(['signalSnapshot', 'scheduleSnapshot']);
       const report = RadarSignals.reports(signalSnapshot?.reports || []).find(item => pending.id === 'report:' + item.id);
-      if (!report || !reportNotificationEnabled(report, settings, scheduleSnapshot, pendingNotifications) || !RadarPublicAlerts.allowed(report, publicAlertState, {}, { queued: true })) return false;
+      if (!report || !reportNotificationEnabled(report, settings, scheduleSnapshot, pendingNotifications) || !queuedPublicAllowed(report, publicAlertState, pending)) return false;
       pending.options = { ...pending.options, ...reportNotificationOptions(report) };
-      bypassQuiet = publicResumeBypassesQuiet(report, publicAlertState, settings);
+      bypassQuiet = publicResumeBypassesQuiet(report, publicAlertState, settings, pending);
     }
     if (quiet && !bypassQuiet) { return true; }
+    if (await deferPublicDelivery(pending.id)) return true;
     pending.options = notificationOptions(pending.options);
     try {
       // A crash after Chrome accepted but before local acknowledgement must

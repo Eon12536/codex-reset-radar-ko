@@ -1,12 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeWorker, json } = require('./helpers/worker');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker');
 
 function worker(extra = {}) {
+  const publishedAt = new Date().toISOString();
   return makeWorker({ stored: { settings: { monitorAccount: false, monitorLeadSource: true,
     monitorStatusSource: false, monitorHistorySource: false, monitorCommunitySource: false,
     notifyHints: true, quietHoursEnabled: false } }, fetcher: async () => json({ items: [{
-    external_id: '251', content: 'Burn those tokens', published_at: new Date().toISOString(),
+    external_id: '251', content: 'Burn those tokens', published_at: publishedAt,
     metadata: { author_user_name: 'reach_vb' }
   }] }), ...extra });
 }
@@ -113,15 +114,19 @@ test('an accepted but unacknowledged visible toast is not sent a second time aft
   assert.ok(w.local.notificationHistory['hint:251']);
 });
 
-test('rechecking a pending alert does not extend its original 24-hour expiry', async () => {
+test('rechecking preserves queue time and badge expiry without dropping an authorized undelivered alert', async () => {
   const w = worker();
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   await w.context.refreshSignals();
-  w.local.pendingNotifications[0].queuedAt -= 25 * 3600000;
   const first = w.local.pendingNotifications[0].queuedAt;
+  const expiry = w.local.publicAlertState.entries['251'].expiresAt;
+  const before = Date.now();
+  w.context.Date = class extends Date { static now() { return before + 25 * 3600000; } };
   await w.context.refreshSignals();
   assert.equal(w.local.pendingNotifications[0].queuedAt, first);
-  await w.context.flushPendingNotifications();
+  assert.equal(w.local.publicAlertState.entries['251'].expiresAt, expiry);
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => false };
+  await finishPublicResume(w);
   assert.equal(w.local.pendingNotifications.length, 0);
-  assert.equal(Object.keys(w.notifications).length, 0);
+  assert.equal(Object.keys(w.notifications).length, 1);
 });

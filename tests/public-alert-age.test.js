@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeWorker, json } = require('./helpers/worker');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker');
 global.RadarTime = require('../src/core/time');
 const Alerts = require('../src/core/public-alerts');
 const DAY = 86400000;
@@ -47,6 +47,7 @@ test('migration treats cached/seen posts as known even without a category-specif
 test('a new post after the last successful check alerts after four offline days; older news does not', async () => {
   const { w } = worker([post('123', 3), post('124', 5)], { signalSnapshot: { checkedAt: Date.now() - 4 * DAY } });
   await w.events.startup();
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:123']);
   assert.equal(w.notifications['report:124'], undefined);
   assert.equal(w.local.signalSnapshot.reports.length, 2);
@@ -83,15 +84,20 @@ test('stale queues from older versions cannot deliver historical news on the nex
   assert.equal(w.local.pendingNotifications.length, 0);
 });
 
-test('queued fresh news expires instead of surfacing days after detection', async () => {
+test('authorized queued news survives badge expiry and is delivered once', async () => {
   const { w } = worker([post('123', 0.1)]);
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   await w.context.refreshSignals();
-  w.local.pendingNotifications[0].queuedAt = Date.now() - 2 * DAY;
+  const queuedAt = w.local.pendingNotifications[0].queuedAt;
+  const before = Date.now();
+  w.context.Date = class extends Date { static now() { return before + 2 * DAY; } };
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => false };
   await w.context.flushPendingNotifications();
-  assert.equal(Object.keys(w.notifications).length, 0);
+  assert.equal(Object.keys(w.notifications).length, 1);
   assert.equal(w.local.pendingNotifications.length, 0);
+  assert.ok(w.local.notificationHistory['report:123'] > queuedAt);
+  await w.context.flushPendingNotifications();
+  assert.equal(Object.keys(w.notifications).length, 1);
 });
 
 test('all fresh reports are considered; the fourth item is not permanently excluded', async () => {
@@ -143,6 +149,7 @@ test('a second Chrome start preserves the offline window until every timeline ha
   source.items.push(post('124', 3));
   await w.events.startup();
   assert.equal(w.local.publicResumeCheck.since, since);
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:124']);
 });
 

@@ -16,6 +16,13 @@ function page(reply, dependencies = {}) {
 }
 const status = { ok: true, version, permission: 'granted', hintAlerts: false, pending: 0, quiet: false };
 
+test('startup grace is explicitly shown while real alerts are durably pending', async () => {
+  const p = page(async () => ({ ...status, pending: 2, resumeReadyAt: Date.now() + 60000 }));
+  await settle();
+  assert.match(p.elements.notificationWorkerStatus.textContent, /대기 2개/);
+  assert.match(p.elements.notificationWorkerStatus.textContent, /알림 준비 중 \(1분 대기\)/);
+});
+
 test('test UI binds and reports progress without any settings or translation dependencies', async () => {
   let release;
   const p = page(async message => message.type === 'NOTIFICATION_STATUS' ? status : new Promise(resolve => { release = resolve; }));

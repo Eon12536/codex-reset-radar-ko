@@ -6,7 +6,7 @@ const Signals = require('../src/core/signals');
 const Direct = require('../src/core/direct-x');
 const News = require('../src/core/news');
 const Settings = require('../src/core/settings');
-const { makeWorker, json } = require('./helpers/worker');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker');
 const fixture = require('./fixtures/tibo-banked-reset.json');
 const now = Date.parse(fixture.observedAt);
 const post = (text, extra = {}) => ({ ...fixture.post, text, source: { id: 'codex-lead', weight: 1 }, ...extra });
@@ -82,6 +82,7 @@ test('startup catches missed reports, and disabling monitoring clears queued and
   const { w, item } = worker();
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   await w.events.startup();
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:' + item.id]);
   await w.context.saveSettings({ ...w.local.settings, monitorLeadSource: false });
   assert.equal(w.local.signalSnapshot.reports.length, 0);

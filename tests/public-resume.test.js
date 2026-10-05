@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeWorker, json } = require('./helpers/worker');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker');
 const HOUR = 3600000;
 const post = (text, id = '200', age = 0) => ({ id, entityId: id, text, author: 'thsottiaux',
   createdAt: new Date(Date.now() - age * HOUR).toISOString(), url: `https://x.com/thsottiaux/status/${id}`,
@@ -54,6 +54,7 @@ test('fresh direct X results recover the missed reply when the feed lacks it; no
   assert.equal(w.local.signalSnapshot.signal, null);
   assert.equal(w.local.hintSnapshot.items[0].assessment.rule, 'reply-reset-context');
   assert.equal(w.local.hintSnapshot.items[0].assessment.eventAt, null);
+  await finishPublicResume(w);
   assert.ok(w.notifications['hint:102']);
   assert.match(w.notifications['hint:102'].message, /문맥 연결과 일정 대상 미확인/);
   await w.events.startup();
@@ -67,6 +68,7 @@ test('hints posted during a known three-day offline gap notify once, even with a
   source.items = [post('Maybe we should dust off the reset button next Tuesday.', '201', 72)];
   await w.events.startup();
   assert.equal(w.local.hintSnapshot.items.length, 1);
+  await finishPublicResume(w);
   assert.ok(w.notifications['hint:201']);
   const count = Object.keys(w.local.notificationHistory).length;
   await w.events.startup();
@@ -83,6 +85,7 @@ test('conversation-enriched date replies reach the popup candidate and notify on
   assert.equal(w.local.signalSnapshot.leadStatus.directScan.posts, 16);
   assert.equal(w.local.signalSnapshot.signal, null);
   assert.equal(w.local.hintSnapshot.items[0].replyContext.relation, 'conversation-before');
+  await finishPublicResume(w);
   assert.ok(w.notifications['hint:301']);
   const history = JSON.stringify(w.local.notificationHistory);
   await w.events.startup();
@@ -123,6 +126,7 @@ test('public startup retry works independently of account monitoring and is boun
   assert.equal(alarms.filter(a => a.name === 'codex-reset-radar-public-resume').length, 5);
   source.fail = false; source.items = [post('Maybe dust off the reset button Tuesday.')];
   await w.events.alarm({ name: 'codex-reset-radar-poll' });
+  await finishPublicResume(w);
   assert.ok(w.notifications['hint:200']);
   assert.equal(w.local.publicResumeCheck, undefined);
 });
@@ -153,6 +157,7 @@ test('both missed explicit announcements notify instead of only the top-ranked o
   w.local.signalSnapshot = { checkedAt: Date.now() - 72 * HOUR };
   source.items = [post('We will reset Codex usage limits next Tuesday.', '201', 48), post('We will refill Codex usage limits next Friday.', '202', 47)];
   await w.events.startup();
+  await finishPublicResume(w);
   assert.ok(w.notifications['signal:201']); assert.ok(w.notifications['signal:202']);
   await w.events.notificationClick('signal:201');
   await w.events.notificationButton('signal:202', 0);
@@ -177,6 +182,7 @@ test('a delayed poll after a short sleep catches up without Chrome startup', asy
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   source.items = [post('We have now reset all Codex usage limits.', '401', 0.2)];
   await w.events.alarm({ name: 'codex-reset-radar-poll', scheduledTime: Date.now() - 15 * 60000 });
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:401']);
   assert.equal(w.local.publicResumeCheck, undefined);
 });
@@ -229,6 +235,7 @@ test('a rejected catch-up toast retries in quiet hours after the catch-up scan h
   const create = w.context.chrome.notifications.create;
   w.context.chrome.notifications.create = async () => { throw new Error('desktop waking'); };
   await w.events.startup();
+  await finishPublicResume(w);
   assert.equal(w.local.publicResumeCheck, undefined);
   assert.equal(w.local.pendingNotifications.length, 1);
   w.context.chrome.notifications.create = create;
@@ -257,9 +264,10 @@ test('a prolonged partial recovery does not override quiet hours for subsequent 
   source.items = [post('We have now reset all Codex usage limits.', '407', 1)];
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   await w.events.startup();
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:407']);
   assert.equal(w.local.publicResumeCheck.collectedAt, at.value);
-  at.value += HOUR;
+  at.value += 50 * 60000;
   source.items.push({ ...post('We have now reset all Codex usage limits.', '408'),
     createdAt: new Date(at.value - 5 * 60000).toISOString() });
   await w.events.alarm({ name: 'codex-reset-radar-public-resume' });
@@ -276,14 +284,14 @@ test('public delivery retries survive worker restart and do not require another 
   assert.equal(w.local.notificationHistory?.['report:409'], undefined);
   const resumed = makeWorker({ stored: w.local, fetcher: async () => { assert.fail('Delivery must not fetch'); } });
   resumed.context.RadarTime = { ...resumed.context.RadarTime, isQuietHours: () => true };
-  await resumed.events.alarm({ name: 'codex-reset-radar-public-delivery' });
+  await finishPublicResume(resumed);
   assert.ok(resumed.notifications['report:409']);
   assert.equal(resumed.local.pendingNotifications.length, 0);
   resumed.context.chrome.notifications.create = async () => assert.fail('Must not repeat an accepted alert');
   await resumed.events.alarm({ name: 'codex-reset-radar-public-delivery' });
 });
 
-test('public delivery backoff is bounded and does not extend the original queue expiry', async () => {
+test('public delivery backoff is bounded and preserves an undelivered notice after badge expiry', async () => {
   const { w, source } = publicWorker();
   source.items = [post('We have now reset all Codex usage limits.', '410', 0.1)];
   const alarms = [];
@@ -295,9 +303,11 @@ test('public delivery backoff is bounded and does not extend the original queue 
   assert.deepEqual(alarms.filter(a => a.name === 'codex-reset-radar-public-delivery').map(a => a.delayInMinutes), [1, 2, 5, 10]);
   assert.equal(w.local.pendingNotifications[0].queuedAt, queuedAt);
   assert.equal(w.local.pendingNotifications[0].deliveryAttempts, 5);
-  w.local.pendingNotifications[0].queuedAt -= 25 * HOUR;
+  const before = w.context.Date.now();
+  w.context.Date = class extends Date { static now() { return before + 25 * HOUR; } };
   await w.events.alarm({ name: 'codex-reset-radar-public-delivery' });
-  assert.equal(w.local.pendingNotifications.length, 0);
+  assert.equal(w.local.pendingNotifications.length, 1);
+  assert.equal(w.local.pendingNotifications[0].queuedAt, queuedAt);
 });
 
 test('delivery retry still honors changed category and resume notification preferences', async () => {
@@ -322,6 +332,7 @@ test('an overdue collection retry after sleep also detects recovery before the r
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
   source.items = [post('We have now reset all Codex usage limits.', '412', 0.05)];
   await w.events.alarm({ name: 'codex-reset-radar-public-retry', scheduledTime: Date.now() - 8 * 60000 });
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:412']);
 });
 
@@ -340,6 +351,129 @@ test('a second sleep during a partial recovery opens a new wake-up window withou
   source.items.push({ ...post('We have now reset all Codex usage limits.', '414'),
     createdAt: new Date(at.value - 10 * 60000).toISOString() });
   await w.events.alarm({ name: 'codex-reset-radar-public-resume', scheduledTime: at.value - 90 * 60000 });
+  await finishPublicResume(w);
   assert.ok(w.notifications['report:414']);
   assert.equal(w.local.publicResumeCheck.since, since);
+});
+
+test('a delayed feed item retains its offline eligibility after an earlier feed ended recovery', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  w.local.signalSnapshot = { checkedAt: at.value - 96 * HOUR };
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
+  source.items = [post('Product news.', '501')];
+  await w.events.startup();
+  assert.equal(w.local.publicResumeCheck, undefined);
+  const restarted = makeWorker({ stored: w.local, fetcher: async () => json({ items: [{
+    external_id: '502', content: 'We have now reset all Codex usage limits.',
+    published_at: new Date(at.value - 72 * HOUR).toISOString(),
+    metadata: { author_user_name: 'thsottiaux' }
+  }] }) });
+  clock(restarted, at);
+  restarted.context.RadarTime = { ...restarted.context.RadarTime, isQuietHours: () => true };
+  at.value += HOUR;
+  await restarted.events.alarm({ name: 'codex-reset-radar-poll', scheduledTime: at.value });
+  assert.ok(restarted.notifications['report:502']);
+  await restarted.events.alarm({ name: 'codex-reset-radar-poll', scheduledTime: at.value });
+  assert.equal(Object.keys(restarted.notifications).length, 1);
+});
+
+test('an authorized undelivered reset survives two days offline and the badge expiry', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  const item = post('We have now reset all Codex usage limits.', '503', 0.1);
+  source.items = [item];
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
+  await w.context.refreshSignals();
+  assert.equal(w.local.pendingNotifications.length, 1);
+  at.value += 48 * HOUR;
+  const restarted = makeWorker({ stored: w.local, fetcher: async () => json({ items: [{
+    external_id: item.id, content: item.text, published_at: item.createdAt,
+    metadata: { author_user_name: item.author }
+  }] }) });
+  clock(restarted, at);
+  restarted.context.RadarTime = { ...restarted.context.RadarTime, isQuietHours: () => true };
+  await restarted.events.startup();
+  at.value += 60000;
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery' });
+  assert.ok(restarted.notifications['report:503']);
+  assert.equal(restarted.local.pendingNotifications.length, 0);
+  assert.ok(restarted.local.notificationHistory['report:503']);
+  assert.equal(restarted.context.RadarBadge.view(restarted.local,
+    restarted.context.RadarSettings.sanitize(restarted.local.settings)).hasUnread, false);
+});
+
+test('startup queues catch-up until the desktop grace period ends, across worker restart', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  w.local.signalSnapshot = { checkedAt: at.value - HOUR };
+  source.items = [post('We have now reset all Codex usage limits.', '504', 0.1)];
+  await w.events.startup();
+  assert.equal(Boolean(w.notifications['report:504']), false);
+  assert.equal(w.local.notificationHistory?.['report:504'], undefined);
+  assert.equal(w.local.pendingNotifications.length, 1);
+  const restarted = makeWorker({ stored: w.local, fetcher: async () => assert.fail('Delivery must not need a fetch') });
+  clock(restarted, at);
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery' });
+  assert.equal(Boolean(restarted.notifications['report:504']), false);
+  assert.equal(restarted.local.pendingNotifications.length, 1);
+  at.value += 60000;
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery' });
+  assert.ok(restarted.notifications['report:504']);
+  assert.equal(restarted.local.pendingNotifications.length, 0);
+});
+
+test('an overdue delivery alarm after sleep reopens the desktop grace period without fetching', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  source.items = [post('We have now reset all Codex usage limits.', '505', 0.1)];
+  w.context.chrome.notifications.create = async () => { throw Error('Unavailable'); };
+  await w.context.refreshSignals();
+  const stored = structuredClone(w.local);
+  const restarted = makeWorker({ stored, fetcher: async () => assert.fail('Delivery must not fetch') });
+  clock(restarted, at);
+  at.value += 20 * 60000;
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery', scheduledTime: at.value - 19 * 60000 });
+  assert.equal(Object.keys(restarted.notifications).length, 0);
+  assert.equal(restarted.local.pendingNotifications.length, 1);
+  at.value += 60000;
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery', scheduledTime: at.value });
+  assert.ok(restarted.notifications['report:505']);
+});
+
+test('an old-version two-day queue with proven original eligibility is migrated before startup validation', async () => {
+  const { w, source } = publicWorker();
+  const at = { value: Date.now() };
+  clock(w, at);
+  source.items = [post('We have now reset all Codex usage limits.', '506', 0.1)];
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
+  await w.context.refreshSignals();
+  delete w.local.pendingNotifications[0].publicReceipt;
+  const queuedAt = w.local.pendingNotifications[0].queuedAt;
+  at.value += 48 * HOUR;
+  const restarted = makeWorker({ stored: w.local, fetcher: async () => { throw Error('offline'); } });
+  clock(restarted, at);
+  restarted.context.RadarTime = { ...restarted.context.RadarTime, isQuietHours: () => true };
+  await restarted.events.startup();
+  assert.equal(restarted.local.pendingNotifications[0].queuedAt, queuedAt);
+  assert.ok(restarted.local.pendingNotifications[0].publicReceipt);
+  at.value += 60000;
+  await restarted.events.alarm({ name: 'codex-reset-radar-public-delivery', scheduledTime: at.value });
+  assert.ok(restarted.notifications['report:506']);
+  assert.equal(restarted.local.pendingNotifications.length, 0);
+});
+
+test('disabling public alerts during startup grace cancels the deferred toast', async () => {
+  const { w, source } = publicWorker();
+  source.items = [post('We have now reset all Codex usage limits.', '507', 0.1)];
+  await w.events.startup();
+  assert.equal(w.local.pendingNotifications.length, 1);
+  await w.context.saveSettings({ ...w.local.settings, notifyOfficialReset: false });
+  await finishPublicResume(w);
+  assert.equal(Object.keys(w.notifications).length, 0);
+  assert.equal(w.local.pendingNotifications.length, 0);
 });

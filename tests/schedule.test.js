@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 global.RadarTime = require('../src/core/time.js');
 global.RadarSignals = require('../src/core/signals.js');
 const Schedule = require('../src/core/schedule.js');
-const { makeWorker, json } = require('./helpers/worker.js');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker.js');
 const NOW = Date.parse('2026-09-18T12:00:00Z');
 const HOUR = 3600000;
 const post = (id, text, ago = 1, extra = {}) => ({ id, text, author: 'thsottiaux',
@@ -259,6 +259,7 @@ test('a schedule change missed during downtime can notify on resume and retry du
   const create = w.context.chrome.notifications.create;
   w.context.chrome.notifications.create = async () => { throw new Error('desktop waking'); };
   await w.events.startup();
+  await finishPublicResume(w);
   const change = w.context.RadarSchedule.changes(w.local.scheduleSnapshot)[0];
   const id = w.context.RadarSchedule.notificationId(change);
   assert.equal(w.local.pendingNotifications[0].id, id);

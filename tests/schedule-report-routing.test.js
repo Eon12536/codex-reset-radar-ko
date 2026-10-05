@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeWorker, json } = require('./helpers/worker');
+const { makeWorker, json, finishPublicResume } = require('./helpers/worker');
 global.RadarTime = require('../src/core/time');
 global.RadarSignals = require('../src/core/signals');
 const Schedule = require('../src/core/schedule');
@@ -73,7 +73,7 @@ test('a schedule waiting through a long quiet period does not acquire a second f
   assert.equal(w.local.pendingNotifications.length, 1);
   assert.match(w.local.pendingNotifications[0].id, /^schedule:/);
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => false };
-  await w.context.flushPendingNotifications();
+  await finishPublicResume(w);
   assert.equal(delivered.length, 1);
 });
 
@@ -84,6 +84,22 @@ test('disabling schedule notices keeps the official follow-up route available', 
   w.local.settings.notifyScheduleChanges = true;
   await w.context.refreshSignals();
   assert.deepEqual(delivered, ['report:102']);
+});
+
+test('an authorized schedule queue survives three offline days even after the display card expires', async () => {
+  const { w, delivered } = fixture();
+  let now = Date.now();
+  w.context.Date = class extends Date { static now() { return now; } };
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
+  await w.context.refreshSignals();
+  const id = w.local.pendingNotifications[0].id;
+  now += 72 * 3600000;
+  await w.context.refreshSignals();
+  assert.equal(w.context.RadarSchedule.changes(w.local.scheduleSnapshot).length, 0);
+  assert.equal(w.local.pendingNotifications.length, 1);
+  await finishPublicResume(w);
+  assert.deepEqual(delivered, [id]);
+  assert.equal(w.local.pendingNotifications.length, 0);
 });
 
 test('a prior announcement arriving after an already notified follow-up does not notify it again', async () => {
