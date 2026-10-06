@@ -18,13 +18,14 @@
     return { count: credits.availableCount, ids: hashes };
   }
 
-  function advance(previous, reading, key, { now = Date.now(), notify = true } = {}) {
+  function advance(previous, reading, key, { now = Date.now(), notify = true, resumed = false } = {}) {
     if (!reading || !key) return previous;
     const same = previous?.accountKey === key && previous.observedAt <= now && now - previous.observedAt <= MAX_GAP;
     const state = same ? { ...previous } : { accountKey: key, sequence: 0, seenIds: [], identitiesReady: false, events: [] };
     // Keep delivery evidence independently of the popup/badge's 24-hour TTL.
     // Only an originally queued notice may use these older observations.
     state.events = retainedEvents(state, now);
+    if (resumed) state.events = state.events.map(event => ({ ...event, catchUp: true }));
     const addedIds = same && state.identitiesReady && reading.ids ? reading.ids.filter(id => !state.seenIds.includes(id)) : [];
     const countAdded = same ? Math.max(0, reading.count - state.count) : 0;
     // A count-only response may already have announced credits whose IDs arrive
@@ -41,7 +42,7 @@
       state.sequence++;
       state.events = [...state.events, {
         id: `banked:${key.slice(0, 16)}:${state.sequence}:${now}`, accountKey: key,
-        added, availableCount: reading.count, observedAt: now, notify
+        added, availableCount: reading.count, observedAt: now, notify, catchUp: resumed
       }].slice(-8);
     }
     return { ...state, count: reading.count, observedAt: now };

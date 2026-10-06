@@ -29,6 +29,8 @@ const PUBLIC_RESUME_ALARM = "codex-reset-radar-public-resume";
 const PUBLIC_RETRY_ALARM = "codex-reset-radar-public-retry";
 const PUBLIC_DELIVERY_ALARM = "codex-reset-radar-public-delivery";
 const BADGE_EXPIRY_ALARM = "codex-reset-radar-badge-expiry";
+const CREDIT_EXPIRY_ALARM = "codex-reset-radar-credit-expiry";
+const WAKE_ALARM = "codex-reset-radar-wake-check";
 const INITIALIZATION_RETRY_ALARM = "codex-reset-radar-initialization-retry";
 const CHAT_PLAN_CLEANUP_ALARM = "codex-reset-radar-chat-plan-tab-cleanup";
 const chatPlanOwner = RadarTabOwner.create({ key: 'chatPlanScanTabV1', alarm: CHAT_PLAN_CLEANUP_ALARM,
@@ -44,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.75";
+const NOTIFICATION_BUILD = "0.2.76";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -69,9 +71,10 @@ function accountNotification(id) {
 
 async function purgeAccountState() {
   await chrome.alarms.clear(RESUME_ALARM);
+  await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
   await chrome.storage.local.remove("resumeCheck");
   await chrome.storage.session.remove([TOKEN_KEY, TOKEN_EXPIRY_KEY]);
-  await chrome.storage.local.remove(["accountSnapshot", "accountState", "accountError", "adviceSnapshot", "recoveryState", "recoverySalt", "creditGrantState"]);
+  await chrome.storage.local.remove(["accountSnapshot", "accountState", "accountError", "adviceSnapshot", "recoveryState", "recoverySalt", "creditGrantState", "creditExpiryWatch"]);
   const { pendingNotifications = [], notificationHistory = {}, signalSnapshot } = await chrome.storage.local.get(["pendingNotifications", "notificationHistory", "signalSnapshot"]);
   const settings = await loadSettings();
   const signal = settings.monitorSignals && RadarSignals.isActive(signalSnapshot?.signal) ? signalSnapshot.signal : null;
@@ -125,6 +128,8 @@ function ensureSecurity() {
     }
     await restorePublicQueueReceipts();
     await revalidateCachedSignals(stateEpoch);
+    await ensureAlarm(settings, { reset: false });
+    await scheduleCreditExpiryCheck(settings);
     try { await configureChatCounter(settings.monitorChat); }
     catch { await chrome.storage.local.set({ chatCounterError: true }); }
     if (await chrome.alarms.get?.(INITIALIZATION_RETRY_ALARM)) {
@@ -205,6 +210,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
     await revalidateCachedSignals(stateEpoch);
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource) await chrome.storage.local.remove(["hintSnapshot", "scheduleSnapshot"]);
     await ensureAlarm(sanitized);
+    await scheduleCreditExpiryCheck(sanitized);
     return sanitized;
   });
   if (connectChat && startChat) await connectChatAccount();
@@ -547,11 +553,64 @@ async function runChatPlan(expectedAccountKey = null) {
   }
 }
 
-async function ensureAlarm(settings) {
-  await chrome.alarms.clear(ALARM_NAME);
-  await chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: 1,
-    periodInMinutes: settings.pollMinutes
+async function ensureAlarm(settings, { reset = true } = {}) {
+  const current = await chrome.alarms.get?.(ALARM_NAME);
+  if (reset || !current || current.periodInMinutes !== settings.pollMinutes) {
+    await chrome.alarms.clear(ALARM_NAME);
+    await chrome.alarms.create(ALARM_NAME, { delayInMinutes: 1, periodInMinutes: settings.pollMinutes });
+  }
+  // This minute tick reads only a local timestamp. Network collection still
+  // follows the chosen interval unless a missed tick indicates wake-up.
+  if (settings.monitorAccount || settings.monitorSignals) {
+    if (!await chrome.alarms.get?.(WAKE_ALARM)) await chrome.alarms.create(WAKE_ALARM,
+      { delayInMinutes: 1, periodInMinutes: 1 });
+  } else await chrome.alarms.clear(WAKE_ALARM);
+}
+
+async function scheduleCreditExpiryCheck(settings, snapshot = null, { retry = false } = {}) {
+  const stored = await chrome.storage.local.get(['accountSnapshot', 'notificationHistory', 'creditExpiryWatch', 'accountState']);
+  snapshot ||= stored.accountSnapshot;
+  const history = stored.notificationHistory || {};
+  const enabled = settings.monitorAccount && settings.notifyCreditExpiry;
+  let next = enabled && snapshot?.accountKey &&
+    snapshot.credits?.availableCount > 0 ? snapshot.credits.credits?.filter(credit => credit.expiresAt > Date.now() &&
+      !history[expiryNotificationId(snapshot.accountKey, credit.expiresAt)])
+      .sort((a, b) => a.expiresAt - b.expiresAt)[0]?.expiresAt : null;
+  let accountKey = snapshot?.accountKey;
+  const watch = stored.creditExpiryWatch;
+  // A partial credits failure hides the inventory in the popup, but must not
+  // delete its independently scheduled warning. This watch only schedules a
+  // fresh query; it can never authorize a private notification itself.
+  if (!next && enabled && !snapshot?.credits && stored.accountState?.status !== 'signedOut' &&
+    Number.isFinite(watch?.expiresAt) && watch.expiresAt > Date.now() &&
+    !history[expiryNotificationId(watch.accountKey, watch.expiresAt)] &&
+    (!accountKey || accountKey === watch.accountKey)) {
+    next = watch.expiresAt; accountKey = watch.accountKey;
+  }
+  if (!next) {
+    await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
+    await chrome.storage.local.remove('creditExpiryWatch');
+    return;
+  }
+  const warningAt = next - settings.expiryWarningHours * 3600000;
+  const when = warningAt > Date.now() ? warningAt : Date.now() + (retry ? 5 : 1) * 60000;
+  const current = await chrome.alarms.get?.(CREDIT_EXPIRY_ALARM);
+  const scheduledAt = current?.scheduledTime ?? current?.when;
+  if (watch?.accountKey !== accountKey || watch.expiresAt !== next)
+    await chrome.storage.local.set({ creditExpiryWatch: { accountKey, expiresAt: next } });
+  // Frequent worker restarts/wake ticks must not push a pending check forward.
+  if (scheduledAt > Date.now() && scheduledAt <= when && watch?.expiresAt === next && watch.accountKey === accountKey) return;
+  await chrome.alarms.create(CREDIT_EXPIRY_ALARM, { when });
+}
+
+async function prepareAccountResume() {
+  await mutate(async () => {
+    if (!(await loadSettings()).monitorAccount) return;
+    const { pendingNotifications = [] } = await chrome.storage.local.get('pendingNotifications');
+    await chrome.storage.local.set({ resumeCheck: { attempts: 0 },
+      pendingNotifications: pendingNotifications.map(pending => accountNotification(pending.id) ?
+        { ...pending, accountResumed: true } : pending) });
+    await chrome.alarms.create(RESUME_ALARM, { delayInMinutes: 1 });
   });
 }
 
@@ -663,7 +722,8 @@ async function storeAccountSnapshot(usage, credits, epoch, identity) {
   // of identity/scope must first be verified by a successful quota response.
   const accountVerified = Boolean(key && (usage || current.accountSnapshot?.accountKey === key));
   const reading = credits && accountVerified ? await RadarCreditGrants.inventory(credits, identity.rawCredits, key) : null;
-  const grants = reading ? RadarCreditGrants.advance(current.creditGrantState, reading, key, { notify: settings.notifyBankedReset }) : current.creditGrantState;
+  const grants = reading ? RadarCreditGrants.advance(current.creditGrantState, reading, key,
+    { notify: settings.notifyBankedReset, resumed: Boolean(current.resumeCheck) }) : current.creditGrantState;
   // A network/session failure does not erase the last verified comparison.
   // It also cannot deliver notifications until the same identity is verified.
   const recovery = usage && key ? RadarRecovery.advance(current.recoveryState, usage, key, {
@@ -720,10 +780,17 @@ async function storeAccountSnapshot(usage, credits, epoch, identity) {
   if (reading && epoch === stateEpoch) await maybeNotifyBanked(grants, settings, epoch);
   if (usage && key && epoch === stateEpoch) {
     await maybeNotifyRecovery(recovery, settings, epoch);
-    await chrome.storage.local.remove("resumeCheck");
-    await chrome.alarms.clear(RESUME_ALARM);
+    // A successful quota read does not complete the credits check. Keep the
+    // wake retry and quiet-hours context until both private readings succeed.
+    if (reading) {
+      await chrome.storage.local.remove("resumeCheck");
+      await chrome.alarms.clear(RESUME_ALARM);
+    }
   }
-  if (epoch === stateEpoch) await maybeNotifyAdvice(advice, snapshot);
+  if (epoch === stateEpoch) {
+    await maybeNotifyAdvice(advice, snapshot, { resumed: Boolean(current.resumeCheck) });
+    await scheduleCreditExpiryCheck(settings, snapshot, { retry: !reading });
+  }
   return { usageVerified: Boolean(usage && key && epoch === stateEpoch), creditsVerified: Boolean(reading && epoch === stateEpoch) };
 }
 
@@ -1292,7 +1359,8 @@ async function maybeNotifyBanked(state, settings, epoch) {
     const { notificationHistory = {} } = await chrome.storage.local.get("notificationHistory");
     if (epoch !== stateEpoch) return;
     if (notificationHistory[event.id]) continue;
-    try { await createNotification(event.id, bankedNotificationOptions(event), settings); }
+    try { await createNotification(event.id, bankedNotificationOptions(event), settings,
+      { bypassQuiet: Boolean(event.catchUp && settings.notifyRecoveryOnResume) }); }
     catch { /* The durable queue is retried after a verified account reading. */ }
   }
 }
@@ -1369,16 +1437,18 @@ async function notificationStatus() {
     resumeReadyAt: data.publicDeliveryReadyAt > Date.now() ? data.publicDeliveryReadyAt : null };
 }
 
-async function queueNotification(id, options, accountKey = null, publicItem = null) {
+async function queueNotification(id, options, accountKey = null, publicItem = null, accountResumed = false) {
   const { pendingNotifications = [], publicAlertState } = await chrome.storage.local.get(["pendingNotifications", "publicAlertState"]);
   if (pendingNotifications.some(item => item.id === id)) {
-    await chrome.storage.local.set({ pendingNotifications: pendingNotifications.map(item => item.id === id ? { ...item, options } : item) });
+    await chrome.storage.local.set({ pendingNotifications: pendingNotifications.map(item => item.id === id ?
+      { ...item, options, ...(accountResumed ? { accountResumed: true } : {}) } : item) });
     return false;
   }
   const publicReceipt = RadarPublicAlerts.publicId(id) ? RadarPublicAlerts.receipt(publicItem, publicAlertState) : null;
   await chrome.storage.local.set({
     pendingNotifications: [...pendingNotifications.filter(item => item.id !== id),
       { id, options, queuedAt: Date.now(), ...(accountKey ? { accountKey } : {}),
+        ...(accountResumed ? { accountResumed: true } : {}),
         ...(publicReceipt ? { publicReceipt } : {}) }].slice(-100)
   });
   return true;
@@ -1417,10 +1487,10 @@ async function deferPublicDelivery(id) {
   return true;
 }
 
-async function createNotification(id, options, settings, { bypassQuiet = false, accountKey = null, publicItem = null } = {}) {
+async function createNotification(id, options, settings, { bypassQuiet = false, accountKey = null, publicItem = null, accountResumed = false } = {}) {
   const fullOptions = notificationOptions(options);
   // Persist before any Chrome call, and keep the original age on retries.
-  if (!await queueNotification(id, fullOptions, accountKey, publicItem)) return;
+  if (!await queueNotification(id, fullOptions, accountKey, publicItem, accountResumed)) return;
   if (await deferPublicDelivery(id)) return;
   if (!bypassQuiet && RadarTime.isQuietHours(settings)) return;
   try {
@@ -1495,16 +1565,19 @@ function adviceNotificationOptions(advice) {
     buttons: [{ title: msg("viewAdvice", undefined, "View advice") }] };
 }
 
-async function maybeNotifyAdvice(advice, snapshot) {
+async function maybeNotifyAdvice(advice, snapshot, { resumed = false } = {}) {
   const settings = await loadSettings();
   if (!settings.monitorAccount || !snapshot.accountKey) return;
-  const nearest = RadarUsage.nearestExpiry(snapshot.credits);
+  const { notificationHistory = {} } = await chrome.storage.local.get('notificationHistory');
+  const nearest = snapshot.credits?.credits?.find(credit => credit.expiresAt > Date.now() &&
+    !notificationHistory[expiryNotificationId(snapshot.accountKey, credit.expiresAt)])?.expiresAt;
   const hours = nearest ? (nearest - Date.now()) / 3600000 : Infinity;
   if (settings.notifyCreditExpiry && snapshot.credits?.availableCount > 0 && hours > 0 && hours <= settings.expiryWarningHours) {
     const key = expiryNotificationId(snapshot.accountKey, nearest);
-    const { notificationHistory = {} } = await chrome.storage.local.get("notificationHistory");
     if (!notificationHistory[key]) {
-      await createNotification(key, expiryNotificationOptions(snapshot, nearest), settings, { accountKey: snapshot.accountKey });
+      await createNotification(key, expiryNotificationOptions(snapshot, nearest), settings,
+        { accountKey: snapshot.accountKey, accountResumed: resumed,
+          bypassQuiet: Boolean(resumed && settings.notifyRecoveryOnResume) });
     }
   }
   if (settings.notifyAdvice && ["blocked", "useIfBlocked"].includes(advice.tier)) {
@@ -1647,6 +1720,7 @@ async function clearLocalData() {
       !["settings", "securitySchema", "chatCounterSchema", "appearanceTheme", "uiLocale"].includes(key)));
     chatBindings.clear(); chatPlanTabs.clear();
     await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
+    await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
     await chrome.storage.session.clear();
     await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA });
     for (const id of Object.keys(await chrome.notifications.getAll())) await chrome.notifications.clear(id);
@@ -1662,6 +1736,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     try { await injectChatCounter(); } catch { await chrome.storage.local.set({ chatCounterError: true }); }
   }
   if (reason === "install") await chrome.tabs.create({ url: chrome.runtime.getURL("src/welcome/welcome.html") });
+  await chrome.storage.local.set({ wakeCheckedAt: Date.now() });
+  await prepareAccountResume();
   await preparePublicResume();
   await pollAll({ quiet: true });
 });
@@ -1669,18 +1745,14 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 chrome.runtime.onStartup.addListener(async () => {
   await ensureSecurity();
   await ensureAlarm(await loadSettings());
-  await mutate(async () => {
-    if ((await loadSettings()).monitorAccount) {
-      await chrome.storage.local.set({ resumeCheck: { attempts: 0 } });
-      await chrome.alarms.create(RESUME_ALARM, { delayInMinutes: 1 });
-    }
-  });
+  await chrome.storage.local.set({ wakeCheckedAt: Date.now() });
+  await prepareAccountResume();
   await preparePublicResume();
   await pollAll({ quiet: true });
 });
 
 async function preparePublicResume({ onlyIfDelayed = false, scheduledTime = null } = {}) {
-  await mutate(async () => {
+  return mutate(async () => {
     const settings = await loadSettings();
     if (!settings.monitorSignals || !settings.monitorLeadSource) return;
     const { signalSnapshot, publicResumeCheck, pendingNotifications = [] } = await chrome.storage.local.get(['signalSnapshot', 'publicResumeCheck', 'pendingNotifications']);
@@ -1701,6 +1773,7 @@ async function preparePublicResume({ onlyIfDelayed = false, scheduledTime = null
     // first desktop submission. This deadline survives worker suspension.
     await chrome.alarms.create(PUBLIC_DELIVERY_ALARM, { when: publicDeliveryReadyAt });
     await chrome.alarms.create(PUBLIC_RESUME_ALARM, { delayInMinutes: 1 });
+    return true;
   });
 }
 
@@ -1721,8 +1794,25 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await chatPlanOwner.cleanup().catch(() => {});
     return;
   }
-  if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, PUBLIC_DELIVERY_ALARM, RESUME_ALARM].includes(alarm.name)) {
-    await preparePublicResume({ onlyIfDelayed: true, scheduledTime: alarm.scheduledTime });
+  if (alarm.name === WAKE_ALARM) {
+    const missed = await mutate(async () => {
+      const { wakeCheckedAt } = await chrome.storage.local.get('wakeCheckedAt');
+      await chrome.storage.local.set({ wakeCheckedAt: Date.now() });
+      const late = Number.isFinite(alarm.scheduledTime) && Date.now() - alarm.scheduledTime > 60000 &&
+        (!Number.isFinite(wakeCheckedAt) || Date.now() - wakeCheckedAt > 60000);
+      return late || Number.isFinite(wakeCheckedAt) && Date.now() - wakeCheckedAt > 120000;
+    });
+    if (missed) {
+      await prepareAccountResume();
+      await preparePublicResume();
+      await pollAll({ quiet: true });
+    }
+    return;
+  }
+  let resumed = false;
+  if ([ALARM_NAME, PUBLIC_RETRY_ALARM, PUBLIC_RESUME_ALARM, PUBLIC_DELIVERY_ALARM, RESUME_ALARM, CREDIT_EXPIRY_ALARM].includes(alarm.name)) {
+    resumed = await preparePublicResume({ onlyIfDelayed: true, scheduledTime: alarm.scheduledTime });
+    if (resumed) await prepareAccountResume();
   }
   if (alarm.name === INITIALIZATION_RETRY_ALARM) {
     await preparePublicResume();
@@ -1735,7 +1825,22 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         settings.monitorSignals ? signalSnapshot?.signal : null, adviceSnapshot);
     });
   } else if (alarm.name === PUBLIC_DELIVERY_ALARM) {
+    // An overdue delivery timer is also a wake event. Re-read posts before
+    // replaying a cached announcement that might have been edited/retracted.
+    if (resumed) await pollAll({ quiet: true });
+    if (signalJob) await signalJob;
     await mutate(() => flushPendingNotifications());
+  } else if (alarm.name === CREDIT_EXPIRY_ALARM) {
+    const settings = await loadSettings();
+    if (!settings.monitorAccount || !settings.notifyCreditExpiry) {
+      await mutate(async () => scheduleCreditExpiryCheck(await loadSettings())); return;
+    }
+    const account = await refreshAccount({ quiet: true });
+    await mutate(async () => {
+      await flushPendingNotifications({ recoveryVerified: Boolean(account.usageVerified && account.epoch === stateEpoch),
+        creditsVerified: Boolean(account.creditsVerified && account.epoch === stateEpoch) });
+      await scheduleCreditExpiryCheck(await loadSettings(), null, { retry: !account.creditsVerified });
+    });
   } else if (alarm.name === PUBLIC_RETRY_ALARM) {
     const { publicRetryCheck } = await chrome.storage.local.get('publicRetryCheck');
     const settings = await loadSettings();
@@ -1795,6 +1900,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
   const quiet = RadarTime.isQuietHours(settings);
   const { pendingNotifications = [], publicAlertState } = await chrome.storage.local.get(["pendingNotifications", "publicAlertState"]);
   async function release(pending) {
+    // An account query can finish before the parallel public wake scan. Keep
+    // cached public entries queued until that scan has reconciled fresh posts.
+    if (RadarPublicAlerts.publicId(pending.id) && signalJob) return true;
     const receiptValid = RadarPublicAlerts.validReceipt({ id: pending.publicReceipt?.itemId,
       createdAt: pending.publicReceipt?.publishedAt }, pending.publicReceipt, pending.queuedAt);
     if (((RadarPublicAlerts.publicId(pending.id) && !receiptValid) || /^(expiry|advice):/.test(pending.id)) &&
@@ -1810,11 +1918,13 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       const { accountSnapshot, adviceSnapshot } = await chrome.storage.local.get(['accountSnapshot', 'adviceSnapshot']);
       if (pending.accountKey !== accountSnapshot?.accountKey) return false;
       if (expiry) {
-        const nearest = RadarUsage.nearestExpiry(accountSnapshot.credits);
+        const nearest = accountSnapshot.credits?.credits?.find(credit => credit.expiresAt > Date.now() &&
+          pending.id === expiryNotificationId(accountSnapshot.accountKey, credit.expiresAt))?.expiresAt;
         const hours = nearest ? (nearest - Date.now()) / 3600000 : Infinity;
         if (!nearest || !(accountSnapshot.credits?.availableCount > 0) || hours <= 0 || hours > settings.expiryWarningHours ||
           pending.id !== expiryNotificationId(accountSnapshot.accountKey, nearest)) return false;
         pending.options = { ...pending.options, ...expiryNotificationOptions(accountSnapshot, nearest) };
+        bypassQuiet = Boolean(pending.accountResumed && settings.notifyRecoveryOnResume);
       } else {
         if (!['blocked', 'useIfBlocked'].includes(adviceSnapshot?.tier) ||
           pending.id !== adviceNotificationId(accountSnapshot.accountKey, adviceSnapshot.tier)) return false;
@@ -1828,6 +1938,7 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       if (!event) return false;
       if (!creditsVerified || accountSnapshot?.accountKey !== event.accountKey) return true;
       pending.options = { ...pending.options, ...bankedNotificationOptions(event) };
+      bypassQuiet = Boolean(settings.notifyRecoveryOnResume && (event.catchUp || pending.accountResumed));
     }
     if (pending.id.startsWith("recovery:")) {
       if (!settings.notifyAccountReset) return false;

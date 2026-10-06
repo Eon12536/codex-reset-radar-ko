@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeWorker } = require('./helpers/worker');
 const { context: r } = makeWorker();
+// The fixture must remain within the seven-day news window as calendar time advances.
+r.Date = class extends Date { static now() { return Date.parse('2026-09-30T12:00:00Z'); } };
 const post = text => ({ id: '951', author: 'thsottiaux', text, createdAt: '2026-09-28T12:00:00Z',
   url: 'https://x.com/thsottiaux/status/951', source: { id: 'codex-lead', weight: 1 } });
 
