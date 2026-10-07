@@ -15,6 +15,7 @@
     confidenceThreshold: "high",
     notifyOfficialReset: true,
     notifyHints: false,
+    notifyResetHints: true,
     notifyScheduleChanges: true,
     notifyAccountReset: true,
     notifyBankedReset: true,

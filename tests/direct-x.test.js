@@ -166,7 +166,7 @@ test('X access is optional, with no broad tab access or persistent content scrip
   assert.doesNotMatch(source, /\bfetch\s*\(|document\.cookie|localStorage|sessionStorage|\.innerHTML\s*=/);
 });
 
-function article(post, { quoted = false, emoji = false, moreText, moreQuoted = false, quotePost } = {}) {
+function article(post, { quoted = false, emoji = false, moreText, moreQuoted = false, quotePost, pollOptions = [], quotedPoll = false } = {}) {
   let expanded = false;
   const textNode = text => ({ nodeType: 3, textContent: text });
   const node = { querySelectorAll(selector) {
@@ -179,6 +179,8 @@ function article(post, { quoted = false, emoji = false, moreText, moreQuoted = f
     const parent = isQuote => selector => selector === 'article[data-testid="tweet"]' ? node
       : selector === '[role="link"]:not(a)' ? isQuote ? {} : null
       : selector === 'a' ? { getAttribute: () => `/${post.author}/status/${post.id}` } : null;
+    if (selector === '[data-testid="cardPoll"]') return pollOptions.length ? [{ closest: parent(quotedPoll),
+      querySelectorAll: () => pollOptions.map(label => ({ querySelector: () => ({ childNodes: [textNode(label)] }) })) }] : [];
     if (selector === '[data-testid^="UserAvatar-Container-"] img') return post.avatarUrl ? [{
       closest: selector => selector === 'a' ? { getAttribute: () => '/' + post.author } : parent(false)(selector),
       getAttribute: () => post.avatarUrl
@@ -208,6 +210,19 @@ async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navig
   const result = await vm.runInContext(fs.readFileSync(require.resolve('../src/x-reader'), 'utf8'), context);
   return { result, scrolls, elapsed };
 }
+
+test('public poll choices are read separately from the body without voting or borrowing a quote poll', async () => {
+  const options = ['👌 (great release)', '🫨 (needs a reset)'];
+  for (const quotedPoll of [false, true]) {
+    const input = row('800', 'thsottiaux', 'To calibrate');
+    const { result } = await domRead([[article(input, { pollOptions: options, quotedPoll })]]);
+    const item = Direct.normalize(result.rows)[0];
+    assert.equal(item.text, 'To calibrate');
+    assert.deepEqual(Array.from(item.pollOptions || []), quotedPoll ? [] : options);
+    assert.equal(Signals.classifyHint(item).candidate, !quotedPoll);
+    assert.equal(Signals.classify(item).actionable, false);
+  }
+});
 
 test('rendered quote evidence stays separate from the author body and resolves via the original timeline', async () => {
   const parent = row('122', 'thsottiaux', 'Pro 500 did not get the reset. Investigating.');

@@ -30,7 +30,7 @@ async function load() {
   const value = RadarSettings.sanitize(settings);
   for (const key of [
     "monitorSignals", "monitorAccount", "monitorChat", "syncChatHistory", "syncChatResetWithCodex", "notifyOfficialReset", "notifyCreditExpiry",
-    "notifyAdvice", "notifyHints", "notifyScheduleChanges", "notifyAccountReset", "notifyBankedReset", "notifyRecoveryOnResume", "quietHoursEnabled", "monitorLeadSource", "monitorStatusSource",
+    "notifyAdvice", "notifyHints", "notifyResetHints", "notifyScheduleChanges", "notifyAccountReset", "notifyBankedReset", "notifyRecoveryOnResume", "quietHoursEnabled", "monitorLeadSource", "monitorStatusSource",
     "monitorHistorySource", "monitorCommunitySource", "monitorDirectX", "notifyPublicOnResume"
   ]) control(key).checked = Boolean(value[key]);
   await RadarTheme.ready;
@@ -62,6 +62,7 @@ function readSettings() {
     confidenceThreshold: radioValue("confidenceThreshold"),
     notifyOfficialReset: control("notifyOfficialReset").checked,
     notifyHints: control("notifyHints").checked,
+    notifyResetHints: control("notifyResetHints").checked,
     notifyScheduleChanges: control("notifyScheduleChanges").checked,
     notifyAccountReset: control("notifyAccountReset").checked,
     notifyBankedReset: control("notifyBankedReset").checked,

@@ -33,6 +33,12 @@
       const match = /^\/([a-zA-Z0-9_]{1,15})\/status\/([1-9]\d{0,24})\/?$/.exec(href);
       const body = Array.from(article.querySelectorAll('[data-testid="tweetText"]')).find(own);
       if (!match || !time.getAttribute("datetime")) continue;
+      // Poll labels are rendered outside tweetText. Keep only this author's
+      // own choices, separate from promises and from a quoted post's poll.
+      const poll = Array.from(article.querySelectorAll('[data-testid="cardPoll"]')).find(own);
+      const pollOptions = Array.from(poll?.querySelectorAll('[role="listitem"], [role="radio"]') || []).slice(0, 4)
+        .map(option => originalText(option.querySelector('[dir="ltr"]') || option)
+          .replace(/\s*\d+(?:[.,]\d+)?\s*%\s*$/, '').trim().slice(0, 160)).filter(Boolean);
       const avatar = Array.from(article.querySelectorAll('[data-testid^="UserAvatar-Container-"] img')).find(image =>
         own(image) && image.closest('a')?.getAttribute('href')?.replace(/\/$/, '').toLowerCase() === '/' + match[1].toLowerCase());
       const avatarUrl = avatar?.getAttribute('src') || '';
@@ -46,6 +52,7 @@
       }).filter(Boolean);
       const previous = rows.at(-1);
       rows.push({ id: match[2], author: match[1], text: originalText(body).slice(0, 6000),
+        ...(pollOptions.length ? { pollOptions } : {}),
         avatarUrl, createdAt: time.getAttribute("datetime"), url: `https://x.com/${match[1]}/status/${match[2]}`,
         truncated: Array.from(article.querySelectorAll('[data-testid="tweet-text-show-more-link"]')).some(own),
         ...(quote.length === 1 ? { quotedPost: quote[0] } : {}),

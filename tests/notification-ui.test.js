@@ -16,6 +16,12 @@ function page(reply, dependencies = {}) {
 }
 const status = { ok: true, version, permission: 'granted', hintAlerts: false, pending: 0, quiet: false };
 
+test('the reset survey/hint alert category is shown independently of general candidate alerts', async () => {
+  const p = page(async () => ({ ...status, resetHintAlerts: true })); await settle();
+  assert.match(p.elements.notificationWorkerStatus.textContent, /후보 알림 꺼짐/);
+  assert.match(p.elements.notificationWorkerStatus.textContent, /리셋 설문·암시 알림 켜짐/);
+});
+
 test('startup grace is explicitly shown while real alerts are durably pending', async () => {
   const p = page(async () => ({ ...status, pending: 2, resumeReadyAt: Date.now() + 60000 }));
   await settle();

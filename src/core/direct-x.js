@@ -56,6 +56,7 @@
       const at = Date.parse(row.createdAt);
       if (!Number.isFinite(at) || at > now + 300000 || now - at > 14 * day) return [];
       return [{ id: row.id, author: row.author, text: row.text.slice(0, 6000), createdAt: new Date(at).toISOString(), url: row.url, truncated: Boolean(row.truncated),
+        ...(root.RadarSignals?.pollOptions(row.pollOptions).length ? { pollOptions: root.RadarSignals.pollOptions(row.pollOptions) } : {}),
         avatarUrl: typeof row.avatarUrl === "string" && row.avatarUrl.length <= 512 && /^https:\/\/pbs\.twimg\.com\/profile_images\/[a-zA-Z0-9_/-]+\.(?:png|jpe?g|webp)$/.test(row.avatarUrl) ? row.avatarUrl : null,
         ...(quotedPost(row.quotedPost, now) ? { quotedPost: quotedPost(row.quotedPost, now) } : {}),
         ...(typeof row.adjacentId === "string" ? { adjacentId: row.adjacentId } : {}) }];
@@ -81,7 +82,8 @@
     const { replyContext: _previousContext, ...original } = item;
     const target = result.rows[index];
     const verified = normalize([target], now).find(row => row.id === item.id && row.url === item.url);
-    const base = verified && !verified.truncated ? { ...original, text: verified.text, avatarUrl: verified.avatarUrl || original.avatarUrl, truncated: false } : original;
+    const base = verified && !verified.truncated ? { ...original, text: verified.text,
+      pollOptions: verified.pollOptions || [], avatarUrl: verified.avatarUrl || original.avatarUrl, truncated: false } : original;
     // Only rows preceding this exact target on its own conversation page.
     const candidates = result.rows.slice(0, index).slice(-6).reverse();
     const context = candidates.find(row => typeof row.id === "string" && /^[1-9]\d{0,24}$/.test(row.id) &&

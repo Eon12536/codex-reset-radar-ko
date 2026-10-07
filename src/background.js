@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.76";
+const NOTIFICATION_BUILD = "0.2.77";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -204,8 +204,10 @@ async function saveSettings(settings, { connectChat = false } = {}) {
     }
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource || !sanitized.notifyHints) {
       const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
-      await chrome.storage.local.set({ pendingNotifications: pendingNotifications.filter(item => !/^(hint|event):/.test(item.id)) });
-      for (const id of Object.keys(await chrome.notifications.getAll())) if (/^(hint|event):/.test(id)) await chrome.notifications.clear(id);
+      // Reconcile hint categories below; product/event OFF must not discard
+      // the independently enabled reset-discussion queue.
+      await chrome.storage.local.set({ pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('event:')) });
+      for (const id of Object.keys(await chrome.notifications.getAll())) if (id.startsWith('event:')) await chrome.notifications.clear(id);
     }
     await revalidateCachedSignals(stateEpoch);
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource) await chrome.storage.local.remove(["hintSnapshot", "scheduleSnapshot"]);
@@ -1207,9 +1209,14 @@ function hintNotificationOptions(hint) {
   };
 }
 
+function hintNotificationEnabled(hint, settings) {
+  const discussion = ['reset-poll', 'reset-choice'].includes(hint?.assessment?.rule);
+  return Boolean(settings.monitorSignals && settings.monitorLeadSource && hint?.assessment?.candidate &&
+    hint.assessment.topic !== 'event' && (discussion ? settings.notifyResetHints : settings.notifyHints));
+}
+
 async function reconcileHintNotifications(hints, settings, epoch) {
-  const current = new Map((settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints ? hints : [])
-    .filter(hint => hint.assessment?.topic !== 'event')
+  const current = new Map(hints.filter(hint => hintNotificationEnabled(hint, settings))
     .map(hint => ["hint:" + hint.id, hint]));
   const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
   if (epoch !== stateEpoch) return;
@@ -1230,7 +1237,7 @@ async function reconcileHintNotifications(hints, settings, epoch) {
 async function maybeNotifyHint(hint, epoch = stateEpoch) {
   const settings = await loadSettings();
   const assessment = RadarSignals.classifyHint(hint);
-  if (epoch !== stateEpoch || !settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints || !assessment.candidate || assessment.topic === 'event') return;
+  if (epoch !== stateEpoch || !hintNotificationEnabled({ ...hint, assessment }, settings)) return;
   const id = "hint:" + hint.id;
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(["notificationHistory", "publicAlertState"]);
   if (epoch !== stateEpoch || !RadarPublicAlerts.allowed(hint, publicAlertState, notificationHistory)) return;
@@ -1426,13 +1433,14 @@ async function notificationStatus() {
     else if (keys.some(key => history[key])) publicAlerts.handled++;
     else if (!RadarPublicAlerts.allowed(item, data.publicAlertState)) publicAlerts.expired++;
     else if (!settings.monitorSignals || !settings.monitorLeadSource ||
-      !(item.assessment?.candidate ? settings.notifyHints : settings.notifyOfficialReset)) publicAlerts.disabled++;
+      !(item.assessment?.candidate ? item.assessment?.topic === 'event' ? settings.notifyHints : hintNotificationEnabled(item, settings) : settings.notifyOfficialReset)) publicAlerts.disabled++;
     else publicAlerts.eligible++;
   }
   return { ok: true, version: NOTIFICATION_BUILD, permission, delivery: data.notificationDelivery || null,
     realDelivery: data.notificationRealDelivery || (data.notificationDelivery?.test === false ? data.notificationDelivery : null),
     publicAlerts, publicCheckedAt: data.signalSnapshot?.checkedAt || null,
     hintAlerts: Boolean(settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints),
+    resetHintAlerts: Boolean(settings.monitorSignals && settings.monitorLeadSource && settings.notifyResetHints),
     quiet: RadarTime.isQuietHours(settings), pending: (data.pendingNotifications || []).length,
     resumeReadyAt: data.publicDeliveryReadyAt > Date.now() ? data.publicDeliveryReadyAt : null };
 }
@@ -1973,10 +1981,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       bypassQuiet = publicResumeBypassesQuiet(change.post, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith("hint:")) {
-      if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints) return false;
       const { hintSnapshot } = await chrome.storage.local.get("hintSnapshot");
       const hint = RadarSignals.hintCandidates(hintSnapshot?.items || [], { limit: 100 }).find(item => pending.id === "hint:" + item.id);
-      if (hint?.assessment?.topic === 'event') return false;
+      if (!hintNotificationEnabled(hint, settings)) return false;
       if (!queuedPublicAllowed(hint, publicAlertState, pending)) return false;
       pending.options = { ...pending.options, ...hintNotificationOptions(hint) };
       bypassQuiet = publicResumeBypassesQuiet(hint, publicAlertState, settings, pending);

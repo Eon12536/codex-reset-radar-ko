@@ -1,6 +1,15 @@
 // Display copy only. Original posts and collected evidence are never translated.
 (function(root) {
   const en = {
+    '리셋 설문·암시 알림 켜짐': 'Reset survey/hint alerts on',
+    '리셋 설문·암시 알림 꺼짐': 'Reset survey/hint alerts off',
+    "리셋 설문·선택지 암시 알림": "Reset survey and choice alerts",
+    "리셋 필요 여부 설문과 업데이트·리셋 선택지 글을 한 번 알립니다. 실행 약속·시각은 미확정이며 일반 출시·행사 알림과 별도로 켜고 끌 수 있습니다. 시작·절전 복귀 때 새 조회 후 놓친 글을 알립니다.": "Notify once about reset-needed polls and update-or-reset choices. No reset promise or time is confirmed. Independent of launch/event alerts. On restart or wake, collect fresh posts before catch-up alerts.",
+    "리셋 설문": "Reset survey",
+    "리셋 암시": "Reset hint",
+    "리셋 설문·암시 · 실행 미확정": "Reset survey or hint · Execution unconfirmed",
+    "리셋 필요 여부를 묻는 설문 · 지급·실행 약속은 아님": "A poll asks whether a reset is needed; no grant or execution promise.",
+    "업데이트와 리셋을 선택지로 언급 · 실행 여부·시각 미확정": "Updates and a reset are offered as choices; execution and time are unconfirmed.",
     '공식 일정 · 고정':'Official schedule · Pinned',
     '행사 일정':'Event schedule', '행사 예정 · 고정':'Upcoming · Pinned', '진행 중 · 고정':'Live · Pinned',
     '관련 글 보기':'Related posts', '감지한 소식 · 리셋 우선':'Detected updates · Resets first',

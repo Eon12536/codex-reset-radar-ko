@@ -166,7 +166,8 @@ function createNewsRow(news, entries, compact = false) {
     timing.title = news.timingDetail + " 게시 " + RadarTime.formatDateTime(news.item.createdAt, timeZone) + " · 이미 지난 일정일 수 있습니다.";
     heading.append(badge, timing);
     const kind = document.createElement("span"); kind.className = "news-kind"; kind.textContent = (RadarSignals.isLead(news.item) ? RadarSignals.authorName(news.item) + " · " : "") + news.kindLabel;
-    const quote = document.createElement("blockquote"); quote.className = "news-quote"; quote.textContent = news.item.text;
+    const quote = document.createElement("blockquote"); quote.className = "news-quote";
+    quote.textContent = [news.item.text, ...RadarSignals.pollOptions(news.item.pollOptions)].join('\n');
     const link = document.createElement("button"); link.type = "button"; link.className = "text-action news-link";
     link.dataset.newsId = news.key; link.textContent = "원문 보기 ↗";
     link.disabled = !RadarSecurity.evidenceUrl(news.item);
@@ -460,7 +461,7 @@ async function render() {
     : data.accountState?.status === "signedOut"
       ? msg("basicModeHealthy", undefined, "Basic mode: public monitoring is healthy")
       : msg("monitoringHealthy", undefined, "Monitoring is healthy");
-  $("notificationState").textContent = (settings.monitorSignals && (settings.notifyOfficialReset || (settings.monitorLeadSource && settings.notifyHints))) || (settings.monitorAccount && (settings.notifyAccountReset || settings.notifyBankedReset || settings.notifyCreditExpiry || settings.notifyAdvice))
+  $("notificationState").textContent = (settings.monitorSignals && (settings.notifyOfficialReset || (settings.monitorLeadSource && (settings.notifyHints || settings.notifyResetHints)))) || (settings.monitorAccount && (settings.notifyAccountReset || settings.notifyBankedReset || settings.notifyCreditExpiry || settings.notifyAdvice))
     ? msg("notificationsOn", undefined, "Notifications on")
     : msg("notificationsOff", undefined, "Notifications off");
   if (data.notificationDelivery?.status === "failed") {

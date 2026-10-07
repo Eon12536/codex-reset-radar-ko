@@ -1,6 +1,6 @@
 // This module intentionally has no dependency on the rest of the settings UI.
 (() => {
-  const BUILD = "0.2.76";
+  const BUILD = "0.2.77";
   const button = document.getElementById("testNotification");
   const status = document.getElementById("notificationTestStatus");
   const worker = document.getElementById("notificationWorkerStatus");
@@ -27,6 +27,7 @@
       hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(previous.at)).replace(/(오전|오후)\s*0(\d):/g, '$1 $2:') : '';
     const latest = previous ? ` · 실제 알림: ${at} ${previous.status === "accepted" ? "Chrome 접수" : "전송 실패"}` : " · 실제 알림: 전송 기록 없음";
     worker.textContent = `실행 v${result.version} · Chrome 알림 ${result.permission === "granted" ? "허용" : "차단"} · 후보 알림 ${result.hintAlerts ? "켜짐" : "꺼짐"} · 대기 ${result.pending}개${result.quiet ? " · 확장 방해 금지 중" : ""}${latest}`;
+    worker.textContent += result.resetHintAlerts ? ' · 리셋 설문·암시 알림 켜짐' : ' · 리셋 설문·암시 알림 꺼짐';
     if (result.resumeReadyAt > Date.now()) worker.textContent += ' · 시작·절전 복귀 후 알림 준비 중 (1분 대기)';
     if (result.publicAlerts) {
       const alerts = result.publicAlerts;

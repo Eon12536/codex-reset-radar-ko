@@ -1,6 +1,13 @@
 (function initTranslations(root) {
   root.RadarTranslations = Object.freeze({
     en: Object.freeze({
+      resetDiscussionAlerts: "Reset survey and choice alerts",
+      resetDiscussionAlertsHelp: "Notify once about reset-needed polls and update-or-reset choices. No reset promise or time is confirmed. Independent of launch/event alerts. On restart or wake, collect fresh posts before catch-up alerts.",
+      resetPollLabel: "Reset survey",
+      resetChoiceLabel: "Reset hint",
+      resetDiscussionUnconfirmed: "Reset survey or hint · Execution unconfirmed",
+      resetPollReason: "A poll asks whether a reset is needed; no grant or execution promise.",
+      resetChoiceReason: "Updates and a reset are offered as choices; execution and time are unconfirmed.",
       checkTabsPaused: "Check tab creation paused",
       checkTabsRecoveryHelp: "An earlier X or billing check may have left a tab open. New check tabs are blocked. Close leftover check tabs before resuming. Public feeds and quota checks continue.",
       resumeCheckTabs: "Resume after closing tabs",
@@ -28,6 +35,13 @@
       bankedSettingDescription: "Detect new credits in the same account independently of X. The first reading saves a baseline. Quiet hours apply. The popup notice and badge ! last 24 hours after detection.",
     }),
     zh_CN: Object.freeze({
+      resetDiscussionAlerts: "重置投票与选择提示通知",
+      resetDiscussionAlertsHelp: "对重置需求投票和更新或重置的选择帖通知一次。执行承诺和时间尚未确认，可独立于发布及活动通知设置。启动或唤醒后先读取新帖，再补发通知。",
+      resetPollLabel: "重置投票",
+      resetChoiceLabel: "重置提示",
+      resetDiscussionUnconfirmed: "重置投票或提示 · 执行未确认",
+      resetPollReason: "询问是否需要重置的投票，并非发放或执行承诺。",
+      resetChoiceReason: "将更新和重置列为选择，执行与时间未确认。",
       checkTabsPaused: "暂停创建检查标签页",
       checkTabsRecoveryHelp: "先前的 X 或套餐检查可能留下了标签页。已阻止新建检查标签页。请关闭残留标签页后恢复。公开信息源和额度查询会继续。",
       resumeCheckTabs: "关闭标签页后恢复",
@@ -247,6 +261,13 @@
       welcomeTitle: "欢迎使用 Codex Reset Radar"
     }),
     ja: Object.freeze({
+      resetDiscussionAlerts: "リセット投票・選択肢の通知",
+      resetDiscussionAlertsHelp: "リセットの必要性を問う投票や更新かリセットかを示す投稿を一度通知します。実行と時刻は未確定です。発売・イベント通知とは別に設定でき、起動・復帰時は新しい投稿を取得してから通知します。",
+      resetPollLabel: "リセット投票",
+      resetChoiceLabel: "リセットの示唆",
+      resetDiscussionUnconfirmed: "リセット投票・示唆 · 実行未確定",
+      resetPollReason: "リセットが必要かを問う投票で、付与・実行の約束ではありません。",
+      resetChoiceReason: "更新とリセットを選択肢として提示。実行・時刻は未確定。",
       checkTabsPaused: "確認タブの作成を停止",
       checkTabsRecoveryHelp: "以前の X または料金プラン確認タブが残っている可能性があります。残った確認タブを閉じてから再開してください。公開フィードと残量確認は続きます。",
       resumeCheckTabs: "タブを閉じて再開",
@@ -277,6 +298,13 @@
       all: "すべて", availableResetCredits: "利用可能なリセットクレジット", basicMode: "基本モード", basicModeHealthy: "基本モード：公開監視は正常です", chatGPTSessionOptional: "ChatGPT サインインセッション（任意、ローカル読み取りのみ）", chatGPTSessionOptionalHelp: "個人クォータとクレジットのアドバイスにのみ使用します。サインアウト中も公開レーダーは動作します。", checkedAt: "確認 {0}", clearDataConfirm: "クォータのスナップショット、信号履歴、通知の重複防止記録を消去しますか？設定は保持されます。", clearLocalData: "ローカルデータを消去", communityExpectedResetAround: "コミュニティ予測：{0} ごろリセット", communitySourceHelp: "コミュニティのクォータ報告を低い重みの参考情報としてのみ使用", confidenceHigh: "高信頼度", confidenceLow: "低信頼度", confidenceMedium: "中信頼度", confidenceThreshold: "信頼度しきい値", confidenceThresholdHelp: "通知を発生させる公開信号を選択", currentQuota: "現在のクォータ", currentSystemTimeZone: "現在のシステムタイムゾーン：{0}", dataSources: "データソース", dateAndWindowForecast: "日付と時間帯の予測", daysAgo: "{0}日前", daysHoursAgo: "{0}日{1}時間前", dismissThisTime: "今回は無視", every15Minutes: "15分ごと", every2Hours: "2時間ごと", every30Minutes: "30分ごと", every60Minutes: "60分ごと", experienceModelMeta: "経験モデル · {0} · {1}", expiryUnknown: "有効期限不明", firstCheckHint: "最初の確認には数秒かかる場合があります", fiveHours: "5時間", followSystem: "システムに従う", forecastCommunity: "次の72時間 ≈{0}% · コミュニティ予測", forecastDisclaimer: "ヒューリスティックな確率であり、OpenAI の計画や約束ではありません", forecastNoSignals: "次の72時間 ≈{0}% · 有効な信号なし", forecastRuleEstimate: "次の72時間 · ルールベースの推定", forecastWeighted: "次の72時間 ≈{0}% · {1}ソースの重み付け", futureResetProbability: "将来のリセット確率", highOnly: "高のみ", historySourceHelp: "検証済みの100万ユーザー単位のマイルストーンとリセット間隔から予測", historySourceTitle: "コミュニティのリセット履歴 · 0.58", hoursAgo: "{0}時間前", hoursMinutesAgo: "{0}時間{1}分前", ianaTimeZone: "IANA タイムゾーン", ianaTimeZoneHelp: "例：Asia/Shanghai、America/Los_Angeles", inDays: "{0}日後", inDaysHours: "{0}日{1}時間後", inHours: "{0}時間後", inHoursMinutes: "{0}時間{1}分後", inMinutes: "{0}分後", invalidTimeZone: "無効なタイムゾーン", justNow: "たった今", lastCheckedAt: "最終確認 {0}", leadSourceHelp: "コミュニティの経験における主要な事前通知ソース", leadSourceTitle: "Codex リードの更新 · 1.00", localDataCleared: "ローカルデータを消去しました", manual: "手動", mediumAndHigh: "中＋高", minutesAgo: "{0}分前", monitor: "監視", monitoring: "監視中", monitoringHealthy: "監視は正常です", monitoringStrategy: "監視戦略", monitoringTargets: "監視対象", nearestCreditExpiry: "最も近いクレジットは{0}に期限切れ · {1}", noActionableSignal: "実行可能な信号はありません", noResetCredits: "利用可能なクレジットはありません", notCheckedYet: "未確認", notificationAndMonitoringSettings: "通知と監視の設定", notificationCreditExpiresMessage: "週間クォータは{0}%残っています。今日まだ長いタスクがある場合は使用を検討してください。", notificationCreditExpiresTitle: "リセットクレジットは{0}に期限切れ", notificationPossibleResetMessage: "信頼度の高い公開信号を検出しました。残りのクォータを先に使い、クレジットを保持してください。", notificationPossibleResetTitle: "Codex クォータは {0} にリセットされる可能性があります", notificationReminderMessage: "1時間前に再通知を選択しました。最新の証拠とアドバイスを確認してください。", notificationReminderTitle: "Codex リセット信号のリマインダー", notifications: "通知", notificationSettings: "通知設定", notificationsOff: "通知オフ", notificationsOn: "通知オン", openSettings: "設定を開く", optionalConnectChatGPT: "任意：ChatGPT に接続", optionalSignInToShow: "任意：サインインして表示", pendingAssessment: "評価待ち", personalDataUnavailable: "個人データを一時的に利用できません", personalQuotaOptional: "個人クォータとリセットクレジット（任意）", personalQuotaOptionalHelp: "ChatGPT にサインインするとクォータ、クレジット、個別のアドバイスを表示します。公開監視には影響しません。", pollingInterval: "確認間隔", pollingIntervalHelp: "ブラウザー実行中に定期的に確認", possibleResetAt: "{0} にリセットの可能性", possibleResetSoon: "まもなくリセットの可能性", possibleResetSoonHelp: "新しい公開信号が信頼度しきい値を満たしたときに通知", privacy: "プライバシー", privacyNote: "♢ トークン、アカウント識別子、使用記録はアップロードしません。アクセストークンはブラウザーセッション中のみ保存され、ブラウザーを閉じると失効します。", publicResetSignals: "公開リセット信号", publicResetSignalsHelp: "公開信号を監視し、可能なリセット時間帯を推定", publicSignalResetSoon: "公開信号はまもなくリセットの可能性を示しています", publicSignalsUnavailable: "公開信号を一時的に利用できません", publicSources: "公開ソース", publicUpdates: "公開更新", quietHours: "通知しない時間", quietHoursHelp: "選択した時間帯の緊急でない通知を減らします", quotaAdvice: "クォータが少ないときのアドバイス", quotaAdviceHelp: "制限中またはクォータが明らかに少ない場合のみ通知", refreshNow: "今すぐ更新", remainingWithReset: "残り{0}% · {1}", remindLater: "後で通知", resetCreditExpiring: "クレジットの期限が間近", resetCreditExpiringHelp: "期限前に使用アドバイスを表示", resetCreditsAvailableCount: "利用可能なクレジット：{0}", resetTimeUnknown: "リセット時刻不明", resetTiming: "{0}にリセット · {1}", retryAfterRefresh: "更新後に再試行", reviewSettings: "設定を確認", saved: "保存済み", saving: "保存中…", scanningPublicSignals: "公開信号をスキャン中", settingsIntro: "公開信号の監視にサインインは不要です。任意のアカウントアドバイスはローカルで計算されます。", settingsSections: "設定セクション", settingsTitle: "Codex Reset Radar 設定", someCreditsNoExpiry: "一部のクレジットには有効期限がありません", sourceCodexLead: "Codex リードの更新", sourceCommunityHistory: "コミュニティのリセット履歴", sourceCustom: "カスタム公開ソース", sourceGitHubCommunity: "OpenAI/Codex GitHub コミュニティ", sourceMeta: "{0} から · {1}", sourceOpenAIStatus: "OpenAI Status", sourcesAndWeights: "ソースと重み", status: "状態", statusSourceHelp: "公式の障害、レート制限の異常、復旧状況", systemTimeZone: "システムタイムゾーン", timeDisplay: "時刻表示", timePending: "時刻確認中", timeSoon: "まもなく", timeUnknown: "時刻不明", timeWindowPending: "時間帯を確認中", timeZone: "タイムゾーン", timezonePlaceholder: "Asia/Tokyo", viewAdvice: "アドバイスを見る", viewEvidence: "証拠を見る", waitingForData: "データ待ち", waitingForSignal: "信号待ち", weekly: "週間", weeklyRemaining: "週間クォータ残り{0}%", weightedPublicSources: "重み付けされた公開ソース：{0}", weightedPublicSources4: "4つの重み付け公開ソース", welcomeHeadline: "クォータのリセット前に信号を確認。", welcomeIntro: "Codex Reset Radar はサインインせずに公開リセット信号を監視します。ChatGPT にサインインすると個人クォータとクレジットのアドバイスも表示できます。", welcomePrivacy: "トークン、アカウント識別子、使用記録はアップロードしません。クレジットを自動使用することもありません。", welcomeStep1Body: "公開レーダー、時間予測、信号通知に ChatGPT へのサインインは不要です。", welcomeStep1Title: "インストール直後から利用可能", welcomeStep2Body: "個人クォータ、クレジット状態、個別のアドバイスが必要な場合のみサインインします。API キーは不要です。", welcomeStep2Title: "任意：ChatGPT にサインイン", welcomeStep3Body: "システム通知、信頼度しきい値、表示タイムゾーンを設定できます。", welcomeStep3Title: "必要に応じて設定", welcomeTitle: "Codex Reset Radar へようこそ"
     }),
     ko: Object.freeze({
+      resetDiscussionAlerts: "리셋 설문·선택지 암시 알림",
+      resetDiscussionAlertsHelp: "리셋 필요 여부 설문과 업데이트·리셋 선택지 글을 한 번 알립니다. 실행 약속·시각은 미확정이며 일반 출시·행사 알림과 별도로 켜고 끌 수 있습니다. 시작·절전 복귀 때 새 조회 후 놓친 글을 알립니다.",
+      resetPollLabel: "리셋 설문",
+      resetChoiceLabel: "리셋 암시",
+      resetDiscussionUnconfirmed: "리셋 설문·암시 · 실행 미확정",
+      resetPollReason: "리셋 필요 여부를 묻는 설문 · 지급·실행 약속은 아님",
+      resetChoiceReason: "업데이트와 리셋을 선택지로 언급 · 실행 여부·시각 미확정",
       checkTabsPaused: "확인 탭 생성 중지",
       checkTabsRecoveryHelp: "이전 X 또는 요금제 확인 탭이 남았을 수 있어 새 탭 생성을 차단했습니다. 남은 확인 탭을 닫고 재개해 주세요. 공개 피드와 잔여량 조회는 계속됩니다.",
       resumeCheckTabs: "탭 닫은 후 재개",
@@ -497,6 +525,13 @@
 
     }),
     fr: Object.freeze({
+      resetDiscussionAlerts: "Alertes sondages et choix de réinitialisation",
+      resetDiscussionAlertsHelp: "Alerte une fois pour les sondages sur le besoin de réinitialisation et les choix entre mises à jour et réinitialisation. Exécution et heure non confirmées. Réglage distinct des lancements et événements. Au redémarrage ou réveil, consulte les nouveaux posts avant de notifier.",
+      resetPollLabel: "Sondage de réinitialisation",
+      resetChoiceLabel: "Indice de réinitialisation",
+      resetDiscussionUnconfirmed: "Sondage ou indice · Exécution non confirmée",
+      resetPollReason: "Sondage sur le besoin de réinitialisation ; aucune promesse de crédit ou d’exécution.",
+      resetChoiceReason: "Mises à jour et réinitialisation proposées comme choix ; exécution et heure non confirmées.",
       checkTabsPaused: "Création des onglets suspendue",
       checkTabsRecoveryHelp: "Un ancien contrôle X ou du forfait peut avoir laissé un onglet ouvert. Fermez ces onglets avant de reprendre. Les flux publics et les contrôles de quota continuent.",
       resumeCheckTabs: "Reprendre après fermeture",
@@ -716,6 +751,13 @@
       welcomeTitle: "Bienvenue sur Codex Réinitialiser le radar"
     }),
     it: Object.freeze({
+      resetDiscussionAlerts: "Avvisi su sondaggi e scelte di reset",
+      resetDiscussionAlertsHelp: "Avvisa una volta per i sondaggi sulla necessità di reset e le scelte tra aggiornamenti e reset. Esecuzione e orario non confermati. Separato da lanci ed eventi. All’avvio o al risveglio legge i nuovi post prima di notificare.",
+      resetPollLabel: "Sondaggio reset",
+      resetChoiceLabel: "Indizio di reset",
+      resetDiscussionUnconfirmed: "Sondaggio o indizio · Esecuzione non confermata",
+      resetPollReason: "Sondaggio sulla necessità di reset; nessuna promessa di crediti o esecuzione.",
+      resetChoiceReason: "Aggiornamenti e reset proposti come scelte; esecuzione e orario non confermati.",
       checkTabsPaused: "Creazione schede sospesa",
       checkTabsRecoveryHelp: "Un controllo precedente di X o del piano potrebbe aver lasciato una scheda aperta. Chiudila prima di riprendere. I feed pubblici e i controlli della quota continuano.",
       resumeCheckTabs: "Riprendi dopo la chiusura",
@@ -935,6 +977,13 @@
       welcomeTitle: "Benvenuto in Codex Reset Radar"
     }),
     es: Object.freeze({
+      resetDiscussionAlerts: "Avisos de encuestas y opciones de reinicio",
+      resetDiscussionAlertsHelp: "Avisa una vez sobre encuestas de necesidad de reinicio y opciones entre actualizaciones y reinicio. Ejecución y hora sin confirmar. Independiente de lanzamientos y eventos. Al iniciar o reactivar, lee las publicaciones nuevas antes de avisar.",
+      resetPollLabel: "Encuesta de reinicio",
+      resetChoiceLabel: "Indicio de reinicio",
+      resetDiscussionUnconfirmed: "Encuesta o indicio · Ejecución sin confirmar",
+      resetPollReason: "Encuesta sobre la necesidad de reinicio; no promete créditos ni ejecución.",
+      resetChoiceReason: "Actualizaciones y reinicio como opciones; ejecución y hora sin confirmar.",
       checkTabsPaused: "Creación de pestañas pausada",
       checkTabsRecoveryHelp: "Una consulta anterior de X o del plan puede haber dejado una pestaña abierta. Ciérralas antes de reanudar. Los canales públicos y las consultas de cuota continúan.",
       resumeCheckTabs: "Reanudar tras cerrar",
@@ -1154,6 +1203,13 @@
       welcomeTitle: "Bienvenido a Codex Restablecer radar"
     }),
     ar: Object.freeze({
+      resetDiscussionAlerts: "تنبيهات استطلاعات وخيارات إعادة التعيين",
+      resetDiscussionAlertsHelp: "تنبيه مرة واحدة لاستطلاعات الحاجة إلى إعادة التعيين والاختيار بين التحديثات وإعادة التعيين. التنفيذ والوقت غير مؤكدين. إعداد مستقل عن الإصدارات والأحداث. عند البدء أو الاستيقاظ تُقرأ المنشورات الجديدة قبل التنبيه.",
+      resetPollLabel: "استطلاع إعادة التعيين",
+      resetChoiceLabel: "تلميح إعادة التعيين",
+      resetDiscussionUnconfirmed: "استطلاع أو تلميح · التنفيذ غير مؤكد",
+      resetPollReason: "استطلاع عن الحاجة إلى إعادة التعيين وليس وعدا بالرصيد أو التنفيذ.",
+      resetChoiceReason: "التحديثات وإعادة التعيين كخيارات؛ التنفيذ والوقت غير مؤكدين.",
       checkTabsPaused: "إيقاف إنشاء علامات الفحص",
       checkTabsRecoveryHelp: "قد يكون فحص سابق لـ X أو الخطة قد ترك علامة مفتوحة. أغلق علامات الفحص المتبقية قبل الاستئناف. تستمر المصادر العامة وفحص الحصة.",
       resumeCheckTabs: "استئناف بعد الإغلاق",

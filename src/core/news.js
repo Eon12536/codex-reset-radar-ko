@@ -224,7 +224,8 @@
 
   function describe(item, key) {
     const target = root.RadarTime.countryZone();
-    const explicit = /\breset(?:s|ting)?\b/i.test(item.text);
+    const discussion = ['reset-poll', 'reset-choice'].includes(item.assessment?.rule);
+    const explicit = !discussion && /\breset(?:s|ting)?\b/i.test(item.text);
     const timed = ['product-time', 'schedule-time'].includes(item.assessment?.rule);
     const reset = explicit || item.assessment?.report || item.assessment?.candidate && !item.assessment.topic && !timed;
     const event = reset ? null : root.RadarEvents?.resolve(item);
@@ -232,9 +233,9 @@
     const time = event && event.status !== 'cancelled' ? { text: root.RadarEvents.describe(event).join('\n'), detail: event.officialUrl ? '공식 행사 일정 · 리셋 실행 시각이 아닙니다.' : '게시물의 행사 일정 · 리셋 실행 시각이 아닙니다.' } : schedule(item);
     const report = item.assessment?.report;
     const kind = root.RadarSignals.resetKind(item);
-    const kindLabel = report === 'reset-update' ? item.assessment.updateStatus === 'resolved' ? '리셋 반영 수정 안내' : '리셋 반영 조사·보완' :
+    const kindLabel = discussion ? '리셋 설문·암시 · 실행 미확정' : report === 'reset-update' ? item.assessment.updateStatus === 'resolved' ? '리셋 반영 수정 안내' : '리셋 반영 조사·보완' :
       topic && !explicit ? '리셋 미확인' : { banked: 'Banked reset · 리셋권', ordinary: '일반 리셋', both: '일반 + Banked reset', unknown: '리셋 종류 미확인' }[kind];
-    return { key, item, event, label: report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
+    return { key, item, event, label: discussion ? item.assessment.rule === 'reset-poll' ? '리셋 설문' : '리셋 암시' : report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
       timing: report ? english() ? `${report === 'credit-grant' ? 'Credit grant' : report === 'reset-update' ? 'Reset update' : 'Reset complete'} · ${target.label} · Posted ${root.RadarTime.formatDateTime(item.createdAt, target.zone, locale())}` : `${report === 'credit-grant' ? '지급 안내' : report === 'reset-update' ? '후속 안내' : '완료 공지'} · ${target.label} ${root.RadarTime.formatDateTime(item.createdAt, target.zone, locale())} 게시` : time.text,
       timingDetail: report ? '표시 시각은 게시 시각입니다. 실제 지급·계정 반영 시각은 별도 확인이 필요합니다.' : time.detail,
       caption: topic && !explicit ? item.assessment?.reason || '행사 일정 · 리셋 미확인' : report ? item.assessment.reason : explicit ? 'reset 직접 언급 · 실행 확정과는 다릅니다' : timed ? item.assessment.reason : '간접 표현 · 리셋 미확정' };

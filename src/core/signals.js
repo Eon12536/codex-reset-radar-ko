@@ -51,6 +51,25 @@
   function authorName(item) { return ({thsottiaux: 'Tibo', reach_vb: 'VB', openai: 'OpenAI'})[String(item?.author || '').replace(/^@/, '').toLowerCase()] || 'X'; }
   // Only X profile-image paths. No credentials, query parameters or arbitrary hosts.
   function avatarUrl(value) { return typeof value === 'string' && value.length <= 512 && /^https:\/\/pbs\.twimg\.com\/profile_images\/[a-zA-Z0-9_/-]+\.(?:png|jpe?g|webp)$/.test(value) ? value : null; }
+  function pollOptions(value) {
+    return Array.isArray(value) ? value.slice(0, 4).flatMap(option => {
+      const label = typeof option === 'string' ? option : option?.label ?? option?.text;
+      return typeof label === 'string' && label.trim() ? [label.trim().slice(0, 160)] : [];
+    }) : [];
+  }
+  function resetDiscussion(item) {
+    if (!isLead(item)) return null;
+    const text = normalizedText(item);
+    const choices = pollOptions(item.pollOptions).map(option => option.toLowerCase());
+    const all = [text, ...choices].join(' ');
+    if (UNRELATED.test(all) || includesAny(all, EXCLUSIONS) || BANKED_CREDIT.test(all) || isNegated(text) || isCompleted(text) ||
+      /\b(?:yesterday|last (?:year|month|week)|(?:years?|months?) ago|previous|recap)\b/.test(text)) return null;
+    if (choices.length >= 2 && choices.some(choice => /\b(?:needs?|want(?:s)?|should|time for) (?:a |another |the )?reset\b/.test(choice) && !isNegated(choice)))
+      return { rule: 'reset-poll', reason: '리셋 필요 여부를 묻는 설문 · 지급·실행 약속은 아님' };
+    if (/\b(?:updates?|releases?|features?|ships?) or (?:a |another |the )?reset\b/.test(text))
+      return { rule: 'reset-choice', reason: '업데이트와 리셋을 선택지로 언급 · 실행 여부·시각 미확정' };
+    return null;
+  }
   const DIRECT_PROMISE = /\b(?:we|i)(?:'ll| will| are going to| am going to) (?:also |now )?reset\b/;
 
   function leadResetPromise(item, text) {
@@ -241,6 +260,8 @@
     return {
       id,
       text,
+      ...(pollOptions(raw.pollOptions ?? raw.poll?.options ?? raw.poll?.choices ?? metadata.poll?.options).length ?
+        { pollOptions: pollOptions(raw.pollOptions ?? raw.poll?.options ?? raw.poll?.choices ?? metadata.poll?.options) } : {}),
       author,
       avatarUrl: avatarUrl(metadata.profile_image_url_https || raw.avatarUrl),
       createdAt: raw.published_at || raw.created_at || null,
@@ -273,6 +294,9 @@
     if (isNegated(rhetorical)) return none;
     if (classify(item, options).actionable) return none;
     if (resetUpdate(item)) return none;
+    const discussion = resetDiscussion(item);
+    if (discussion) return { ...discussion, candidate: true, actionable: false,
+      confidence: 'low', eventAt: null, qualifier: '' };
     if (!isCompleted(text) && !/\b(?:don't|do not|stop|never|not)\b/.test(text) &&
         clauses(text).some(part => /^(?:(?:please|let's|time to|go)\s+)?(?:burn(?: through)?|use(?: up)?|spend)\s+(?:(?:those|your|the|remaining|all|extra|spare)\s+){0,3}tokens?\b/.test(part))) {
       return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '',
@@ -350,6 +374,7 @@
       if (item?.id && assessment.candidate) unique.set(item.id, {
         id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url, assessment,
+        ...(pollOptions(item.pollOptions).length ? { pollOptions: pollOptions(item.pollOptions) } : {}),
         ...(item.replyContext ? { replyContext: item.replyContext } : {})
       });
     }
@@ -491,7 +516,7 @@
   }
 
   root.RadarSignals = Object.freeze({
-    isLead, authorName, avatarUrl, eventContext, hasEventTime,
+    isLead, authorName, avatarUrl, pollOptions, resetDiscussion, eventContext, hasEventTime,
     classify,
     classifyHint,
     hintCandidates,
