@@ -14,7 +14,7 @@
       <main class="settings-main">
         <div class="page-topbar">
           <div class="brand"><img src="../../assets/icons/icon128.png" width="48" height="48" alt=""><strong>Codex</strong><span>리셋 레이더</span></div>
-          <span class="version">v0.2.77</span>
+          <span class="version">v0.2.78</span>
         </div>
         <header class="page-heading">
           <div><h1>설정</h1><p>화면과 알림을 원하는 방식으로 맞춰보세요.</p></div>
@@ -41,8 +41,8 @@
               <h2>OpenAI · Tibo · VB 수집 연결</h2>
               <div class="settings-card">
                 <div class="setting-row">
-                  <div><strong>X 글·답글 직접 확인 · 선택</strong><small>OpenAI, Tibo, VB의 원글과 답글 목록을 각각 확인하고 긴 본문을 펼쳐 읽습니다. 목록별 최대 24회 스크롤, 작성자별 최대 160개, 대화 원문 최대 3개를 확인합니다. 최대 270초 동안 비활성 탭을 열었다 닫으며 같은 Chrome의 X 로그인이 필요할 수 있습니다. 공개 본문·시각·링크·작성자 사진 주소·선행 대화만 기기에 보관하며 DM·쿠키·로그인 정보는 읽지 않습니다. 최근 7일을 목표로 확인하지만 전체 수집을 보장하지 않습니다.</small></div>
-                  <label class="switch"><input id="monitorDirectX" type="checkbox" aria-label="X 공개 페이지 직접 확인"><span></span></label>
+                  <div><strong>X 글·답글 직접 확인 · 항상 켜짐</strong><small>공개 소식 감시가 켜져 있으면 정기 확인과 컴퓨터 시작·절전 복귀 확인에 항상 포함됩니다. 처음 한 번 X 접근 권한 허용이 필요합니다.</small><small>OpenAI, Tibo, VB의 원글과 답글 목록을 각각 확인하고 긴 본문을 펼쳐 읽습니다. 목록별 최대 24회 스크롤, 작성자별 최대 160개, 대화 원문 최대 3개를 확인합니다. 최대 270초 동안 비활성 탭을 열었다 닫으며 같은 Chrome의 X 로그인이 필요할 수 있습니다. 공개 본문·시각·링크·작성자 사진 주소·선행 대화만 기기에 보관하며 DM·쿠키·로그인 정보는 읽지 않습니다. 최근 7일을 목표로 확인하지만 전체 수집을 보장하지 않습니다.</small></div>
+                  <label class="switch"><input id="monitorDirectX" type="checkbox" checked disabled aria-label="X 공개 페이지 직접 확인 · 항상 켜짐"><span></span></label>
                 </div>
                 <div class="setting-row notification-check"><div><strong>글·답글 수집 상태</strong><small id="publicConnectionState" role="status">확인 전</small></div><div class="account-actions"><button id="checkPublic" class="account-button" type="button">공개 소식 확인</button></div></div>
                 <div id="checkTabRecovery" class="setting-row notification-check" hidden><div><strong data-i18n="checkTabsPaused">확인 탭 생성 중지</strong><small data-i18n="checkTabsRecoveryHelp">이전 X 또는 요금제 확인 탭이 남았을 수 있어 새 탭 생성을 차단했습니다. 남은 확인 탭을 닫고 재개해 주세요. 공개 피드와 잔여량 조회는 계속됩니다.</small><label><input id="checkTabsClosed" type="checkbox"> <span data-i18n="checkTabsRecoveryConfirm">남은 X / ChatGPT 확인 탭을 모두 닫았습니다.</span></label><small id="checkTabRecoveryState" role="status"></small></div><div class="account-actions"><button id="resumeCheckTabs" class="account-button" type="button" data-i18n="resumeCheckTabs" disabled>탭 닫은 후 재개</button></div></div>
@@ -226,7 +226,7 @@
               <div class="settings-card">
             <div class="about-block">
               <div>
-                <h3>Codex 리셋 레이더 <span>한국어판 · v0.2.77</span></h3>
+                <h3>Codex 리셋 레이더 <span>한국어판 · v0.2.78</span></h3>
                 <p data-i18n="aboutDescription">MIT 라이선스의 비공식 한국어 확장프로그램입니다. 보안 강화판은 페이지 코드 주입과 토큰 저장을 제거하고 통신·링크·메시지를 제한합니다. 계정 조회만 하며 리셋권을 자동 사용하지 않습니다.</p>
                 <p data-i18n="aboutInspiration">codex-reset-watchdog와 codex-reset-watcher에서 영감을 받았습니다.</p>
               </div>
@@ -234,7 +234,7 @@
             </div>
           </section>
         </form>
-        <p class="page-note">기본 공개 피드는 로그인 없이 확인합니다. 선택 기능인 X 직접 확인은 X 로그인이 필요할 수 있습니다. 내 잔여량 조회는 직접 켰을 때만 작동하며, 끄면 계정 데이터를 지웁니다.</p>
+        <p class="page-note">기본 공개 피드는 로그인 없이 확인합니다. X 직접 확인은 항상 켜짐이며 접근 권한 허용과 X 로그인이 필요할 수 있습니다. 내 잔여량 조회는 직접 켰을 때만 작동하며, 끄면 계정 데이터를 지웁니다.</p>
       </main>
     </div>
 

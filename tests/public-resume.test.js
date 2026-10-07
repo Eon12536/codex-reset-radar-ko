@@ -17,6 +17,7 @@ function publicWorker(overrides = {}) {
   let directReads = 0;
   w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async () => {
     directReads++;
+    if (source.fail) throw new Error('offline');
     return Array.isArray(source.direct) ? { items: source.direct, diagnostics: { timelines:
       ['posts', 'replies'].flatMap(kind => ['thsottiaux', 'reach_vb', 'openai'].map(author => ({ author, kind, ok: true, stopReason: 'seven-days' }))) } } : source.direct;
   } };
@@ -30,12 +31,12 @@ test('stale Tibo feed is exposed even when HTTP and another public source succee
   assert.equal(result.ok, true);
   assert.equal(result.leadVerified, false);
   assert.equal(w.local.signalSnapshot.leadStatus.state, 'stale');
-  assert.equal(w.local.signalSnapshot.sources.length, 2);
+  assert.equal(w.local.signalSnapshot.sources.length, 3);
   assert.equal(Object.keys(w.notifications).length, 0);
 });
 
-test('optional direct X is never read while off, with lead disabled, or with public monitoring disabled', async () => {
-  for (const settings of [{}, { monitorDirectX: true, monitorLeadSource: false }, { monitorDirectX: true, monitorSignals: false }]) {
+test('always-on direct X still obeys lead and public monitoring switches', async () => {
+  for (const settings of [{ monitorLeadSource: false }, { monitorSignals: false }]) {
     const h = publicWorker(settings);
     await h.w.context.refreshSignals(); assert.equal(h.directReads(), 0);
   }

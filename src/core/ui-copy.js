@@ -1,6 +1,13 @@
 // Display copy only. Original posts and collected evidence are never translated.
 (function(root) {
   const en = {
+    "X 글·답글 직접 확인 · 항상 켜짐": "Read X posts and replies · Always on",
+    "X 공개 페이지 직접 확인 · 항상 켜짐": "Read public X pages · Always on",
+    "공개 소식 감시가 켜져 있으면 정기 확인과 컴퓨터 시작·절전 복귀 확인에 항상 포함됩니다. 처음 한 번 X 접근 권한 허용이 필요합니다.": "Included in scheduled and startup/wake checks whenever public monitoring is on. Grant X access once to connect.",
+    "X 접근 허용·확인": "Allow X access and check",
+    "X 직접 확인은 항상 켜짐입니다. ‘X 접근 허용·확인’을 눌러 처음 한 번 권한을 허용해 주세요. 권한 연결 전에는 공개 피드만 확인합니다.": "Direct X reading is always on. Press Allow X access and check to grant access once. Until connected, only public feeds are checked.",
+    "X 접근 권한을 다시 확인하려면 ‘공개 소식 확인’을 눌러 주세요.": "Press Check public updates to recheck X access.",
+    "X 접근 권한이 허용되지 않았습니다. 직접 확인은 연결 대기 중이며 공개 피드는 계속 확인합니다.": "X access was not granted. Direct reading awaits connection; public feeds continue to be checked.",
     '리셋 설문·암시 알림 켜짐': 'Reset survey/hint alerts on',
     '리셋 설문·암시 알림 꺼짐': 'Reset survey/hint alerts off',
     "리셋 설문·선택지 암시 알림": "Reset survey and choice alerts",
@@ -80,7 +87,7 @@
     '은유·리셋 문맥의 답글과 제품 공개 시각·짧은 요일+시각 답글을 후보로 알립니다. 출시·리셋 확정은 아닙니다. 기본 꺼짐. 켜면 다음 확인에서 최근 7일 후보도 한 번 알릴 수 있습니다. 새로운 비유·사진·불명확한 문맥은 놓칠 수 있습니다.':'Optional alerts for metaphors, reset-related replies and launch-time clues. These do not confirm a release or reset. Off by default. Enabling may notify once about hints from the last 7 days. New metaphors, images and unclear context may be missed.',
     '기준에 맞는 예고·후속 조치·완료·리셋권 지급 공지를 한 번 알립니다. 내 계정 반영은 잔여량 조회로 별도 확인합니다.':'Notifies once about qualifying reset announcements, follow-up fixes, completed resets and banked reset grants. Your own quota recovery is checked separately.',
     '기존 예고와 연결된 연기·일정 변경을 알립니다. 은유 후보는 후보 알림을 켠 경우에만, 명시 예고는 예고 알림을 켠 경우에만 알립니다. 답글 연결 정보가 없으면 연결 추정으로 표시합니다.':'Notifies about postponements linked to an earlier announcement. Hint changes require hint alerts; explicit announcements require reset alerts. Inferred links are labeled when direct reply references are absent.',
-    '기본 공개 피드는 로그인 없이 확인합니다. 선택 기능인 X 직접 확인은 X 로그인이 필요할 수 있습니다. 내 잔여량 조회는 직접 켰을 때만 작동하며, 끄면 계정 데이터를 지웁니다.':'Public feeds require no sign-in. Optional direct X reading may require X sign-in. Account quota is read only when enabled; disabling removes account data.',
+    '기본 공개 피드는 로그인 없이 확인합니다. X 직접 확인은 항상 켜짐이며 접근 권한 허용과 X 로그인이 필요할 수 있습니다. 내 잔여량 조회는 직접 켰을 때만 작동하며, 끄면 계정 데이터를 지웁니다.':'Public feeds require no sign-in. Direct X reading is always on and may require access permission and X sign-in. Account quota is read only when enabled; disabling removes account data.',
     '계정 기능을 직접 켠 경우에만 조회합니다. ChatGPT 페이지에 스크립트를 주입하지 않습니다.':'Quota requests run only after opt-in. The quota reader does not inject scripts into ChatGPT pages.',
     '♢ 로그인 토큰은 조회 요청 중에만 사용하고 저장소에 보관하지 않습니다. 공개 정보 제공처에는 토큰·계정 정보를 보내지 않습니다.':'Sign-in tokens are used only during requests and are not kept in storage. Tokens and account information are never sent to public feed providers.',
     'MIT 라이선스의 비공식 한국어 확장프로그램입니다. 보안 강화판은 페이지 코드 주입과 토큰 저장을 제거하고 통신·링크·메시지를 제한합니다. 계정 조회만 하며 리셋권을 자동 사용하지 않습니다.':'An unofficial MIT-licensed extension. Requests, links and messages are restricted. Tokens are not stored. Account features are read-only and never spend reset credits automatically.',

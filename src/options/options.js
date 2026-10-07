@@ -54,7 +54,7 @@ function readSettings() {
     syncChatHistory: control("syncChatHistory").checked,
     syncChatResetWithCodex: control("syncChatResetWithCodex").checked,
     monitorLeadSource: control("monitorLeadSource").checked,
-    monitorDirectX: control("monitorDirectX").checked,
+    monitorDirectX: true,
     monitorStatusSource: control("monitorStatusSource").checked,
     monitorHistorySource: control("monitorHistorySource").checked,
     monitorCommunitySource: control("monitorCommunitySource").checked,
@@ -139,11 +139,6 @@ form.addEventListener("input", (event) => {
   if (event.target.id === "monitorChat") {
     clearTimeout(saveTimer); saveTimer = null;
     changeChatCounter();
-    return;
-  }
-  if (event.target.id === "monitorDirectX") {
-    clearTimeout(saveTimer); saveTimer = null;
-    changeDirectX();
     return;
   }
   if (event.target.name === "theme") {
@@ -260,35 +255,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 renderAccountConnection();
 
-async function changeDirectX() {
-  const checkbox = control("monitorDirectX");
-  checkbox.disabled = true;
-  try {
-    // Request optional access only in response to the user's toggle gesture.
-    if (checkbox.checked && !await chrome.permissions.request({ permissions: ["scripting"], origins: ["https://x.com/*"] })) {
-      checkbox.checked = false;
-      control("publicConnectionState").textContent = "권한이 허용되지 않아 직접 확인을 켜지 않았습니다.";
-      return;
-    }
-    if (!await save()) throw new Error("Settings not saved");
-    control("publicConnectionState").textContent = checkbox.checked ? "직접 확인을 켰습니다. 공개 소식 확인을 눌러 주세요." : "직접 확인을 중지했습니다. 기존 공개 후보는 보관 기간 동안 유지됩니다.";
-  } catch {
-    const { settings } = await chrome.storage.local.get("settings").catch(() => ({}));
-    checkbox.checked = RadarSettings.sanitize(settings).monitorDirectX;
-    control("publicConnectionState").textContent = "권한 또는 설정을 저장하지 못했습니다. 확장을 새로고침하고 다시 시도해 주세요.";
-  } finally { checkbox.disabled = false; }
-}
-
 async function renderPublicConnection() {
   const data = await chrome.storage.local.get(["settings", "signalSnapshot", "signalError", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"]);
   control("checkTabRecovery").hidden = ![data.directXScanTabV1GuardV1, data.chatPlanScanTabV1GuardV1].some(value => value?.blocked);
   const settings = RadarSettings.sanitize(data.settings);
   const lead = data.signalSnapshot?.leadStatus;
   const status = control("publicConnectionState");
+  const allowed = await chrome.permissions.contains({ permissions: ["scripting"], origins: ["https://x.com/*"] });
+  control("checkPublic").textContent = allowed ? "공개 소식 확인" : "X 접근 허용·확인";
   if (!settings.monitorSignals || !settings.monitorLeadSource) {
     status.textContent = "OpenAI · Tibo · VB 공개 소식 감시가 꺼져 있습니다.";
-  } else if (!settings.monitorDirectX) {
-    status.textContent = "답글 직접 확인 꺼짐 · 공개 피드만 사용 중입니다. 답글 누락을 줄이려면 위의 X 글·답글 직접 확인을 켜 주세요.";
+  } else if (!allowed) {
+    status.textContent = "X 직접 확인은 항상 켜짐입니다. ‘X 접근 허용·확인’을 눌러 처음 한 번 권한을 허용해 주세요. 권한 연결 전에는 공개 피드만 확인합니다.";
   } else if (lead?.directOk && !data.signalError) {
     const scan = lead.directScan;
     const reasons = { timeout: '시간 초과', 'no-posts': '본문 미검출', permission: '권한 없음', login: '로그인 필요', 'page-unavailable': '페이지 접근 실패' };
@@ -299,7 +277,7 @@ async function renderPublicConnection() {
       : "이전 수집 기록입니다. 공개 소식 확인을 눌러 새 답글 수집 결과를 확인하세요.";
     if (scan?.contextPending) status.textContent += ` 답글 문맥 ${scan.contextPending}개는 다음 조회에서 이어서 확인합니다.`;
   } else {
-    const reason = { "tab-blocked": msg("checkTabsRecoveryHelp"), permission: "X 직접 확인 권한이 없습니다. 위 설정을 껐다 켜 권한을 허용해 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
+    const reason = { "tab-blocked": msg("checkTabsRecoveryHelp"), permission: "X 접근 권한을 다시 확인하려면 ‘공개 소식 확인’을 눌러 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
     status.textContent = reason[lead?.directError] || "아직 답글 직접 수집을 확인하지 못했습니다. 공개 소식 확인을 눌러 주세요.";
   }
 }
@@ -320,16 +298,25 @@ control("resumeCheckTabs").addEventListener("click", async () => {
   finally { button.disabled = !control("checkTabsClosed").checked; }
 });
 
-control("checkPublic").addEventListener("click", async () => {
+async function checkPublicConnection() {
   const button = control("checkPublic"); button.disabled = true;
-  control("publicConnectionState").textContent = "OpenAI · Tibo · VB 글·답글과 대화 문맥 확인 중… 직접 확인은 최대 270초 걸릴 수 있어요.";
   try {
-    if (saveTimer !== null) { clearTimeout(saveTimer); saveTimer = null; await save(); }
+    const monitoring = control("monitorSignals").checked && control("monitorLeadSource").checked;
+    // This button supplies the user gesture for Chrome's optional access prompt.
+    // Already granted access does not prompt again; workers never request access.
+    if (monitoring && !await chrome.permissions.request({ permissions: ["scripting"], origins: ["https://x.com/*"] })) {
+      control("publicConnectionState").textContent = "X 접근 권한이 허용되지 않았습니다. 직접 확인은 연결 대기 중이며 공개 피드는 계속 확인합니다.";
+      return;
+    }
+    if (saveTimer !== null) { clearTimeout(saveTimer); saveTimer = null; if (!await save()) return; }
+    if (!monitoring) { await renderPublicConnection(); return; }
+    control("publicConnectionState").textContent = "OpenAI · Tibo · VB 글·답글과 대화 문맥 확인 중… 직접 확인은 최대 270초 걸릴 수 있어요.";
     await chrome.runtime.sendMessage({ type: "REFRESH_SIGNALS" });
     await renderPublicConnection();
   } catch { control("publicConnectionState").textContent = "조회에 실패했습니다. 확장을 새로고침하고 다시 시도해 주세요."; }
   finally { button.disabled = false; }
-});
+}
+control("checkPublic").addEventListener("click", checkPublicConnection);
 
 async function changeChatCounter() {
   const checkbox = control("monitorChat"), status = control("chatCounterSettingStatus");

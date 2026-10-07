@@ -76,6 +76,7 @@ test('actual settings collection diagnostics translate off, error, legacy and pa
   vm.runInContext(render,a.context);
   for(const data of cases) {
    a.context.chrome.storage.local.get=async()=>data;
+   a.context.chrome.permissions={contains:async()=>data.settings.monitorDirectX!==false};
    await a.context.renderPublicConnection();
    assert.doesNotMatch(a.copy.translate(status.textContent),/[가-힣]/,value+': '+status.textContent);
   }
@@ -83,6 +84,10 @@ test('actual settings collection diagnostics translate off, error, legacy and pa
   const resumeHelp=html.match(/<strong>놓친 공개 소식 복귀 알림<\/strong><small>([^<]+)<\/small>/)[1];
   assert.doesNotMatch(a.copy.translate(resumeHelp),/[가-힣]/,value+': resume help');
   assert.doesNotMatch(a.copy.translate('리셋 예고·완료·리셋권 공지 알림'),/[가-힣]/,value+': reset alert label');
+  for(const text of ['X 글·답글 직접 확인 · 항상 켜짐','X 공개 페이지 직접 확인 · 항상 켜짐','X 접근 허용·확인',
+   '공개 소식 감시가 켜져 있으면 정기 확인과 컴퓨터 시작·절전 복귀 확인에 항상 포함됩니다. 처음 한 번 X 접근 권한 허용이 필요합니다.',
+   'X 접근 권한이 허용되지 않았습니다. 직접 확인은 연결 대기 중이며 공개 피드는 계속 확인합니다.'])
+   assert.doesNotMatch(a.copy.translate(text),/[가-힣]/,value+': always-on X');
  }
 });
 

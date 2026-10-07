@@ -136,7 +136,7 @@ test('partial periodic scans retry without treating retries as offline catch-up,
   assert.equal(w.local.publicResumeCheck, undefined);
   for (let i = 0; i < 3; i++) await w.events.alarm({ name: 'codex-reset-radar-public-retry' });
   assert.equal(alarms.filter(a => a.name === 'codex-reset-radar-public-retry').length, 3);
-  await w.context.saveSettings({ ...w.local.settings, monitorDirectX: false });
+  await w.context.saveSettings({ ...w.local.settings, monitorLeadSource: false });
   assert.equal(w.local.publicRetryCheck, undefined);
 });
 

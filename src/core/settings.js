@@ -7,7 +7,7 @@
     syncChatHistory: false,
     syncChatResetWithCodex: false,
     monitorLeadSource: true,
-    monitorDirectX: false,
+    monitorDirectX: true,
     monitorStatusSource: true,
     monitorHistorySource: true,
     monitorCommunitySource: true,
@@ -44,6 +44,9 @@
     for (const [key, fallback] of Object.entries(DEFAULTS)) {
       if (Object.prototype.hasOwnProperty.call(input, key) && typeof input[key] === typeof fallback) next[key] = input[key];
     }
+    // Direct X collection is part of public monitoring, including legacy installs.
+    // Chrome's optional access grant and the public monitoring switches still apply.
+    next.monitorDirectX = true;
     next.pollMinutes = sanitizePollMinutes(next.pollMinutes);
     if (!next.monitorChat) next.syncChatHistory = false;
     next.confidenceThreshold = ["high", "medium", "all"].includes(next.confidenceThreshold)
