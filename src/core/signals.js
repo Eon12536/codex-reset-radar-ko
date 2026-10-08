@@ -413,7 +413,8 @@
       const reflected = part => /^resets? should (?:now )?be reflected for everyone\b/.test(part);
       const relevant = clauses(text.replace(/[^.!?;\n]*\?/g, '')).filter(part => !isNegated(part) && (!SPECULATIVE.test(part) || reflected(part)) && !UNRELATED.test(part) &&
         !/\b(?:not|never|didn't|don't|cannot|can't|won't|last year|last month|ago)\b/.test(part));
-      const grant = relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
+      const followUp = resetGrantFollowUp(item);
+      const grant = Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
         /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
       const completed = relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
         !includesAny(part, EXCLUSIONS) && (!prospective(part) || reflected(part)) && /\bresets?\b/.test(part) &&
@@ -423,13 +424,37 @@
       if (!grant && !completed && !update) continue;
       unique.set(item.id, { id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url,
-        ...(update && item.replyContext ? { replyContext: item.replyContext } : {}),
+        ...((update || followUp) && item.replyContext ? { replyContext: item.replyContext } : {}),
         assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: 'high', eventAt: null,
+          ...(followUp ? { grantStage: followUp } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
-          reason: grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
+          reason: followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
+            followUp === 'timing' ? '리셋권 지급 시간 안내 · 원문 시간 표현 기준 · 정확한 시각 미확정' :
+            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);
+  }
+
+  function resetGrantFollowUp(item) {
+    const parent = item.replyContext;
+    const parentAt = root.RadarTime.parseTimestamp(parent?.createdAt);
+    const itemAt = root.RadarTime.parseTimestamp(item.createdAt);
+    if (!['quoted-post', 'conversation-before'].includes(parent?.relation) || parent.targetId !== item.id ||
+        !/^@?(?:thsottiaux|reach_vb|openai)$/i.test(parent.author || '') || !referenceId(parent.id) ||
+        parent.url !== `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` ||
+        !Number.isFinite(parentAt) || !Number.isFinite(itemAt) || parentAt > itemAt || itemAt - parentAt > 14 * 86400000) return null;
+    const context = normalizedText(parent);
+    const grant = clauses(context).some(part => !isNegated(part) && !UNRELATED.test(part) && !SPECULATIVE.test(part) &&
+      !includesAny(part, EXCLUSIONS) && /\b(?:banked resets?|reset credits?)\b/.test(part) &&
+      /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
+    if (!grant) return null;
+    const text = normalizedText(item);
+    if (isNegated(text) || UNRELATED.test(text) || includesAny(text, EXCLUSIONS)) return null;
+    const parts = clauses(text);
+    if (parts.some(part => /^(?:confirmed[, ]+)?(?:now )?landed (?:across|in|for) (?:all|everyone's) accounts$/.test(part))) return 'confirmed';
+    if (parts.some(part => /^will be there by (?:eod|end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt))?$/.test(part))) return 'timing';
+    return null;
   }
 
   function resetUpdate(item) {

@@ -29,6 +29,10 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     } },
     alarms: { create: async (name, value) => alarms.set(name, value), clear: async name => alarms.delete(name) },
     tabs: {
+      query: async options => [...tabs.values()].filter(tab => options.url.some(pattern => {
+        const url = String(tab.url).split('#')[0];
+        return pattern.endsWith('*') ? url.startsWith(pattern.slice(0, -1)) : url === pattern;
+      })).map(tab => ({ ...tab })),
       create: async options => {
         await create?.();
         const tab = { id: nextId++, windowId: 1, status: 'complete', pinned: false, ...options };
@@ -50,7 +54,7 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     } }
   };
   function load() {
-    const context = vm.createContext({ chrome, URL, Date,
+    const context = vm.createContext({ chrome, URL, Date, crypto: require('node:crypto').webcrypto,
       setTimeout: (fn, delay) => { const timer = setTimeout(fn, delay); timer.unref(); timers.add(timer); return timer; },
       clearTimeout: timer => { clearTimeout(timer); timers.delete(timer); }
     });
@@ -95,7 +99,9 @@ test('a restarted worker reclaims its interrupted scan before creating another t
 
 test('failed tab removal blocks additional tabs and retries after the API recovers', async () => {
   const b = browser({ failRemove: true }), core = b.load();
-  await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+  const result = await read(core);
+  assert.equal(result.items.length, 1);
+  assert.equal(result.diagnostics.cleanupError, 'tab-blocked');
   await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
   assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
   assert.equal(b.session[KEY].id, 10);
@@ -265,7 +271,7 @@ test('200 sequential scans with transient cleanup failures never accumulate owne
   for (let i = 0; i < 200; i++) {
     if (i % 5 === 0) {
       b.faults.failRemove = true;
-      await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+      assert.equal((await read(core)).diagnostics.cleanupError, 'tab-blocked');
       const created = b.calls.filter(c => c[0] === 'create').length;
       await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
       assert.equal(b.calls.filter(c => c[0] === 'create').length, created);
@@ -310,19 +316,77 @@ test('reload and browser restart losing session ownership cannot open another sc
   assert.equal(b.calls.some(c => c[0] === 'remove'), false);
 });
 
-test('termination inside tabs.create is fenced before Chrome returns its new tab ID', async () => {
+test('termination inside tabs.create recovers its durable marker before opening another reader', async () => {
   const reached = deferred(), abandoned = deferred();
-  const b = browser({ created: async () => { reached.resolve(); await abandoned.promise; } });
+  let pause = true;
+  const b = browser({ created: async () => { if (pause) { reached.resolve(); await abandoned.promise; } } });
   void read(b.load()).catch(() => {});
   await reached.promise; b.stopWorker();
   assert.equal(b.session[KEY], undefined);
   assert.equal(b.tabs.size, 1);
+  pause = false;
   const restarted = b.load();
-  for (let i = 0; i < 20; i++) await assert.rejects(read(restarted), /X_TAB_BLOCKED/);
-  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
-  b.tabs.delete(10); // The user closes the orphan before confirming recovery.
-  assert.equal(await restarted.resume(), true);
+  for (let i = 0; i < 20; i++) await read(restarted);
+  assert.equal(b.maxTabs(), 1);
+  assert.equal(b.tabs.size, 0);
   assert.equal(b.local[restarted.GUARD_KEY], undefined);
+});
+
+test('lost Chrome session recovers by marker even when tab IDs are reused', async () => {
+  const reached = deferred(), abandoned = deferred();
+  let pause = true;
+  const b = browser({ script: async () => { if (pause) { reached.resolve(); await abandoned.promise; } } });
+  void read(b.load()).catch(() => {});
+  await reached.promise; b.stopWorker();
+  const readerTab = b.tabs.get(10);
+  b.tabs.set(99, { ...readerTab, id: 99, windowId: 7 });
+  b.tabs.set(10, { id: 10, windowId: 1, active: false, status: 'complete', url: 'https://x.com/i/chat' });
+  delete b.session[KEY]; pause = false;
+  const result = await read(b.load());
+  assert.equal(result.items.length, 1);
+  assert.equal(b.tabs.has(99), false);
+  assert.equal(b.tabs.get(10).url, 'https://x.com/i/chat');
+  assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 10), false);
+});
+
+test('legacy lost-session fence recovers only after proving no possible X reader remains', async () => {
+  const b = browser();
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost' };
+  assert.equal((await read(core)).items.length, 1);
+  const protectedBrowser = browser({ tab: { id: 7, url: PAGE } });
+  const protectedCore = protectedBrowser.load();
+  protectedBrowser.local[protectedCore.GUARD_KEY] = { blocked: true, reason: 'session-lost' };
+  await assert.rejects(read(protectedCore), /X_TAB_BLOCKED/);
+  assert.equal(protectedBrowser.tabs.has(7), true);
+  assert.equal(protectedBrowser.calls.some(call => call[0] === 'remove'), false);
+});
+
+test('an active marked reader is protected after session loss and automatically resumes when closed', async () => {
+  const b = browser();
+  const token = '00000000-0000-4000-8000-000000000079';
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost', lease: lease({ token }) };
+  b.tabs.set(7, { id: 7, windowId: 1, active: true, url: PAGE + '#radar-x-reader=' + token });
+  await assert.rejects(read(core), /X_TAB_BLOCKED/);
+  assert.equal(b.calls.some(call => call[0] === 'remove'), false);
+  b.tabs.delete(7);
+  assert.equal((await read(core)).items.length, 1);
+  assert.equal(b.maxTabs(), 1);
+});
+
+test('session-loss recovery checks redirected readers before proving absence', async () => {
+  const token = '00000000-0000-4000-8000-000000000079';
+  for (const url of ['https://x.com/i/flow/login', 'https://x.com/home', 'https://x.com/i/timeline']) {
+    const b = browser(), core = b.load();
+    b.local[core.GUARD_KEY] = { blocked: true, lease: lease({ token }) };
+    b.tabs.set(7, { id: 7, windowId: 1, active: false, url });
+    await assert.rejects(read(core), /X_TAB_BLOCKED/);
+    assert.equal(b.calls.some(call => call[0] === 'create'), false);
+    b.tabs.get(7).url += '#radar-x-reader=' + token;
+    assert.equal(await core.cleanup({ recover: true }), true);
+    assert.equal(b.tabs.has(7), false);
+  }
 });
 
 test('recovery refuses an open protected tab and only resumes after it has closed', async () => {

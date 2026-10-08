@@ -39,15 +39,17 @@ function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timelin
   const chrome = { permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
     storage: { local: { get: async key => ({ [key]: local[key] }), set: async value => Object.assign(local, structuredClone(value)), remove: async key => { delete local[key]; } }, session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, structuredClone(value)), remove: async key => { delete session[key]; } } },
     alarms: { create: async (name, options) => alarms.set(name, options), clear: async name => alarms.delete(name) },
-    tabs: { create: async options => { calls.push(['create', options]); url = finalUrl; return { id: 33, windowId: 1, active }; },
+    tabs: { create: async options => { calls.push(['create', options]); url = finalUrl === POST_PAGE ? options.url : finalUrl; return { id: 33, windowId: 1, active }; },
       get: async () => ({ id: 33, windowId: 1, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),
       update: async (id, options) => { calls.push(['update', options]); url = options.url; },
       onUpdated: { addListener() {}, removeListener() {} } },
-    scripting: { executeScript: async value => { calls.push(['script', value]); if (activateOnScript === true || activateOnScript === calls.filter(c => c[0] === 'script').length) active = true; if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
+    scripting: { executeScript: async value => { const url = new URL(chromeUrl()).origin + new URL(chromeUrl()).pathname;
+      calls.push(['script', value]); if (activateOnScript === true || activateOnScript === calls.filter(c => c[0] === 'script').length) active = true; if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
       return [{ frameId: 0, result: url.startsWith('https://x.com/OpenAI') ? { rows: [row('789', 'OpenAI', 'Join us for DevDay tomorrow')] } : url.startsWith('https://x.com/reach_vb') ? vbTimeline || {rows: [row('456','reach_vb','Reset should be reflected for everyone')]} : [PAGE, POST_PAGE].includes(url)
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
-  const context = vm.createContext({ chrome, URL, Date, setTimeout, clearTimeout });
+  const chromeUrl = () => url;
+  const context = vm.createContext({ chrome, URL, Date, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/direct-x'), 'utf8'), context);
   return { core: { ...context.RadarDirectX, read: (signal, options = {}) => context.RadarDirectX.read(signal, {authors, ...options}) }, calls };
@@ -62,7 +64,8 @@ test('direct reader never requests permissions or creates a tab before opt-in', 
 test('reader uses only its own inactive fixed-URL tab and a bundled isolated script, then closes it', async () => {
   const r = reader(); const { items, diagnostics } = await r.core.read(new AbortController().signal);
   assert.equal(items[0].id, '123');
-  assert.equal(r.calls.find(c => c[0] === 'create')[1].url, POST_PAGE);
+  assert.equal(r.calls.find(c => c[0] === 'create')[1].url.split('#')[0], POST_PAGE);
+  assert.match(r.calls.find(c => c[0] === 'create')[1].url, /#radar-x-reader=[a-f0-9-]{36}$/);
   assert.equal(r.calls.find(c => c[0] === 'create')[1].active, false);
   const script = r.calls.find(c => c[0] === 'script')[1];
   assert.equal(script.world, 'ISOLATED'); assert.equal(script.target.tabId, 33);
@@ -70,7 +73,7 @@ test('reader uses only its own inactive fixed-URL tab and a bundled isolated scr
   assert.equal(diagnostics.pages, 16);
   assert.equal(diagnostics.timelines.length, 2);
   assert.equal(diagnostics.conversations, 1);
-  assert.deepEqual(r.calls.filter(c => c[0] === 'update').map(c => c[1].url), [PAGE, 'https://x.com/thsottiaux/status/123']);
+  assert.deepEqual(r.calls.filter(c => c[0] === 'update').map(c => c[1].url.split('#')[0]), [PAGE, 'https://x.com/thsottiaux/status/123']);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
@@ -199,14 +202,16 @@ function article(post, { quoted = false, emoji = false, moreText, moreQuoted = f
   return node;
 }
 
-async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navigate = false, timerDelay = 0 } = {}) {
+async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navigate = false, timerDelay = 0, hydrateAt = 0 } = {}) {
   let step = 0, scrolls = 0, elapsed = 0;
   class Clock extends Date { static now() { return Date.now() + elapsed; } }
   const location = { origin: 'https://x.com', pathname };
   const context = vm.createContext({ location, Date: Clock,
     document: { querySelectorAll: () => snapshots[Math.min(step, snapshots.length - 1)] },
     window: { innerHeight: 900, scrollBy() { scrolls++; step++; if (navigate) location.pathname = '/i/chat'; } },
-    setTimeout: (fn, ms) => { elapsed += timerDelay ? Math.max(timerDelay, ms) : 0; queueMicrotask(fn); } });
+    setTimeout: (fn, ms) => { elapsed += timerDelay ? Math.max(timerDelay, ms) : 0;
+      if (hydrateAt && elapsed >= hydrateAt) step = 1;
+      queueMicrotask(fn); } });
   const result = await vm.runInContext(fs.readFileSync(require.resolve('../src/x-reader'), 'utf8'), context);
   return { result, scrolls, elapsed };
 }
@@ -259,6 +264,44 @@ test('conversation read includes preceding posts but excludes comments after the
     article(row('123', 'thsottiaux', 'Tuesday')), article(row('124', 'someone', 'banked reset'))]], { pathname: '/thsottiaux/status/123' });
   assert.deepEqual(Array.from(result.rows, row => row.id), ['121', '123']);
   assert.equal(result.targetId, '123'); assert.equal(scrolls, 0);
+});
+
+test('the real EOD reply waits for its preceding grant to hydrate before reading conversation context', async () => {
+  const fixture = require('./fixtures/reset-grant-oct8.json');
+  const [parent, target] = fixture.posts;
+  const read = await domRead([[article(target)], [article(parent), article(target),
+    article(row('999', 'someone', 'Loading a banked reset for everyone'))]], {
+    pathname: '/thsottiaux/status/' + target.id, timerDelay: 1000, hydrateAt: 4000
+  });
+  assert.equal(read.scrolls, 0);
+  assert.ok(read.elapsed >= 4000);
+  assert.deepEqual(Array.from(read.result.rows, item => item.id), [parent.id, target.id]);
+  const item = Direct.conversationContext(Direct.normalize([target], Date.parse(fixture.observedAt))[0], read.result, Date.parse(fixture.observedAt));
+  assert.equal(Signals.reports([item], { now: Date.parse(fixture.observedAt) })[0].assessment.grantStage, 'timing');
+});
+
+test('an EOD-only timeline reply is enriched from the real public conversation', async () => {
+  const fixture = require('./fixtures/reset-grant-oct8.json');
+  const [parent, target] = fixture.posts;
+  const r = reader({ timeline: { rows: [target] }, conversation: { targetId: target.id, rows: [parent, target] } });
+  const scan = await r.core.read(new AbortController().signal);
+  assert.equal(scan.diagnostics.conversations, 1);
+  assert.equal(Signals.reports(scan.items, { now: Date.parse(fixture.observedAt) })[0].assessment.grantStage, 'timing');
+});
+
+test('an initially missing EOD parent is retried on the next poll instead of cached for six hours', async () => {
+  const fixture = require('./fixtures/reset-grant-oct8.json');
+  const [parent, target] = fixture.posts;
+  let hydrated = false;
+  const r = reader({ timeline: { rows: [target] }, conversation: () => ({ targetId: target.id, rows: hydrated ? [parent, target] : [target] }) });
+  const first = await r.core.read(new AbortController().signal);
+  assert.equal(Signals.reports(first.items, { now: Date.parse(fixture.observedAt) }).length, 0);
+  const cache = JSON.parse(JSON.stringify(first.contextCache));
+  cache[target.id].checkedAt = Date.now() - 15 * 60000;
+  hydrated = true;
+  const next = await r.core.read(new AbortController().signal, { contextCache: cache });
+  assert.equal(next.diagnostics.conversations, 1);
+  assert.equal(Signals.reports(next.items, { now: Date.parse(fixture.observedAt) })[0].assessment.grantStage, 'timing');
 });
 
 test('reader stops on user navigation and never reads private or unrelated paths', async () => {

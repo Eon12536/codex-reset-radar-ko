@@ -267,7 +267,7 @@ async function renderPublicConnection() {
     status.textContent = "OpenAI · Tibo · VB 공개 소식 감시가 꺼져 있습니다.";
   } else if (!allowed) {
     status.textContent = "X 직접 확인은 항상 켜짐입니다. ‘X 접근 허용·확인’을 눌러 처음 한 번 권한을 허용해 주세요. 권한 연결 전에는 공개 피드만 확인합니다.";
-  } else if (lead?.directOk && !data.signalError) {
+  } else if (lead?.directOk && !lead.directError && !data.signalError) {
     const scan = lead.directScan;
     const reasons = { timeout: '시간 초과', 'no-posts': '본문 미검출', permission: '권한 없음', login: '로그인 필요', 'page-unavailable': '페이지 접근 실패' };
     const stages = { navigation: '페이지 열기', loading: '페이지 로딩', reading: '본문 읽기' };

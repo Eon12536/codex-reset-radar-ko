@@ -17,12 +17,15 @@
     } catch { return false; }
   }
   const TabOwner = root.RadarTabOwner || (typeof require === 'function' ? require('./tab-owner') : null);
-  const owner = TabOwner.create({ key: 'directXScanTabV1', alarm: CLEANUP_ALARM, accepts: scanUrl, matches: ownedUrl, prefix: 'X' });
+  const owner = TabOwner.create({ key: 'directXScanTabV1', alarm: CLEANUP_ALARM, accepts: scanUrl, matches: ownedUrl, prefix: 'X',
+    recovery: { marker: 'radar-x-reader', permission: PERMISSION, urls: AUTHORS.flatMap(author =>
+      ['https://x.com/' + author, 'https://x.com/' + author + '/with_replies', 'https://x.com/' + author + '/status/*'])
+      .concat(['https://x.com/OpenAI', 'https://x.com/OpenAI/with_replies', 'https://x.com/OpenAI/status/*', 'https://x.com/home', 'https://x.com/i/timeline', 'https://x.com/i/flow/login*']) } });
   let readJob;
   const day = 86400000;
   const resetContext = text => /\b(?:banked resets?|reset credits?|codex.{0,60}(?:reset|limits?|quota)|(?:reset|limits?|quota).{0,60}codex|(?:usage|weekly|rate) limits?.{0,40}reset)\b/i.test(text || "");
   const publicContext = text => resetContext(text) || /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*)\b/i.test(text || "");
-  const needsContext = item => item.truncated || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
+  const needsContext = item => item.truncated || item.quotedPost || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|eod|end of (?:the )?day|confirmed|landed|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
 
   function quotedPost(value, now) {
     if (!value || !trusted(value.author) || typeof value.text !== 'string' || !value.text || value.truncated) return null;
@@ -35,12 +38,13 @@
     // X quote cards have no public status link in the DOM. Resolve only an
     // exact author/time/body match with a separately collected original post.
     // A quote alone or its position in a timeline cannot establish identity.
+    const body = text => String(text).replace(/\s+(?:https?:\/\/)?(?:x\.com|t\.co)\/\S+\s*$/i, '').replace(/\s+/g, ' ').trim();
     return items.map(item => {
       const quote = item.quotedPost;
       if (!quote) return item;
       const matches = items.filter(parent => parent.id !== item.id && !parent.truncated &&
         parent.author.toLowerCase() === quote.author && parent.createdAt === quote.createdAt &&
-        parent.text === quote.text && Date.parse(parent.createdAt) <= Date.parse(item.createdAt));
+        body(parent.text) === body(quote.text) && Date.parse(parent.createdAt) <= Date.parse(item.createdAt));
       if (matches.length !== 1) return item;
       const parent = matches[0];
       return { ...item, replyContext: { id: parent.id, author: parent.author, text: parent.text,
@@ -141,12 +145,13 @@
       if (tab) {
         const current = await chrome.tabs.get(tab.id);
         if (current.url !== currentUrl || current.active || current.pinned || current.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
-        currentUrl = url;
         await owner.navigate(tab.id, url, signal);
+        currentUrl = owner.url(url);
         signal.throwIfAborted();
       } else {
         currentUrl = url;
         tab = await owner.open(url, deadline + 30000);
+        currentUrl = owner.url(url);
         signal.throwIfAborted();
       }
       currentStage = "loading";
@@ -170,12 +175,12 @@
       const current = await chrome.tabs.get(tab.id);
       if (current.active || current.pinned || current.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
       if (current.url?.startsWith("https://x.com/i/flow/login")) throw new Error("X_LOGIN_REQUIRED");
-      if (current.url !== url) throw new Error("X_PAGE_UNAVAILABLE");
+      if (current.url !== currentUrl) throw new Error("X_PAGE_UNAVAILABLE");
       currentStage = "reading";
-      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 14000);
+      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 24000);
       signal.throwIfAborted();
       const afterRead = await chrome.tabs.get(tab.id);
-      if (afterRead.url !== url || afterRead.active || afterRead.pinned || afterRead.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
+      if (afterRead.url !== currentUrl || afterRead.active || afterRead.pinned || afterRead.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
       return result?.find(frame => frame.frameId === 0)?.result;
     }
     try {
@@ -223,7 +228,11 @@
         const item = items[index], entry = cache[item.id];
         if (!needsContext(item)) continue;
         const match = entry && entry.text === item.text && entry.truncated === item.truncated && entry.url === item.url && entry.createdAt === item.createdAt;
-        if (match && entry.result && entry.checkedAt > Date.now() - 6 * 3600000) {
+        // These short follow-ups can appear before X hydrates the parent.
+        // An empty first read must not suppress their context retry for hours.
+        const shortGrantReply = /\b(?:eod|end of (?:the )?day|confirmed.{0,20}landed)\b/i.test(item.text);
+        const contextAge = shortGrantReply && !entry?.result?.rows?.some(row => row.id !== item.id && resetContext(row.text)) ? 5 * 60000 : 6 * 3600000;
+        if (match && entry.result && entry.checkedAt > Date.now() - contextAge) {
           items[index] = conversationContext(item, entry.result);
           if (items[index].replyContext?.relation === 'conversation-before') diagnostics.contexts++;
         } else pending.push(item);
@@ -259,7 +268,16 @@
       return { items: linkQuotedContexts(items), diagnostics, contextCache: Object.fromEntries(Object.entries(cache)
         .sort((a, b) => b[1].checkedAt - a[1].checkedAt).slice(0, 160)) };
     } finally {
-      if (tab?.id !== undefined) await owner.cleanup({ force: true });
+      if (tab?.id !== undefined) {
+        try {
+          if (!await owner.cleanup({ force: true })) diagnostics.cleanupError = 'tab-blocked';
+        } catch (error) {
+          // Fresh evidence must survive a failure to close the reader tab.
+          // Its durable fence still prevents another tab from being created.
+          diagnostics.cleanupError = failureReason(error);
+          if (!diagnostics.posts) throw error;
+        }
+      }
     }
   }
 

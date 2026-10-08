@@ -46,13 +46,20 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.78";
+const NOTIFICATION_BUILD = "0.2.79";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
 let accountJob;
 let signalJob;
 const activeRequests = new Set();
+
+async function visibleNotificationsForCleanup() {
+  // Cleanup can wait for the next scan. Reading the OS notification center
+  // must not prevent collection; delivery still requires its own acknowledgement.
+  try { return await chrome.notifications.getAll(); }
+  catch { return {}; }
+}
 
 function mutate(action) {
   const result = mutations.then(action);
@@ -84,7 +91,7 @@ async function purgeAccountState() {
     notificationHistory: Object.fromEntries(Object.entries(notificationHistory).filter(([id]) => !accountNotification(id))),
     adviceSnapshot: advice
   });
-  const visible = await chrome.notifications.getAll();
+  const visible = await visibleNotificationsForCleanup();
   for (const id of Object.keys(visible)) if (accountNotification(id)) await chrome.notifications.clear(id);
   await updateBadge(null, signal, advice);
 }
@@ -128,6 +135,7 @@ function ensureSecurity() {
     }
     await restorePublicQueueReceipts();
     await revalidateCachedSignals(stateEpoch);
+    if (!settings.monitorSignals || !settings.monitorLeadSource || !collectorAlertsEnabled(settings)) await recordCollectionHealth(null, settings, stateEpoch);
     await ensureAlarm(settings, { reset: false });
     await scheduleCreditExpiryCheck(settings);
     try { await configureChatCounter(settings.monitorChat); }
@@ -210,6 +218,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
       for (const id of Object.keys(await chrome.notifications.getAll())) if (id.startsWith('event:')) await chrome.notifications.clear(id);
     }
     await revalidateCachedSignals(stateEpoch);
+    if (!sanitized.monitorSignals || !sanitized.monitorLeadSource || !collectorAlertsEnabled(sanitized)) await recordCollectionHealth(null, sanitized, stateEpoch);
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource) await chrome.storage.local.remove(["hintSnapshot", "scheduleSnapshot"]);
     await ensureAlarm(sanitized);
     await scheduleCreditExpiryCheck(sanitized);
@@ -857,7 +866,7 @@ async function reconcileSignalNotifications(signals, settings, epoch, reviewed =
     if (epoch !== stateEpoch) return;
     await chrome.alarms.clear("snooze:" + id);
   }
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (invalid.has(id)) await chrome.notifications.clear(id);
   }
@@ -914,6 +923,7 @@ async function runSignalRefresh(quiet) {
   if (epoch !== stateEpoch) return { ok: true, skipped: true };
   const controller = new AbortController();
   activeRequests.add(controller);
+  let directFailure = null;
   try {
     const sources = [...RadarSources.enabled(settings)];
     if (settings.monitorLeadSource && settings.monitorDirectX) sources.push({ id: "x-direct", label: "OpenAI · Tibo · VB · X 직접 확인", kind: "x-page", weight: 1 });
@@ -921,7 +931,9 @@ async function runSignalRefresh(quiet) {
     const results = await Promise.allSettled(sources.map(async (source) => {
       if (source.kind === "x-page") {
         const { directXContextCache = {} } = await chrome.storage.local.get("directXContextCache");
-        const direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache });
+        let direct;
+        try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache }); }
+        catch (error) { directFailure = RadarDirectX.failureReason(error); throw error; }
         return { source, items: Array.isArray(direct) ? direct : direct.items, diagnostics: direct.diagnostics || null, contextCache: direct.contextCache };
       }
       const expectsHtml = source.kind === "reset-tracker-html";
@@ -944,14 +956,14 @@ async function runSignalRefresh(quiet) {
       const directOk = leadResults.some(result => result.source.id === "x-direct");
       const directIndex = sources.findIndex(source => source.id === "x-direct");
       const directResult = results[directIndex];
-      const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) : null;
       const directScan = leadResults.find(result => result.source.id === "x-direct")?.diagnostics || null;
+      const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) : directScan?.cleanupError || null;
       const leadVerified = latestPostAt > 0 && Date.now() - latestPostAt <= 3 * 86400000;
       // A fresh post from one person/feed cannot certify the other timelines.
       const collectionVerified = leadVerified && (!settings.monitorDirectX || (directOk &&
         directScan?.timelines?.length === RadarDirectX.AUTHORS.length * 2 && directScan.timelines.every(t => t.ok) &&
         !directScan.timelines.some(t => ['time-budget', 'scan-limit', 'post-limit'].includes(t.stopReason)) &&
-        !directScan.conversationFailures && !directScan.contextPending));
+        !directScan.conversationFailures && !directScan.contextPending && !directScan.cleanupError));
       const catchUp = Boolean(state.publicResumeCheck);
       const seen = new Set(state.seenSignalIds || []);
       const existingSignals = state.signalSnapshot?.activeSignals ||
@@ -1013,6 +1025,7 @@ async function runSignalRefresh(quiet) {
         adviceSnapshot: advice,
         signalError: null
       });
+      await recordCollectionHealth(snapshot, currentSettings, epoch);
       if (collectionVerified) {
         await chrome.storage.local.remove("publicResumeCheck");
         await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
@@ -1051,10 +1064,47 @@ async function runSignalRefresh(quiet) {
       // while letting the ordinary timestamp gate remove expired candidates.
       await revalidateCachedSignals(epoch);
       if (epoch === stateEpoch) await chrome.storage.local.set({ signalError: { message: "Public sources unavailable", at: Date.now() } });
+      if (epoch === stateEpoch && directFailure) await recordCollectionHealth({ leadStatus: { directError: directFailure } }, settings, epoch);
       if (epoch === stateEpoch && settings.monitorDirectX && settings.monitorLeadSource) await schedulePublicRetry();
     });
     return { ok: false, error: "Public sources unavailable" };
   } finally { activeRequests.delete(controller); }
+}
+
+function collectorAlertsEnabled(settings) {
+  return settings.notifyOfficialReset || settings.notifyResetHints || settings.notifyHints;
+}
+
+async function recordCollectionHealth(snapshot, settings, epoch) {
+  if (epoch !== stateEpoch) return;
+  const { collectorHealth = {}, pendingNotifications = [], notificationHistory = {}, publicResumeCheck } =
+    await chrome.storage.local.get(['collectorHealth', 'pendingNotifications', 'notificationHistory', 'publicResumeCheck']);
+  const enabled = settings.monitorSignals && settings.monitorLeadSource && collectorAlertsEnabled(settings);
+  const error = snapshot?.leadStatus?.directError;
+  if (!enabled || !error) {
+    await chrome.storage.local.set({ collectorHealth: { lastSuccessAt: snapshot?.leadStatus?.directOk ? Date.now() : collectorHealth.lastSuccessAt || null,
+      error: null, failures: 0, failureId: null }, pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('collector:')) });
+    // A notification-center API failure must not discard freshly read posts.
+    try {
+      for (const id of Object.keys(await chrome.notifications.getAll())) if (id.startsWith('collector:')) await chrome.notifications.clear(id);
+    } catch { /* Stale visible warnings can be dismissed by Windows. */ }
+    return;
+  }
+  const failures = collectorHealth.error === error ? (collectorHealth.failures || 0) + 1 : 1;
+  const id = 'collector:direct-x:' + error + ':' + Math.floor(Date.now() / (6 * 3600000));
+  await chrome.storage.local.set({ collectorHealth: { ...collectorHealth, error, failures, failureId: id, checkedAt: Date.now() } });
+  // A new install awaiting optional access is not a broken connection.
+  if (error === 'permission' && !collectorHealth.lastSuccessAt) return;
+  if (failures < 2 && !['tab-blocked', 'login'].includes(error)) return;
+  if (notificationHistory[id]) return;
+  if (!pendingNotifications.some(item => item.id === id)) await createNotification(id, {
+    title: msg('collectorFailureTitle'),
+    message: msg('collectorFailureMessage', msg('collectorReason_' + error)),
+    buttons: [{ title: msg('settings') }]
+  }, settings, { bypassQuiet: Boolean(publicResumeCheck && settings.notifyPublicOnResume) });
+  if ((await chrome.storage.local.get('pendingNotifications')).pendingNotifications?.some(item => item.id === id)) {
+    await chrome.alarms.create(PUBLIC_DELIVERY_ALARM, { delayInMinutes: 1 });
+  }
 }
 
 function confidenceAllowed(confidence, threshold) {
@@ -1089,7 +1139,7 @@ async function reconcileReportNotifications(reports, settings, epoch, schedule) 
   const valid = new Map(reports.filter(item => reportNotificationEnabled(item, settings, schedule, pendingNotifications)).map(item => ['report:' + item.id, item]));
   await chrome.storage.local.set({ pendingNotifications: pendingNotifications.flatMap(pending => !pending.id.startsWith('report:') ? [pending] :
     valid.has(pending.id) ? [{ ...pending, options: { ...pending.options, ...reportNotificationOptions(valid.get(pending.id)) } }] : []) });
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith('report:') && !valid.has(id)) await chrome.notifications.clear(id);
   }
@@ -1167,7 +1217,7 @@ async function reconcileScheduleNotifications(schedule, settings, epoch) {
     return eligible ? [{ ...pending, options: { ...pending.options, ...scheduleNotificationOptions(change) } }] : [];
   }) });
   const displayed = new Set(RadarSchedule.changes(schedule).map(RadarSchedule.notificationId));
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith("schedule:") && (!current.has(id) || !displayed.has(id))) await chrome.notifications.clear(id);
   }
@@ -1227,7 +1277,7 @@ async function reconcileHintNotifications(hints, settings, epoch) {
       return hint ? [{ ...pending, options: { ...pending.options, ...hintNotificationOptions(hint) } }] : [];
     })
   });
-  const visible = await chrome.notifications.getAll();
+  const visible = await visibleNotificationsForCleanup();
   for (const id of Object.keys(visible)) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith("hint:") && !current.has(id)) await chrome.notifications.clear(id);
@@ -1261,7 +1311,7 @@ async function reconcileEventNotifications(state, settings, epoch) {
     const notice = notices.get(pending.id);
     return notice ? [{ ...pending, options: { ...pending.options, ...eventNotificationOptions(notice) } }] : [];
   }) });
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith('event:') && !notices.has(id)) await chrome.notifications.clear(id);
   }
@@ -1307,7 +1357,7 @@ async function reconcileRecoveryNotifications(settings, epoch) {
     notificationHistory: Object.fromEntries(Object.entries(notificationHistory)
       .filter(([id]) => !id.startsWith("recovery:") || current.has(id)))
   });
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith("recovery:") && !current.has(id)) await chrome.notifications.clear(id);
   }
@@ -1354,7 +1404,7 @@ async function reconcileBankedNotifications(settings, epoch) {
     notificationHistory: Object.fromEntries(Object.entries(notificationHistory)
       .filter(([id]) => !id.startsWith("banked:") || retained.has(id)))
   });
-  for (const id of Object.keys(await chrome.notifications.getAll())) {
+  for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
     if (id.startsWith("banked:") && !current.has(id)) await chrome.notifications.clear(id);
   }
@@ -1916,6 +1966,13 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
     if (((RadarPublicAlerts.publicId(pending.id) && !receiptValid) || /^(expiry|advice):/.test(pending.id)) &&
       pending.queuedAt && Date.now() - pending.queuedAt >= 86400000) return false;
     let bypassQuiet = false;
+    if (pending.id.startsWith('collector:')) {
+      if (signalJob) return true;
+      const { collectorHealth } = await chrome.storage.local.get('collectorHealth');
+      if (!settings.monitorSignals || !settings.monitorLeadSource || !collectorAlertsEnabled(settings) ||
+          collectorHealth?.failureId !== pending.id || !collectorHealth.error) return false;
+      bypassQuiet = Boolean(publicResumed && settings.notifyPublicOnResume);
+    }
     if (accountNotification(pending.id) && !settings.monitorAccount) return false;
     if (/^(expiry|advice):/.test(pending.id)) {
       const expiry = pending.id.startsWith('expiry:');

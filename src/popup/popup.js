@@ -132,12 +132,12 @@ function renderNews(data, settings) {
   const scan = lead?.directScan;
   const both = scan?.timelines?.length === 6 && scan.timelines.every(t => t.ok);
   const freshness = !settings.monitorSignals || !settings.monitorLeadSource ? 'OpenAI · Tibo · VB 수집 꺼짐' : data.signalError ? '수집 오류 · 보관된 소식' :
-    !settings.monitorDirectX ? (lead?.state === 'stale' ? '최신 글 수집을 확인해 주세요 · ' : '') + '답글 직접 확인 꺼짐 · 설정에서 연결' : !lead?.directOk ? 'X 수집 확인 필요 · 설정 확인' :
+    !settings.monitorDirectX ? (lead?.state === 'stale' ? '최신 글 수집을 확인해 주세요 · ' : '') + '답글 직접 확인 꺼짐 · 설정에서 연결' : !lead?.directOk ? 'X 수집 확인 필요 · 설정 확인' : lead.directError ? '탭 정리 재시도 중 · 수집 소식 유지' :
     !scan?.timelines || scan.timelines.length < 6 ? '이전 수집 기록 · 지금 확인을 눌러 주세요' : !both ? scan.timelines.filter(t => !t.ok).map(t => (RadarSignals.authorName(t) + ' ') + (t.kind === 'posts' ? '원글' : '답글') + ' 수집 실패').join(' · ') + ' · 설정 확인' : `원글·답글 ${scan.posts}개 확인` + (lead.latestPostAt ? ' · 최근 글 ' + RadarTime.formatLocalized(new Date(lead.latestPostAt), {
       timeZone, month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h12'
     }) : '');
   $("newsFreshness").textContent = freshness;
-  if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX && lead?.directOk && !data.signalError && both && lead.collectionVerified === false) {
+  if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX && lead?.directOk && !lead.directError && !data.signalError && both && lead.collectionVerified === false) {
     $("newsFreshness").textContent = scan.contextPending ? `답글 문맥 ${scan.contextPending}개 확인 대기 · 일부 수집` : '일부 수집 · 재확인 필요';
   }
   $("newsFreshness").title = (lead?.latestPostAt ? '최근 수집 글: ' + RadarTime.formatDateTime(lead.latestPostAt, timeZone) : '최근 수집 글 없음') +

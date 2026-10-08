@@ -21,9 +21,10 @@ test('a transient initialization read failure is retried by the next trusted ref
 test('a failure late in initialization does not permanently block settings or lose retained consent', async () => {
   const w = makeWorker();
   let fail = true;
-  w.context.chrome.notifications.getAll = async () => {
-    if (fail) { fail = false; throw Error('Notifications temporarily unavailable'); }
-    return {};
+  const create = w.context.chrome.alarms.create;
+  w.context.chrome.alarms.create = async (...args) => {
+    if (fail) { fail = false; throw Error('Alarm persistence temporarily unavailable'); }
+    return create(...args);
   };
   assert.equal((await w.send({ type: 'SAVE_THEME', theme: 'dark' }, w.sender('popup'))).ok, false);
   assert.equal((await w.send({ type: 'SAVE_THEME', theme: 'light' }, w.sender('popup'))).ok, true);

@@ -7,7 +7,7 @@
   const path = location.pathname;
   const allowed = () => location.origin === "https://x.com" && location.pathname === path;
   if (!allowed() || (!timeline && !targetId)) return { rows: [], stopReason: "wrong-page", pages: 0 };
-  const deadline = Date.now() + (timeline ? 24000 : 9000); // Return collected rows before the worker deadline.
+  const deadline = Date.now() + (timeline ? 24000 : 18000); // Return collected rows before the worker deadline.
   const seen = new Map();
   const expanded = new Set();
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -98,8 +98,16 @@
   await expandOwnPosts();
   await sleep(1000);
   if (targetId) {
-    const rows = collect();
-    const index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
+    let rows = collect();
+    let index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
+    // X hydrates the short reply before its parent. Do not cache "no parent"
+    // merely because the target itself appeared first.
+    for (let attempt = 0; index === 0 && attempt < 6 && Date.now() < deadline - 1000; attempt++) {
+      if (!allowed()) return { rows: [], stopReason: "navigated", pages: 0 };
+      await sleep(1000);
+      rows = collect();
+      index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
+    }
     // Comments after the target cannot explain what it was replying to.
     return { rows: index < 0 ? [] : rows.slice(0, index + 1), targetId, pages: 1,
       stopReason: index < 0 ? "target-missing" : "conversation" };
