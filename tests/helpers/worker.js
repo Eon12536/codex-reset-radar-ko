@@ -7,7 +7,9 @@ const RAW_USAGE = { rate_limit: { primary_window: { used_percent: 40, limit_wind
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
 function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
-  const local = structuredClone({ settings: { monitorAccount: true, quietHoursEnabled: false }, securitySchema: 1, ...stored });
+  // Most scenarios exercise an initialized install; migration tests explicitly
+  // omit the marker to simulate an upgrade or first installation.
+  const local = structuredClone({ settings: { monitorAccount: true, quietHoursEnabled: false }, securitySchema: 1, preferenceDefaultsSchema: 1, ...stored });
   const session = { sessionAccessToken: "OLD_TOKEN", sessionAccessTokenExpiresAt: 99 };
   const requests = [], tabs = [], notifications = {}, access = {}, events = {};
   const alarms = new Map();

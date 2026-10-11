@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.81";
+const NOTIFICATION_BUILD = "0.2.82";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -113,11 +113,15 @@ function ensureSecurity() {
     // cleanup retains its retry alarm and blocks only that reader's new tabs.
     await RadarDirectX.cleanup({ recover: true }).catch(() => {});
     await chatPlanOwner.cleanup({ recover: true }).catch(() => {});
-    const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema"]);
+    const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "preferenceDefaultsSchema"]);
     const settings = RadarSettings.sanitize(stored.settings);
-    // Chat has independent allowances. Keep records, but stop treating an
-    // unrelated Codex quota recovery as evidence of a Chat reset.
-    if (stored.chatPolicySchema !== 1) settings.syncChatResetWithCodex = false;
+    // Apply the requested defaults once to existing installs too. Persist the
+    // marker with settings so later user choices survive worker restarts.
+    if (stored.preferenceDefaultsSchema !== 1) {
+      settings.quietHoursEnabled = false;
+      settings.notifyHints = true;
+      settings.syncChatResetWithCodex = true;
+    }
     if (stored.securitySchema !== SECURITY_SCHEMA) {
       settings.monitorAccount = false;
       await chrome.storage.local.set({ pendingNotifications: [] });
@@ -129,7 +133,7 @@ function ensureSecurity() {
       await chrome.storage.local.remove(["chatCounter", "chatCounters", "chatAccount", "chatCounterSalt"]);
     }
     await chrome.storage.session.remove([TOKEN_KEY, TOKEN_EXPIRY_KEY]);
-    await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA, chatCounterSchema: 2, chatPolicySchema: 1 });
+    await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA, chatCounterSchema: 2, chatPolicySchema: 1, preferenceDefaultsSchema: 1 });
     await cleanChatHistory(settings);
     if (!settings.monitorAccount) await purgeAccountState();
     if (!settings.monitorChat) await chrome.storage.local.remove(["chatCounter", "chatCounters", "chatAccount", "chatCounterSalt", "chatCounterError"]);
@@ -1783,7 +1787,7 @@ async function clearLocalData() {
     // Preserve appearance without a read-clear-restore race with the popup.
     const stored = await chrome.storage.local.get(null);
     await chrome.storage.local.remove(Object.keys(stored).filter(key =>
-      !["settings", "securitySchema", "chatCounterSchema", "appearanceTheme", "uiLocale"].includes(key)));
+      !["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema", "preferenceDefaultsSchema", "appearanceTheme", "uiLocale"].includes(key)));
     chatBindings.clear(); chatPlanTabs.clear();
     await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
     await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);

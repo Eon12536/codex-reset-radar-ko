@@ -48,8 +48,8 @@ function workerForHints(notifyHints=false) {
   return makeWorker({stored:{settings:{monitorAccount:false,monitorSignals:true,monitorLeadSource:true,monitorStatusSource:false,monitorHistorySource:false,monitorCommunitySource:false,quietHoursEnabled:false,notifyHints}}, fetcher:async()=>json({items:[{external_id:'123456',content:makeHint().text,published_at:new Date().toISOString(),metadata:{author_user_name:'thsottiaux'}}]})});
 }
 
-test('hints display with notifications off by default and never become actionable snapshots', async()=>{
-  assert.equal(Settings.sanitize().notifyHints,false);
+test('hints remain visible when their default-on notifications are explicitly disabled', async()=>{
+  assert.equal(Settings.sanitize().notifyHints,true);
   const w=workerForHints();await w.context.refreshSignals();
   assert.equal(w.local.hintSnapshot.items.length,1);assert.equal(w.local.signalSnapshot.signal,null);
   assert.equal(w.local.signalSnapshot.activeSignals.length,0);assert.equal(Object.keys(w.notifications).length,0);

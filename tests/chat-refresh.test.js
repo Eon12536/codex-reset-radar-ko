@@ -238,17 +238,17 @@ test('refresh honors account-history opt-out and never opens billing for periodi
   assert.equal(off.w.requests.length, 0);
 });
 
-test('migration restores stored Chat counts excluded by an unrelated Codex reset, without deleting them', async () => {
+test('enabled Codex local aggregation excludes earlier records without deleting them', async () => {
   const { w } = worker({ settings: { syncChatResetWithCodex: true, syncChatHistory: false } });
   await w.context.ensureSecurity();
-  assert.equal(w.local.settings.syncChatResetWithCodex, false);
+  assert.equal(w.local.settings.syncChatResetWithCodex, true);
   await w.context.refreshChatAccount({ force: true });
   const profile = w.local.chatCounters[w.local.chatAccount.key];
   profile.events = [{ key: 'a'.repeat(64), model: 'astra', at: now, beforeCodexReset: true }];
   profile.codexReset = { effectiveAt: now + 1 };
-  assert.equal(Counter.view(w.local).count.astra, 1);
+  assert.equal(Counter.view(w.local).count.astra, 0);
   assert.equal(profile.events.length, 1);
-  assert.equal(Counter.view(w.local).codexReset, null);
+  assert.ok(Counter.view(w.local).codexReset);
 });
 
 test('billing tab persistence failure cannot accumulate temporary tabs on repeated plan checks', async () => {

@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Codex 리셋 레이더 · 한국어
 
-> Last Updated: 2026-10-11 · Version: 0.2.81 · Draft, Chrome Web Store 미제출
+> Last Updated: 2026-10-11 · Version: 0.2.82 · Draft, Chrome Web Store 미제출
 > GoogleChrome/modern-web-guidance의 chromewebstore-template.md 형식에 따라 작성. 실제 설정은 manifest.json, 데이터 처리 상세는 PRIVACY.md 기준.
 
 ## Store Listing
@@ -88,6 +88,8 @@ OpenAI·Tibo·VB의 공개 리셋 예고와 완료 소식을 표시합니다. �
 
 보관 기한, 기능 OFF·로컬 데이터 삭제 동작, 계정 기록 동기화의 수신 범위는 위 정책에 따릅니다.
 
+0.2.82부터 방해 금지는 기본 꺼짐, 후보 알림과 Codex 기준 로컬 집계는 기본 켜짐입니다. 기존 설치의 세 설정도 한 번 전환하며 적용 여부를 로컬에 보관합니다. 이후 사용자 선택은 재시작·데이터 지우기에도 유지합니다. 계정 조회·Chat 연결·기록 동기화 동의를 자동으로 켜지 않습니다.
+
 ## Distribution
 
 **Visibility**: 공개 GitHub ZIP 배포. Chrome Web Store는 미제출.
@@ -108,6 +110,7 @@ OpenAI·Tibo·VB의 공개 리셋 예고와 완료 소식을 표시합니다. �
 
 | Version | Date | Changes | Status |
 |---|---|---|---|
+| 0.2.82 | 2026-10-11 | 요청한 세 기본값과 기존 설치의 일회성 설정 전환 | Draft (Chrome Web Store 미제출) |
 | 0.2.81 | 2026-10-11 | 업데이트 후 수집 차단 복구, 복구 후 새 글 확인·알림 재개 | Draft (Chrome Web Store 미제출) |
 
 ## Review Notes
