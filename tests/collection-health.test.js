@@ -85,3 +85,31 @@ test('a notification-center read failure does not turn a fresh successful scan i
   assert.equal(w.local.signalError, null);
   assert.equal(w.local.signalSnapshot.reports[0].id, fixture.posts[0].id);
 });
+
+test('automatic tab recovery collects fresh posts before delivering a Windows notification', async () => {
+  const w = worker({ stored: { directXScanTabV1GuardV1: { blocked: true, reason: 'session-lost' } } });
+  success(w);
+  let reads = 0;
+  const read = w.context.RadarDirectX.read;
+  w.context.RadarDirectX = { ...w.context.RadarDirectX,
+    cleanup: async () => { delete w.local.directXScanTabV1GuardV1; return true; },
+    read: async (...args) => { reads++; return read(...args); } };
+  await w.events.alarm({ name: w.context.RadarDirectX.CLEANUP_ALARM });
+  assert.equal(reads, 1);
+  assert.equal(w.local.signalSnapshot.reports[0].id, fixture.posts[0].id);
+  await finishPublicResume(w);
+  assert.ok(w.notifications['report:' + fixture.posts[0].id]);
+  await w.events.alarm({ name: w.context.RadarDirectX.CLEANUP_ALARM });
+  assert.equal(reads, 1);
+});
+
+test('tab recovery keeps disabled public monitoring disabled', async () => {
+  const w = worker({ stored: { settings: { monitorSignals: false }, directXScanTabV1GuardV1: { blocked: true } } });
+  let reads = 0;
+  w.context.RadarDirectX = { ...w.context.RadarDirectX,
+    cleanup: async () => { delete w.local.directXScanTabV1GuardV1; return true; },
+    read: async () => { reads++; throw new Error('Unexpected scan'); } };
+  await w.events.alarm({ name: w.context.RadarDirectX.CLEANUP_ALARM });
+  assert.equal(reads, 0);
+  assert.deepEqual(Object.keys(w.notifications), []);
+});

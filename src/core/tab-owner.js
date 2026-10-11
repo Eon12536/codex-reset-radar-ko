@@ -6,6 +6,8 @@
     const selectedDuringCreate = new Set(), selectedDuringRestore = new Set();
     const error = name => new Error(prefix + '_' + name);
     const tokenValid = token => typeof token === 'string' && /^[a-f0-9-]{36}$/.test(token);
+    const legacyOwnerless = guard => guard?.version === undefined && guard?.blocked === true &&
+      guard.reason === 'session-lost' && !Object.hasOwn(guard, 'lease') && !Object.hasOwn(guard, 'pending');
     function marked(url, token = tab?.token) {
       if (!recovery || !tokenValid(token)) return url;
       const value = new URL(url);
@@ -14,11 +16,13 @@
     }
     async function persistGuard(blocked, reason) {
       const previous = recovery ? (await chrome.storage.local.get(guardKey))[guardKey] : null;
-      await chrome.storage.local.set({ [guardKey]: { ...previous, blocked, reason,
+      const deferredLegacy = recovery && !tab && legacyOwnerless(previous);
+      await chrome.storage.local.set({ [guardKey]: { ...previous, ...(deferredLegacy ? {} : { version: 2 }), blocked,
+        reason: deferredLegacy ? previous.reason : reason,
         ...(recovery && tokenValid(tab?.token) ? { lease: tab } : {}) } });
     }
-    async function recoverLease(guard) {
-      if (!recovery || !chrome.tabs.query || !await chrome.permissions.contains(recovery.permission)) return null;
+    async function recoverLease(guard, sessionValue) {
+      if (!recovery || !chrome.tabs.query || !await chrome.permissions.contains(recovery.permission)) return undefined;
       const lease = valid(guard?.lease) && tokenValid(guard.lease.token) ? guard.lease : null;
       const pending = guard?.pending;
       const attempt = pending && tokenValid(pending.token) && accepts(pending.url) &&
@@ -28,12 +32,16 @@
       // Redirects can leave an owned reader on X's login/home page. Query
       // those public destinations too before proving the reader is absent.
       const candidates = await chrome.tabs.query({ url: [...new Set([...urls, ...recovery.urls])] });
+      let knownReaderMissing = false;
+      let knownReaderPresent = Boolean(lease && candidates.some(current => current.id === lease.id));
       if (lease && !candidates.some(current => current.id === lease.id)) {
         try {
           const previous = await chrome.tabs.get(lease.id);
+          knownReaderPresent = true;
           if (previous.url === 'about:blank') candidates.push(previous);
         } catch (cause) {
           if (!/No tab with id|Invalid tab ID/i.test(String(cause?.message))) throw cause;
+          knownReaderMissing = true;
         }
       }
       if (lease || attempt) {
@@ -50,13 +58,25 @@
         }
         // A create interrupted before its ID was stored can still complete.
         // Keep its durable marker fenced for a minute before proving absence.
-        if (attempt && Date.now() - attempt.startedAt < 60000) {
+        if (!lease && attempt && Date.now() - attempt.startedAt < 60000) {
           await watch(attempt.startedAt + 60000);
           return null;
         }
       }
-      // Prove absence; never delete or adopt an unmarked user tab. Legacy
-      // fences can recover automatically only when no possible reader remains.
+      const hasReaderMarker = candidates.some(current => {
+        try { return new URL(current.url).hash.startsWith('#' + recovery.marker + '='); }
+        catch { return false; }
+      });
+      // URL filtering omits a tab whose URL Chrome cannot currently expose.
+      // Its live ID still fences creation until ownership can be established.
+      if (knownReaderPresent) return null;
+      // Search the nonce first because browser restart can change tab IDs.
+      // An unrelated X timeline is not evidence that the known reader exists.
+      if (knownReaderMissing && !hasReaderMarker) return false;
+      // Pre-nonce versions left an ownerless global fence after updates. Retire
+      // only that legacy shape, without adopting or closing any existing tab.
+      // Versioned/malformed/pending ownership must never enter this migration.
+      if (!sessionValue && legacyOwnerless(guard) && !hasReaderMarker) return false;
       return candidates.length === 0 ? false : null;
     }
     function operation(action) {
@@ -95,7 +115,7 @@
               // Reload/update/browser restart clears storage.session. Tab IDs
               // from another browser session must never authorize deletion.
               if (!valid(value)) {
-                const recovered = await recoverLease(guard);
+                const recovered = await recoverLease(guard, value);
                 if (recovered === false) { await forget(); return true; }
                 if (recovered) {
                   tab = recovered;
@@ -103,7 +123,10 @@
                 } else {
                   // Retain the durable proof if an active/pending reader has
                   // not yet been resolved; later cleanup can retry safely.
-                  await chrome.storage.local.set({ [guardKey]: { ...guard, blocked: true, reason: 'session-lost' } });
+                  // Permission/tab-query unavailability must not consume the
+                  // legacy migration before it has inspected any tabs.
+                  const deferredLegacy = recovery && !value && recovered === undefined && legacyOwnerless(guard);
+                  await chrome.storage.local.set({ [guardKey]: { ...guard, ...(deferredLegacy ? {} : { version: 2 }), blocked: true, reason: 'session-lost' } });
                   await watch(Date.now() + 60000);
                   return false;
                 }
@@ -124,9 +147,13 @@
           }
           // Preserve user/ambiguous tabs AND the ownership record. Forgetting
           // that record previously allowed every retry to leave one more tab.
-          if (tab.claimed || current.active || current.pinned || current.windowId !== tab.windowId || !matches(current.url, tab.urls)) {
+          const userClaimed = tab.claimed || current.active || current.pinned || current.windowId !== tab.windowId ||
+            (typeof current.url === 'string' && current.url.length > 0 && !matches(current.url, tab.urls));
+          if (userClaimed || !matches(current.url, tab.urls)) {
             inUse = false;
-            tab.claimed = true;
+            // A temporarily unavailable URL is not a user gesture. Keep the
+            // lease fenced, but allow a later read to prove safe ownership.
+            tab.claimed = Boolean(userClaimed);
             await persistGuard(true, 'tab-open');
             await chrome.storage.session.set({ [key]: tab });
             await watch(Date.now() + 60000);
@@ -164,7 +191,7 @@
         // otherwise lose the ID while still leaving the real tab open.
         const token = recovery ? root.crypto.randomUUID() : null;
         const startedAt = Date.now();
-        await chrome.storage.local.set({ [guardKey]: { blocked: false, reason: 'creating',
+        await chrome.storage.local.set({ [guardKey]: { version: 2, blocked: false, reason: 'creating',
           ...(token ? { pending: { token, url, startedAt, expiresAt } } : {}) } });
         created = await chrome.tabs.create({ url: marked(url, token), active: false });
         tab = { id: created.id, windowId: created.windowId, startedAt, expiresAt, urls: [url],
@@ -182,7 +209,7 @@
         if (created?.id !== undefined) await cleanup({ force: true });
         else {
           const guard = (await chrome.storage.local.get(guardKey))[guardKey];
-          await chrome.storage.local.set({ [guardKey]: { ...guard, blocked: true, reason: 'creation-unconfirmed' } }).catch(() => {});
+          await chrome.storage.local.set({ [guardKey]: { ...guard, version: 2, blocked: true, reason: 'creation-unconfirmed' } }).catch(() => {});
         }
         throw cause;
       } finally { creating = false; selectedDuringCreate.clear(); }

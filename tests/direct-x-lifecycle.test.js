@@ -17,7 +17,7 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
   let nextId = 10, maxTabs = tabs.size;
   const faults = { failRemove, failGet, failSet, failLocalSet };
   const chrome = {
-    permissions: { contains: async () => true },
+    permissions: { contains: async () => faults.permission !== false },
     storage: { local: {
       get: async key => structuredClone({ [key]: local[key] }),
       set: async value => { if (faults.failLocalSet) throw new Error('Durable storage failed'); Object.assign(local, structuredClone(value)); },
@@ -29,10 +29,13 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     } },
     alarms: { create: async (name, value) => alarms.set(name, value), clear: async name => alarms.delete(name) },
     tabs: {
-      query: async options => [...tabs.values()].filter(tab => options.url.some(pattern => {
+      query: async options => {
+        if (faults.failQuery) throw new Error('Temporary tab query failure');
+        return [...tabs.values()].filter(tab => options.url.some(pattern => {
         const url = String(tab.url).split('#')[0];
         return pattern.endsWith('*') ? url.startsWith(pattern.slice(0, -1)) : url === pattern;
-      })).map(tab => ({ ...tab })),
+        })).map(tab => ({ ...tab }));
+      },
       create: async options => {
         await create?.();
         const tab = { id: nextId++, windowId: 1, status: 'complete', pinned: false, ...options };
@@ -304,6 +307,76 @@ test('an unreadable Chrome tab URL blocks repeated scans instead of orphaning ea
   assert.equal(b.local[core.GUARD_KEY].blocked, true);
 });
 
+test('a temporarily missing tab URL does not become a permanent user claim across an update', async () => {
+  const token = '00000000-0000-4000-8000-000000000081';
+  const b = browser({ stored: lease({ token }), tab: { id: 7 } });
+  const core = b.load();
+  await assert.rejects(read(core), /X_TAB_BLOCKED/);
+  assert.equal(b.session[KEY].claimed, false);
+  b.tabs.get(7).url = PAGE + '#radar-x-reader=' + token;
+  delete b.session[KEY];
+  assert.equal((await read(b.load())).items.length, 1);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.maxTabs(), 1);
+});
+
+test('a closed known reader does not strand update recovery behind an unrelated X timeline', async () => {
+  const b = browser({ tab: { id: 8, url: 'https://x.com/i/timeline' } });
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost', lease: lease({
+    token: '00000000-0000-4000-8000-000000000081' }) };
+  assert.equal((await read(core)).items.length, 1);
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.tabs.get(8).url, 'https://x.com/i/timeline');
+  assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 8), false);
+});
+
+test('legacy ownerless update fences migrate without closing unrelated user X tabs', async () => {
+  const b = browser({ tab: { id: 8, url: 'https://x.com/i/timeline' } });
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost' };
+  assert.equal((await read(core)).items.length, 1);
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 8), false);
+});
+
+test('temporary permission and tab-query failures do not consume legacy fence recovery', async () => {
+  for (const fault of ['permission', 'failQuery']) {
+    const b = browser({ tab: { id: 8, url: 'https://x.com/i/timeline' } });
+    b.local[KEY + 'GuardV1'] = { blocked: true, reason: 'session-lost' };
+    b.faults[fault] = fault === 'permission' ? false : true;
+    await b.load().cleanup({ recover: true }).catch(() => {});
+    assert.equal(b.local[KEY + 'GuardV1'].version, undefined);
+    assert.equal(b.calls.length, 0);
+    b.faults[fault] = fault === 'permission' ? true : false;
+    assert.equal((await read(b.load())).items.length, 1);
+    assert.equal(b.tabs.size, 1);
+    assert.equal(b.tabs.has(8), true);
+  }
+});
+
+test('50 update cycles recover interrupted readers without accumulating tabs beside a user timeline', async () => {
+  const b = browser({ tab: { id: 8, url: 'https://x.com/i/timeline', active: true } });
+  for (let i = 0; i < 50; i++) {
+    b.faults.failRemove = true;
+    assert.equal((await read(b.load())).diagnostics.cleanupError, 'tab-blocked');
+    b.faults.failRemove = false;
+    const reader = b.tabs.get(b.session[KEY].id), markedUrl = reader.url;
+    reader.url = undefined;
+    delete b.session[KEY];
+    await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+    assert.equal(b.tabs.size, 2);
+    reader.url = markedUrl;
+    delete b.session[KEY];
+    assert.equal((await read(b.load())).items.length, 1);
+    assert.equal(b.tabs.size, 1);
+    assert.equal(b.tabs.has(8), true);
+    assert.equal(b.local[KEY + 'GuardV1'], undefined);
+  }
+  assert.equal(b.maxTabs(), 2);
+  assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 8), false);
+});
+
 test('reload and browser restart losing session ownership cannot open another scan tab', async () => {
   const b = browser({ script: id => b.listeners.activate({ tabId: id }) });
   await assert.rejects(read(b.load()), /X_PAGE_UNAVAILABLE/);
@@ -349,17 +422,47 @@ test('lost Chrome session recovers by marker even when tab IDs are reused', asyn
   assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 10), false);
 });
 
-test('legacy lost-session fence recovers only after proving no possible X reader remains', async () => {
+test('versioned ownerless fences do not repeat the legacy migration with an open X tab', async () => {
   const b = browser();
   const core = b.load();
-  b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost' };
+  b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'session-lost' };
   assert.equal((await read(core)).items.length, 1);
   const protectedBrowser = browser({ tab: { id: 7, url: PAGE } });
   const protectedCore = protectedBrowser.load();
-  protectedBrowser.local[protectedCore.GUARD_KEY] = { blocked: true, reason: 'session-lost' };
+  protectedBrowser.local[protectedCore.GUARD_KEY] = { version: 2, blocked: true, reason: 'session-lost' };
   await assert.rejects(read(protectedCore), /X_TAB_BLOCKED/);
   assert.equal(protectedBrowser.tabs.has(7), true);
   assert.equal(protectedBrowser.calls.some(call => call[0] === 'remove'), false);
+});
+
+test('missing URL plus lost session keeps one reader until its URL becomes available', async () => {
+  const token = '00000000-0000-4000-8000-000000000081';
+  const b = browser({ tab: { id: 7 } });
+  b.local[KEY + 'GuardV1'] = { blocked: true, lease: lease({ token }) };
+  for (let i = 0; i < 20; i++) {
+    delete b.session[KEY];
+    await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+  }
+  assert.equal(b.calls.length, 0);
+  assert.equal(b.tabs.size, 1);
+  b.tabs.get(7).url = PAGE + '#radar-x-reader=' + token;
+  assert.equal((await read(b.load())).items.length, 1);
+  assert.equal(b.maxTabs(), 1);
+  assert.equal(b.tabs.size, 0);
+});
+
+test('legacy migration refuses marked readers and malformed ownership records', async () => {
+  const token = '00000000-0000-4000-8000-000000000081';
+  for (const extra of [{ lease: null }, { pending: null }, { lease: { id: 7 } }]) {
+    const b = browser({ tab: { id: 7, url: PAGE } });
+    b.local[KEY + 'GuardV1'] = { blocked: true, reason: 'session-lost', ...extra };
+    await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+    assert.equal(b.calls.length, 0);
+  }
+  const b = browser({ tab: { id: 7, url: PAGE + '#radar-x-reader=' + token } });
+  b.local[KEY + 'GuardV1'] = { blocked: true, reason: 'session-lost' };
+  await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+  assert.equal(b.calls.length, 0);
 });
 
 test('an active marked reader is protected after session loss and automatically resumes when closed', async () => {

@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.80";
+const NOTIFICATION_BUILD = "0.2.81";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -1851,9 +1851,17 @@ async function schedulePublicRetry() {
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  // Initialization may resolve and remove this fence. Capture its state first
+  // so a recovery timer can restart collection without waiting for the next poll.
+  const recoveringDirectX = alarm.name === RadarDirectX.CLEANUP_ALARM &&
+    (await chrome.storage.local.get(RadarDirectX.GUARD_KEY))[RadarDirectX.GUARD_KEY]?.blocked;
   await ensureSecurity();
   if (alarm.name === RadarDirectX.CLEANUP_ALARM) {
-    await RadarDirectX.cleanup().catch(() => {});
+    const recovered = await RadarDirectX.cleanup().catch(() => false);
+    if (recoveringDirectX && recovered && !signalJob && await preparePublicResume()) {
+      const signals = await refreshSignals({ quiet: true });
+      await mutate(() => flushPendingNotifications({ publicResumed: Boolean(signals.catchUp && signals.leadVerified && signals.epoch === stateEpoch) }));
+    }
     return;
   }
   if (alarm.name === CHAT_PLAN_CLEANUP_ALARM) {
