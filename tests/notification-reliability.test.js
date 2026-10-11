@@ -26,6 +26,53 @@ test('public notification is saved before delivery and only accepted delivery wr
   assert.equal(w.local.pendingNotifications.length, 0);
 });
 
+test('failed removal of an obsolete Windows alert cannot block fresh startup or wake notifications', async () => {
+  for (const trigger of ['startup', 'wake']) {
+    const w = worker();
+    w.notifications['hint:removed'] = { title: 'Obsolete alert' };
+    const clear = w.context.chrome.notifications.clear;
+    w.context.chrome.notifications.clear = async () => { throw new Error('notification center unavailable'); };
+    w.local.signalSnapshot = { checkedAt: Date.now() - 4 * 3600000 };
+    w.local.wakeCheckedAt = Date.now() - 4 * 3600000;
+    if (trigger === 'startup') await w.events.startup();
+    else await w.events.alarm({ name: 'codex-reset-radar-wake-check', scheduledTime: Date.now() - 3 * 3600000 });
+    assert.equal(w.local.signalError, null, trigger);
+    assert.ok(w.local.hintSnapshot.items.some(item => item.id === '251'), trigger);
+    assert.ok(w.local.pendingNotifications.some(item => item.id === 'hint:251'), trigger);
+    assert.equal(w.notifications['hint:251'], undefined, 'wait for the desktop wake grace period');
+    await finishPublicResume(w);
+    assert.ok(w.notifications['hint:251'], trigger);
+    assert.ok(w.local.notificationHistory['hint:251'], trigger);
+    assert.equal(w.local.pendingNotifications.length, 0, trigger);
+    const accepted = w.local.notificationHistory['hint:251'];
+    w.context.chrome.notifications.clear = clear;
+    await w.context.refreshSignals();
+    assert.equal(w.notifications['hint:removed'], undefined, 'retry obsolete cleanup when Windows recovers');
+    assert.equal(w.local.notificationHistory['hint:251'], accepted, 'do not repeat the delivered news');
+  }
+});
+
+test('notification-center failures cannot interrupt disabling alerts or clearing local records', async () => {
+  for (const failure of ['read', 'clear']) {
+    const w = worker();
+    await w.context.refreshSignals();
+    w.notifications['expiry:obsolete'] = { title: 'Old expiry alert' };
+    w.notifications['event:obsolete'] = { title: 'Old event alert' };
+    const api = failure === 'read' ? 'getAll' : 'clear';
+    w.context.chrome.notifications[api] = async () => { throw new Error('notification center unavailable'); };
+    const saved = await w.send({ type: 'SAVE_SETTINGS', settings: { ...w.local.settings,
+      notifyHints: false, notifyCreditExpiry: false, notifyAdvice: false } }, w.sender('options'));
+    assert.equal(saved.ok, true, failure);
+    assert.equal(w.local.settings.notifyHints, false, failure);
+    assert.equal(w.local.settings.notifyCreditExpiry, false, failure);
+    const cleared = await w.send({ type: 'CLEAR_LOCAL_DATA' }, w.sender('options'));
+    assert.equal(cleared.ok, true, failure);
+    assert.equal(w.local.notificationHistory, undefined, failure);
+    assert.equal(w.local.hintSnapshot, undefined, failure);
+    assert.equal(w.local.settings.notifyHints, false, failure);
+  }
+});
+
 test('quiet or rejected alerts remain pending without a sent marker and later deliver once', async () => {
   for (const reason of ['quiet', 'failed']) {
     const w = worker();

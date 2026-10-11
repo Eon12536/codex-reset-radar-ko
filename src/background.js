@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.79";
+const NOTIFICATION_BUILD = "0.2.80";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -59,6 +59,14 @@ async function visibleNotificationsForCleanup() {
   // must not prevent collection; delivery still requires its own acknowledgement.
   try { return await chrome.notifications.getAll(); }
   catch { return {}; }
+}
+
+async function clearNotificationForCleanup(id) {
+  // Removing an obsolete toast is best effort. A rejected Windows/Chrome
+  // cleanup must not abort initialization, collection or delivery of new news.
+  // The next reconciliation can retry any toast still visible in getAll().
+  try { return await chrome.notifications.clear(id); }
+  catch { return false; }
 }
 
 function mutate(action) {
@@ -92,7 +100,7 @@ async function purgeAccountState() {
     adviceSnapshot: advice
   });
   const visible = await visibleNotificationsForCleanup();
-  for (const id of Object.keys(visible)) if (accountNotification(id)) await chrome.notifications.clear(id);
+  for (const id of Object.keys(visible)) if (accountNotification(id)) await clearNotificationForCleanup(id);
   await updateBadge(null, signal, advice);
 }
 
@@ -208,14 +216,14 @@ async function saveSettings(settings, { connectChat = false } = {}) {
         (!sanitized.notifyAdvice && id.startsWith('advice:'));
       const { pendingNotifications = [] } = await chrome.storage.local.get('pendingNotifications');
       await chrome.storage.local.set({ pendingNotifications: pendingNotifications.filter(item => !disabled(item.id)) });
-      for (const id of Object.keys(await chrome.notifications.getAll())) if (disabled(id)) await chrome.notifications.clear(id);
+      for (const id of Object.keys(await visibleNotificationsForCleanup())) if (disabled(id)) await clearNotificationForCleanup(id);
     }
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource || !sanitized.notifyHints) {
       const { pendingNotifications = [] } = await chrome.storage.local.get("pendingNotifications");
       // Reconcile hint categories below; product/event OFF must not discard
       // the independently enabled reset-discussion queue.
       await chrome.storage.local.set({ pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('event:')) });
-      for (const id of Object.keys(await chrome.notifications.getAll())) if (id.startsWith('event:')) await chrome.notifications.clear(id);
+      for (const id of Object.keys(await visibleNotificationsForCleanup())) if (id.startsWith('event:')) await clearNotificationForCleanup(id);
     }
     await revalidateCachedSignals(stateEpoch);
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource || !collectorAlertsEnabled(sanitized)) await recordCollectionHealth(null, sanitized, stateEpoch);
@@ -868,7 +876,7 @@ async function reconcileSignalNotifications(signals, settings, epoch, reviewed =
   }
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (invalid.has(id)) await chrome.notifications.clear(id);
+    if (invalid.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1086,7 +1094,7 @@ async function recordCollectionHealth(snapshot, settings, epoch) {
       error: null, failures: 0, failureId: null }, pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('collector:')) });
     // A notification-center API failure must not discard freshly read posts.
     try {
-      for (const id of Object.keys(await chrome.notifications.getAll())) if (id.startsWith('collector:')) await chrome.notifications.clear(id);
+      for (const id of Object.keys(await visibleNotificationsForCleanup())) if (id.startsWith('collector:')) await clearNotificationForCleanup(id);
     } catch { /* Stale visible warnings can be dismissed by Windows. */ }
     return;
   }
@@ -1141,7 +1149,7 @@ async function reconcileReportNotifications(reports, settings, epoch, schedule) 
     valid.has(pending.id) ? [{ ...pending, options: { ...pending.options, ...reportNotificationOptions(valid.get(pending.id)) } }] : []) });
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith('report:') && !valid.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith('report:') && !valid.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1219,7 +1227,7 @@ async function reconcileScheduleNotifications(schedule, settings, epoch) {
   const displayed = new Set(RadarSchedule.changes(schedule).map(RadarSchedule.notificationId));
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith("schedule:") && (!current.has(id) || !displayed.has(id))) await chrome.notifications.clear(id);
+    if (id.startsWith("schedule:") && (!current.has(id) || !displayed.has(id))) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1280,7 +1288,7 @@ async function reconcileHintNotifications(hints, settings, epoch) {
   const visible = await visibleNotificationsForCleanup();
   for (const id of Object.keys(visible)) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith("hint:") && !current.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith("hint:") && !current.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1313,7 +1321,7 @@ async function reconcileEventNotifications(state, settings, epoch) {
   }) });
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith('event:') && !notices.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith('event:') && !notices.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1359,7 +1367,7 @@ async function reconcileRecoveryNotifications(settings, epoch) {
   });
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith("recovery:") && !current.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith("recovery:") && !current.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1406,7 +1414,7 @@ async function reconcileBankedNotifications(settings, epoch) {
   });
   for (const id of Object.keys(await visibleNotificationsForCleanup())) {
     if (epoch !== stateEpoch) return;
-    if (id.startsWith("banked:") && !current.has(id)) await chrome.notifications.clear(id);
+    if (id.startsWith("banked:") && !current.has(id)) await clearNotificationForCleanup(id);
   }
 }
 
@@ -1781,7 +1789,7 @@ async function clearLocalData() {
     await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
     await chrome.storage.session.clear();
     await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA });
-    for (const id of Object.keys(await chrome.notifications.getAll())) await chrome.notifications.clear(id);
+    for (const id of Object.keys(await visibleNotificationsForCleanup())) await clearNotificationForCleanup(id);
     await updateBadge(null, null, null);
     return { ok: true };
   });

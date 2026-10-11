@@ -11,19 +11,27 @@ const fixture = require('./fixtures/tibo-global-reset-2026-10-02.json');
 const now = Date.parse(fixture.observedAt);
 const item = { ...fixture.post, source: { id: 'codex-lead', weight: 1 } };
 
-test('the independently discovered global reset landing announcement is visible as an explicit reset', () => {
+test('the independently discovered global reset landing announcement is visible as an explicit reset', t => {
+  t.mock.method(Date, 'now', () => now);
   const [normalized] = Direct.normalize([fixture.post], now);
   const assessment = Signals.classify(normalized, { now });
   assert.equal(assessment.actionable, true);
   assert.equal(assessment.confidence, 'high');
   assert.equal(Signals.classifyHint(normalized, { now }).candidate, false);
-  const news = News.list({ activeSignals: [{ ...normalized, assessment }] }, {}, Settings.sanitize(), { now });
+  const news = News.list({ activeSignals: [{ ...normalized, assessment }] }, {}, Settings.sanitize());
   assert.equal(news[0]?.item.id, fixture.post.id);
   assert.equal(news[0]?.label, 'reset');
   assert.equal(news[0]?.kind, 'unknown');
   assert.equal(News.schedule(item).instant, Date.parse('2026-10-02T18:00:00Z'));
   for (const file of ['../src/core/signals', '../src/core/direct-x', '../src/x-reader', '../src/background'])
     assert.ok(!fs.readFileSync(require.resolve(file), 'utf8').includes(item.id), file);
+});
+
+test('the historical landing announcement expires from reset news after its retention window', t => {
+  t.mock.method(Date, 'now', () => now + 8 * 86400000);
+  const [normalized] = Direct.normalize([fixture.post], now);
+  const assessment = Signals.classify(normalized, { now });
+  assert.deepEqual(News.list({ activeSignals: [{ ...normalized, assessment }] }, {}, Settings.sanitize()), []);
 });
 
 test('forthcoming reset delivery verbs work for all monitored authors, including compact follow-ups', () => {
