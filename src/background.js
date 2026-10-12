@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.82";
+const NOTIFICATION_BUILD = "0.2.83";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -969,7 +969,10 @@ async function runSignalRefresh(quiet) {
       const directIndex = sources.findIndex(source => source.id === "x-direct");
       const directResult = results[directIndex];
       const directScan = leadResults.find(result => result.source.id === "x-direct")?.diagnostics || null;
-      const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) : directScan?.cleanupError || null;
+      // Usable posts do not prove that the other author/timeline reads worked.
+      // Keep partial results flowing while retaining their collection failure.
+      const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) :
+        directScan?.cleanupError || (directScan?.timelines?.some(t => t.ok === false) ? "partial" : null);
       const leadVerified = latestPostAt > 0 && Date.now() - latestPostAt <= 3 * 86400000;
       // A fresh post from one person/feed cannot certify the other timelines.
       const collectionVerified = leadVerified && (!settings.monitorDirectX || (directOk &&
@@ -1094,7 +1097,7 @@ async function recordCollectionHealth(snapshot, settings, epoch) {
   const enabled = settings.monitorSignals && settings.monitorLeadSource && collectorAlertsEnabled(settings);
   const error = snapshot?.leadStatus?.directError;
   if (!enabled || !error) {
-    await chrome.storage.local.set({ collectorHealth: { lastSuccessAt: snapshot?.leadStatus?.directOk ? Date.now() : collectorHealth.lastSuccessAt || null,
+    await chrome.storage.local.set({ collectorHealth: { lastSuccessAt: !error && snapshot?.leadStatus?.directOk ? Date.now() : collectorHealth.lastSuccessAt || null,
       error: null, failures: 0, failureId: null }, pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('collector:')) });
     // A notification-center API failure must not discard freshly read posts.
     try {
@@ -1104,14 +1107,23 @@ async function recordCollectionHealth(snapshot, settings, epoch) {
   }
   const failures = collectorHealth.error === error ? (collectorHealth.failures || 0) + 1 : 1;
   const id = 'collector:direct-x:' + error + ':' + Math.floor(Date.now() / (6 * 3600000));
-  await chrome.storage.local.set({ collectorHealth: { ...collectorHealth, error, failures, failureId: id, checkedAt: Date.now() } });
+  await chrome.storage.local.set({ collectorHealth: { ...collectorHealth, error, failures, failureId: id, checkedAt: Date.now() },
+    pendingNotifications: pendingNotifications.filter(item => !item.id.startsWith('collector:') || item.id === id) });
+  // Replace an obsolete cause instead of leaving a blocked-tab warning visible
+  // or queued after the reader recovers and only some timelines still fail.
+  for (const visibleId of Object.keys(await visibleNotificationsForCleanup())) {
+    if (visibleId.startsWith('collector:') && visibleId !== id) await clearNotificationForCleanup(visibleId);
+  }
+  if (epoch !== stateEpoch) return;
   // A new install awaiting optional access is not a broken connection.
   if (error === 'permission' && !collectorHealth.lastSuccessAt) return;
-  if (failures < 2 && !['tab-blocked', 'login'].includes(error)) return;
+  const replacingFailure = error === 'partial' && Boolean(collectorHealth.error);
+  if (failures < 2 && !['tab-blocked', 'login'].includes(error) && !replacingFailure) return;
   if (notificationHistory[id]) return;
   if (!pendingNotifications.some(item => item.id === id)) await createNotification(id, {
-    title: msg('collectorFailureTitle'),
-    message: msg('collectorFailureMessage', msg('collectorReason_' + error)),
+    title: msg(error === 'partial' ? 'collectorPartialTitle' : 'collectorFailureTitle'),
+    message: error === 'partial' ? msg('collectorPartialMessage') : error === 'tab-blocked' ? msg('collectorTabBlockedMessage') :
+      msg('collectorFailureMessage', msg('collectorReason_' + error)),
     buttons: [{ title: msg('settings') }]
   }, settings, { bypassQuiet: Boolean(publicResumeCheck && settings.notifyPublicOnResume) });
   if ((await chrome.storage.local.get('pendingNotifications')).pendingNotifications?.some(item => item.id === id)) {

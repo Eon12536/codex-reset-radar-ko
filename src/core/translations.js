@@ -1,6 +1,11 @@
 (function initTranslations(root) {
   root.RadarTranslations = Object.freeze({
     en: Object.freeze({
+      collectorTabBlockedMessage: "Close remaining check tabs, then choose 'Resume after closing' in settings. Protected tabs are preserved while cleanup and recovery are retried automatically.",
+      collectorPartialTitle: "Some X news could not be checked",
+      collectorPartialMessage: "Some authors' posts or replies could not be read and are being checked again. Collected news and alerts remain available.",
+      publicCollectionPartial: "Some timelines failed · Checking again automatically",
+      publicCollectionPartialHelp: "Some timelines could not be checked and will be retried automatically. Collected posts are kept.",
       "collectorFailureTitle": "X news collection has stopped",
       "collectorFailureMessage": "{0} New posts cannot be checked. Open settings to check the connection.",
       "collectorReason_permission": "X access permission needs to be checked.",
@@ -43,6 +48,11 @@
       bankedSettingDescription: "Detect new credits in the same account independently of X. The first reading saves a baseline. Quiet hours apply. The popup notice and badge ! last 24 hours after detection.",
     }),
     zh_CN: Object.freeze({
+      collectorTabBlockedMessage: "请关闭剩余的检查标签页，然后在设置中选择“关闭后恢复”。受保护的标签页会保留，同时自动重试清理和恢复。",
+      collectorPartialTitle: "部分 X 消息尚未确认",
+      collectorPartialMessage: "部分作者的帖子或回复未能读取，正在自动重新检查。已收集的消息和提醒仍然保留。",
+      publicCollectionPartial: "部分列表读取失败 · 自动重新检查中",
+      publicCollectionPartialHelp: "部分列表未能确认，将自动重试。已读取的帖子仍然保留。",
       "collectorFailureTitle": "X消息收集已停止",
       "collectorFailureMessage": "{0} 无法检查新帖，请在设置中检查连接。",
       "collectorReason_permission": "需要重新检查X访问权限。",
@@ -277,6 +287,11 @@
       welcomeTitle: "欢迎使用 Codex Reset Radar"
     }),
     ja: Object.freeze({
+      collectorTabBlockedMessage: "残っている確認タブを閉じ、設定の「閉じてから再開」を選んでください。保護されたタブは保持し、整理と復旧を自動で再試行します。",
+      collectorPartialTitle: "Xの一部の投稿を確認できませんでした",
+      collectorPartialMessage: "一部の投稿者の投稿や返信を読めなかったため、自動で再確認します。収集済みの情報と通知は保持します。",
+      publicCollectionPartial: "一部の収集に失敗 · 自動で再確認中",
+      publicCollectionPartialHelp: "一部の一覧を確認できなかったため、自動で再試行します。収集済みの投稿は保持します。",
       "collectorFailureTitle": "Xの取得が停止しています",
       "collectorFailureMessage": "{0} 新しい投稿を確認できません。設定で接続状況を確認してください。",
       "collectorReason_permission": "Xのアクセス権限を再確認してください。",
@@ -322,6 +337,11 @@
       all: "すべて", availableResetCredits: "利用可能なリセットクレジット", basicMode: "基本モード", basicModeHealthy: "基本モード：公開監視は正常です", chatGPTSessionOptional: "ChatGPT サインインセッション（任意、ローカル読み取りのみ）", chatGPTSessionOptionalHelp: "個人クォータとクレジットのアドバイスにのみ使用します。サインアウト中も公開レーダーは動作します。", checkedAt: "確認 {0}", clearDataConfirm: "クォータのスナップショット、信号履歴、通知の重複防止記録を消去しますか？設定は保持されます。", clearLocalData: "ローカルデータを消去", communityExpectedResetAround: "コミュニティ予測：{0} ごろリセット", communitySourceHelp: "コミュニティのクォータ報告を低い重みの参考情報としてのみ使用", confidenceHigh: "高信頼度", confidenceLow: "低信頼度", confidenceMedium: "中信頼度", confidenceThreshold: "信頼度しきい値", confidenceThresholdHelp: "通知を発生させる公開信号を選択", currentQuota: "現在のクォータ", currentSystemTimeZone: "現在のシステムタイムゾーン：{0}", dataSources: "データソース", dateAndWindowForecast: "日付と時間帯の予測", daysAgo: "{0}日前", daysHoursAgo: "{0}日{1}時間前", dismissThisTime: "今回は無視", every15Minutes: "15分ごと", every2Hours: "2時間ごと", every30Minutes: "30分ごと", every60Minutes: "60分ごと", experienceModelMeta: "経験モデル · {0} · {1}", expiryUnknown: "有効期限不明", firstCheckHint: "最初の確認には数秒かかる場合があります", fiveHours: "5時間", followSystem: "システムに従う", forecastCommunity: "次の72時間 ≈{0}% · コミュニティ予測", forecastDisclaimer: "ヒューリスティックな確率であり、OpenAI の計画や約束ではありません", forecastNoSignals: "次の72時間 ≈{0}% · 有効な信号なし", forecastRuleEstimate: "次の72時間 · ルールベースの推定", forecastWeighted: "次の72時間 ≈{0}% · {1}ソースの重み付け", futureResetProbability: "将来のリセット確率", highOnly: "高のみ", historySourceHelp: "検証済みの100万ユーザー単位のマイルストーンとリセット間隔から予測", historySourceTitle: "コミュニティのリセット履歴 · 0.58", hoursAgo: "{0}時間前", hoursMinutesAgo: "{0}時間{1}分前", ianaTimeZone: "IANA タイムゾーン", ianaTimeZoneHelp: "例：Asia/Shanghai、America/Los_Angeles", inDays: "{0}日後", inDaysHours: "{0}日{1}時間後", inHours: "{0}時間後", inHoursMinutes: "{0}時間{1}分後", inMinutes: "{0}分後", invalidTimeZone: "無効なタイムゾーン", justNow: "たった今", lastCheckedAt: "最終確認 {0}", leadSourceHelp: "コミュニティの経験における主要な事前通知ソース", leadSourceTitle: "Codex リードの更新 · 1.00", localDataCleared: "ローカルデータを消去しました", manual: "手動", mediumAndHigh: "中＋高", minutesAgo: "{0}分前", monitor: "監視", monitoring: "監視中", monitoringHealthy: "監視は正常です", monitoringStrategy: "監視戦略", monitoringTargets: "監視対象", nearestCreditExpiry: "最も近いクレジットは{0}に期限切れ · {1}", noActionableSignal: "実行可能な信号はありません", noResetCredits: "利用可能なクレジットはありません", notCheckedYet: "未確認", notificationAndMonitoringSettings: "通知と監視の設定", notificationCreditExpiresMessage: "週間クォータは{0}%残っています。今日まだ長いタスクがある場合は使用を検討してください。", notificationCreditExpiresTitle: "リセットクレジットは{0}に期限切れ", notificationPossibleResetMessage: "信頼度の高い公開信号を検出しました。残りのクォータを先に使い、クレジットを保持してください。", notificationPossibleResetTitle: "Codex クォータは {0} にリセットされる可能性があります", notificationReminderMessage: "1時間前に再通知を選択しました。最新の証拠とアドバイスを確認してください。", notificationReminderTitle: "Codex リセット信号のリマインダー", notifications: "通知", notificationSettings: "通知設定", notificationsOff: "通知オフ", notificationsOn: "通知オン", openSettings: "設定を開く", optionalConnectChatGPT: "任意：ChatGPT に接続", optionalSignInToShow: "任意：サインインして表示", pendingAssessment: "評価待ち", personalDataUnavailable: "個人データを一時的に利用できません", personalQuotaOptional: "個人クォータとリセットクレジット（任意）", personalQuotaOptionalHelp: "ChatGPT にサインインするとクォータ、クレジット、個別のアドバイスを表示します。公開監視には影響しません。", pollingInterval: "確認間隔", pollingIntervalHelp: "ブラウザー実行中に定期的に確認", possibleResetAt: "{0} にリセットの可能性", possibleResetSoon: "まもなくリセットの可能性", possibleResetSoonHelp: "新しい公開信号が信頼度しきい値を満たしたときに通知", privacy: "プライバシー", privacyNote: "♢ トークン、アカウント識別子、使用記録はアップロードしません。アクセストークンはブラウザーセッション中のみ保存され、ブラウザーを閉じると失効します。", publicResetSignals: "公開リセット信号", publicResetSignalsHelp: "公開信号を監視し、可能なリセット時間帯を推定", publicSignalResetSoon: "公開信号はまもなくリセットの可能性を示しています", publicSignalsUnavailable: "公開信号を一時的に利用できません", publicSources: "公開ソース", publicUpdates: "公開更新", quietHours: "通知しない時間", quietHoursHelp: "選択した時間帯の緊急でない通知を減らします", quotaAdvice: "クォータが少ないときのアドバイス", quotaAdviceHelp: "制限中またはクォータが明らかに少ない場合のみ通知", refreshNow: "今すぐ更新", remainingWithReset: "残り{0}% · {1}", remindLater: "後で通知", resetCreditExpiring: "クレジットの期限が間近", resetCreditExpiringHelp: "期限前に使用アドバイスを表示", resetCreditsAvailableCount: "利用可能なクレジット：{0}", resetTimeUnknown: "リセット時刻不明", resetTiming: "{0}にリセット · {1}", retryAfterRefresh: "更新後に再試行", reviewSettings: "設定を確認", saved: "保存済み", saving: "保存中…", scanningPublicSignals: "公開信号をスキャン中", settingsIntro: "公開信号の監視にサインインは不要です。任意のアカウントアドバイスはローカルで計算されます。", settingsSections: "設定セクション", settingsTitle: "Codex Reset Radar 設定", someCreditsNoExpiry: "一部のクレジットには有効期限がありません", sourceCodexLead: "Codex リードの更新", sourceCommunityHistory: "コミュニティのリセット履歴", sourceCustom: "カスタム公開ソース", sourceGitHubCommunity: "OpenAI/Codex GitHub コミュニティ", sourceMeta: "{0} から · {1}", sourceOpenAIStatus: "OpenAI Status", sourcesAndWeights: "ソースと重み", status: "状態", statusSourceHelp: "公式の障害、レート制限の異常、復旧状況", systemTimeZone: "システムタイムゾーン", timeDisplay: "時刻表示", timePending: "時刻確認中", timeSoon: "まもなく", timeUnknown: "時刻不明", timeWindowPending: "時間帯を確認中", timeZone: "タイムゾーン", timezonePlaceholder: "Asia/Tokyo", viewAdvice: "アドバイスを見る", viewEvidence: "証拠を見る", waitingForData: "データ待ち", waitingForSignal: "信号待ち", weekly: "週間", weeklyRemaining: "週間クォータ残り{0}%", weightedPublicSources: "重み付けされた公開ソース：{0}", weightedPublicSources4: "4つの重み付け公開ソース", welcomeHeadline: "クォータのリセット前に信号を確認。", welcomeIntro: "Codex Reset Radar はサインインせずに公開リセット信号を監視します。ChatGPT にサインインすると個人クォータとクレジットのアドバイスも表示できます。", welcomePrivacy: "トークン、アカウント識別子、使用記録はアップロードしません。クレジットを自動使用することもありません。", welcomeStep1Body: "公開レーダー、時間予測、信号通知に ChatGPT へのサインインは不要です。", welcomeStep1Title: "インストール直後から利用可能", welcomeStep2Body: "個人クォータ、クレジット状態、個別のアドバイスが必要な場合のみサインインします。API キーは不要です。", welcomeStep2Title: "任意：ChatGPT にサインイン", welcomeStep3Body: "システム通知、信頼度しきい値、表示タイムゾーンを設定できます。", welcomeStep3Title: "必要に応じて設定", welcomeTitle: "Codex Reset Radar へようこそ"
     }),
     ko: Object.freeze({
+      collectorTabBlockedMessage: "남아 있는 확인 탭을 닫고 설정에서 ‘탭 닫은 후 재개’를 누르세요. 보호된 탭은 유지하며 정리·복구를 자동으로 재시도합니다.",
+      collectorPartialTitle: "X 소식을 일부만 확인했어요",
+      collectorPartialMessage: "일부 작성자의 글·답글을 읽지 못해 자동으로 다시 확인합니다. 읽은 새 소식과 알림은 유지됩니다.",
+      publicCollectionPartial: "일부 수집 실패 · 자동 재확인 중",
+      publicCollectionPartialHelp: "일부 목록을 확인하지 못해 자동으로 재확인합니다. 읽은 글은 유지됩니다.",
       "collectorFailureTitle": "X 소식 수집이 중단됐어요",
       "collectorFailureMessage": "{0} 새 트윗을 확인하지 못하고 있습니다. 설정에서 연결 상태를 확인해 주세요.",
       "collectorReason_permission": "X 접근 권한을 다시 확인해야 합니다.",
@@ -557,6 +577,11 @@
 
     }),
     fr: Object.freeze({
+      collectorTabBlockedMessage: "Fermez les onglets de contrôle restants, puis choisissez « Reprendre après fermeture » dans les paramètres. Les onglets protégés sont conservés pendant les nouvelles tentatives automatiques de nettoyage et de récupération.",
+      collectorPartialTitle: "Certaines actualités X restent à vérifier",
+      collectorPartialMessage: "Certains posts ou réponses n’ont pas pu être lus et seront revérifiés automatiquement. Les actualités et alertes déjà recueillies sont conservées.",
+      publicCollectionPartial: "Échec partiel · Nouvelle vérification automatique",
+      publicCollectionPartialHelp: "Certaines listes n’ont pas pu être vérifiées et seront réessayées automatiquement. Les posts recueillis sont conservés.",
       "collectorFailureTitle": "La collecte X est interrompue",
       "collectorFailureMessage": "{0} Impossible de vérifier les nouveaux posts. Vérifiez la connexion dans les paramètres.",
       "collectorReason_permission": "Vérifiez l’autorisation d’accès à X.",
@@ -791,6 +816,11 @@
       welcomeTitle: "Bienvenue sur Codex Réinitialiser le radar"
     }),
     it: Object.freeze({
+      collectorTabBlockedMessage: "Chiudi le schede di controllo rimaste, poi scegli « Riprendi dopo la chiusura » nelle impostazioni. Le schede protette vengono conservate durante i nuovi tentativi automatici di pulizia e recupero.",
+      collectorPartialTitle: "Alcune notizie di X restano da verificare",
+      collectorPartialMessage: "Non è stato possibile leggere alcuni post o risposte; verranno ricontrollati automaticamente. Le notizie e gli avvisi già raccolti vengono conservati.",
+      publicCollectionPartial: "Raccolta parziale · Ricontrollo automatico",
+      publicCollectionPartialHelp: "Non è stato possibile verificare alcuni elenchi; verranno ricontrollati automaticamente. I post raccolti vengono conservati.",
       "collectorFailureTitle": "La raccolta X è interrotta",
       "collectorFailureMessage": "{0} Impossibile controllare i nuovi post. Verifica la connessione nelle impostazioni.",
       "collectorReason_permission": "Verifica il permesso di accesso a X.",
@@ -1025,6 +1055,11 @@
       welcomeTitle: "Benvenuto in Codex Reset Radar"
     }),
     es: Object.freeze({
+      collectorTabBlockedMessage: "Cierra las pestañas de comprobación restantes y elige « Reanudar tras cerrar » en ajustes. Las pestañas protegidas se conservan mientras se reintenta automáticamente la limpieza y recuperación.",
+      collectorPartialTitle: "Algunas noticias de X siguen sin verificar",
+      collectorPartialMessage: "No se pudieron leer algunas publicaciones o respuestas y se revisarán automáticamente. Las noticias y alertas ya recopiladas se conservan.",
+      publicCollectionPartial: "Recopilación parcial · Revisión automática",
+      publicCollectionPartialHelp: "No se pudieron verificar algunas listas; se revisarán automáticamente. Las publicaciones recopiladas se conservan.",
       "collectorFailureTitle": "Se ha detenido la recopilación de X",
       "collectorFailureMessage": "{0} No se pueden comprobar posts nuevos. Revisa la conexión en ajustes.",
       "collectorReason_permission": "Revisa el permiso de acceso a X.",
@@ -1259,6 +1294,11 @@
       welcomeTitle: "Bienvenido a Codex Restablecer radar"
     }),
     ar: Object.freeze({
+      collectorTabBlockedMessage: "أغلق علامات تبويب الفحص المتبقية، ثم اختر الاستئناف بعد الإغلاق في الإعدادات. تبقى علامات التبويب المحمية محفوظة أثناء إعادة محاولة التنظيف والاستعادة تلقائيًا.",
+      collectorPartialTitle: "تعذر التحقق من بعض أخبار X",
+      collectorPartialMessage: "تعذرت قراءة بعض المنشورات أو الردود وستتم إعادة التحقق تلقائيًا. تبقى الأخبار والتنبيهات التي جُمعت محفوظة.",
+      publicCollectionPartial: "فشل جزئي في الجمع · إعادة تحقق تلقائية",
+      publicCollectionPartialHelp: "تعذر التحقق من بعض القوائم وستتم المحاولة تلقائيًا. تبقى المنشورات التي جُمعت محفوظة.",
       "collectorFailureTitle": "توقف جمع أخبار X",
       "collectorFailureMessage": "{0} تعذر فحص المنشورات الجديدة. تحقق من الاتصال في الإعدادات.",
       "collectorReason_permission": "تحقق من إذن الوصول إلى X.",

@@ -256,10 +256,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 renderAccountConnection();
 
 async function renderPublicConnection() {
-  const data = await chrome.storage.local.get(["settings", "signalSnapshot", "signalError", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"]);
+  const data = await chrome.storage.local.get(["settings", "signalSnapshot", "signalError", "collectorHealth", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"]);
   control("checkTabRecovery").hidden = ![data.directXScanTabV1GuardV1, data.chatPlanScanTabV1GuardV1].some(value => value?.blocked);
   const settings = RadarSettings.sanitize(data.settings);
   const lead = data.signalSnapshot?.leadStatus;
+  const currentError = data.collectorHealth?.error || lead?.directError;
   const status = control("publicConnectionState");
   const allowed = await chrome.permissions.contains({ permissions: ["scripting"], origins: ["https://x.com/*"] });
   control("checkPublic").textContent = allowed ? "공개 소식 확인" : "X 접근 허용·확인";
@@ -267,7 +268,7 @@ async function renderPublicConnection() {
     status.textContent = "OpenAI · Tibo · VB 공개 소식 감시가 꺼져 있습니다.";
   } else if (!allowed) {
     status.textContent = "X 직접 확인은 항상 켜짐입니다. ‘X 접근 허용·확인’을 눌러 처음 한 번 권한을 허용해 주세요. 권한 연결 전에는 공개 피드만 확인합니다.";
-  } else if (lead?.directOk && !lead.directError && !data.signalError) {
+  } else if (lead?.directOk && (!currentError || currentError === 'partial') && !data.signalError) {
     const scan = lead.directScan;
     const reasons = { timeout: '시간 초과', 'no-posts': '본문 미검출', permission: '권한 없음', login: '로그인 필요', 'page-unavailable': '페이지 접근 실패' };
     const stages = { navigation: '페이지 열기', loading: '페이지 로딩', reading: '본문 읽기' };
@@ -276,13 +277,15 @@ async function renderPublicConnection() {
       ? `최근 확인: ${timelineStatus || '이전 수집 방식 · 다시 확인해 주세요'} · 중복 제외 ${scan.posts}개 · 대화 ${scan.conversations}개${scan.conversationFailures ? " · 일부 대화 확인 실패" : ""}${scan.truncated ? ' · 본문 일부 생략 ' + scan.truncated + '개' : ''}. 최근 읽은 글: ${lead.latestPostAt ? RadarTime.formatDateTime(lead.latestPostAt, RadarTime.resolveTimeZone(settings)) : '미확인'}. 전체 글 수집을 보장하지 않으며 리셋 관련 소식만 팝업에 표시합니다.`
       : "이전 수집 기록입니다. 공개 소식 확인을 눌러 새 답글 수집 결과를 확인하세요.";
     if (scan?.contextPending) status.textContent += ` 답글 문맥 ${scan.contextPending}개는 다음 조회에서 이어서 확인합니다.`;
+    if (currentError === 'partial') status.textContent = msg('publicCollectionPartialHelp') + ' ' + status.textContent;
   } else {
     const reason = { "tab-blocked": msg("checkTabsRecoveryHelp"), permission: "X 접근 권한을 다시 확인하려면 ‘공개 소식 확인’을 눌러 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
-    status.textContent = reason[lead?.directError] || "아직 답글 직접 수집을 확인하지 못했습니다. 공개 소식 확인을 눌러 주세요.";
+    status.textContent = currentError === 'partial' ? msg('publicCollectionPartialHelp') :
+      reason[currentError] || "아직 답글 직접 수집을 확인하지 못했습니다. 공개 소식 확인을 눌러 주세요.";
   }
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && ["signalSnapshot", "signalError", "settings", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"].some(key => key in changes) && !control("checkPublic").disabled) renderPublicConnection();
+  if (area === "local" && ["signalSnapshot", "signalError", "collectorHealth", "settings", "directXScanTabV1GuardV1", "chatPlanScanTabV1GuardV1"].some(key => key in changes) && !control("checkPublic").disabled) renderPublicConnection();
 });
 renderPublicConnection();
 

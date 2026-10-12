@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Codex 리셋 레이더 · 한국어
 
-> Last Updated: 2026-10-11 · Version: 0.2.82 · Draft, Chrome Web Store 미제출
+> Last Updated: 2026-10-13 · Version: 0.2.83 · Draft, Chrome Web Store 미제출
 > GoogleChrome/modern-web-guidance의 chromewebstore-template.md 형식에 따라 작성. 실제 설정은 manifest.json, 데이터 처리 상세는 PRIVACY.md 기준.
 
 ## Store Listing
@@ -90,6 +90,8 @@ OpenAI·Tibo·VB의 공개 리셋 예고와 완료 소식을 표시합니다. �
 
 0.2.82부터 방해 금지는 기본 꺼짐, 후보 알림과 Codex 기준 로컬 집계는 기본 켜짐입니다. 기존 설치의 세 설정도 한 번 전환하며 적용 여부를 로컬에 보관합니다. 이후 사용자 선택은 재시작·데이터 지우기에도 유지합니다. 계정 조회·Chat 연결·기록 동기화 동의를 자동으로 켜지 않습니다.
 
+0.2.83은 기존 로컬 수집 진단의 일부 목록 실패 분류와 경고 교체를 보완합니다. 새로운 데이터 수집 범위·권한·전송 대상을 추가하지 않습니다. 읽은 공개 소식과 알림은 유지합니다.
+
 ## Distribution
 
 **Visibility**: 공개 GitHub ZIP 배포. Chrome Web Store는 미제출.
@@ -110,6 +112,7 @@ OpenAI·Tibo·VB의 공개 리셋 예고와 완료 소식을 표시합니다. �
 
 | Version | Date | Changes | Status |
 |---|---|---|---|
+| 0.2.83 | 2026-10-13 | 부분 수집 실패를 정상 복구와 구분, 경고 원인 교체와 탭 차단 복구 안내 | Draft (Chrome Web Store 미제출) |
 | 0.2.82 | 2026-10-11 | 요청한 세 기본값과 기존 설치의 일회성 설정 전환 | Draft (Chrome Web Store 미제출) |
 | 0.2.81 | 2026-10-11 | 업데이트 후 수집 차단 복구, 복구 후 새 글 확인·알림 재개 | Draft (Chrome Web Store 미제출) |
 
@@ -120,6 +123,8 @@ OpenAI·Tibo·VB의 공개 리셋 예고와 완료 소식을 표시합니다. �
 GitHub ZIP은 수동 덮어쓰기와 확장 새로고침이 필요합니다. X 접근·로그인·화면 변경이나 외부 피드 지연은 수집에 영향을 줄 수 있습니다. 개인 계정 조회는 비공식 읽기 경로의 변경에 영향을 받을 수 있습니다. Chat 잔여량은 관측·동기화한 기록의 추정입니다. Chrome 알림 API 접수는 실제 Windows 배너·소리를 보장하지 않습니다.
 
 이번 환경에서는 Chrome 내부 확장 화면과 서비스 워커에 접근할 수 없습니다. 자동 테스트는 Chrome API 모의 실행이며 실제 재부팅·절전 복귀·Windows 배너 검증으로 표시하지 않습니다. 원격 디버깅을 임의로 활성화하지 않았습니다. 제출 전에 실제 브라우저 검증, 최신 스크린샷, 자산 권리, 게시자 연락처를 확인해야 합니다.
+
+0.2.83의 팝업·설정 일부 수집 실패 문구와 작성자별 실패 내역은 실제 Chrome의 로컬 미리보기에서 예시 데이터로 확인했습니다. 실행 중인 설치본·서비스 워커·Windows 알림 검증을 대신하지 않습니다.
 
 ### Rejection History
 

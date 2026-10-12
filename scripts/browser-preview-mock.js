@@ -403,6 +403,16 @@
     );
   };
 
+  if (mode === 'partialCollection') {
+    state.settings.monitorDirectX = true;
+    state.collectorHealth = { error: 'partial', failures: 2, checkedAt: now };
+    state.signalSnapshot.leadStatus = { state: 'ok', latestPostAt: now - 60000, directEnabled: true,
+      directOk: true, directError: 'partial', collectionVerified: false,
+      directScan: { posts: 12, conversations: 0, timelines: ['posts', 'replies'].flatMap(kind =>
+        ['thsottiaux', 'reach_vb', 'openai'].map((author, index) => ({ author, kind,
+          ok: kind === 'posts' && index === 0, posts: kind === 'posts' && index === 0 ? 12 : 0,
+          error: 'timeout', stage: 'reading', stopReason: 'seven-days' }))) } };
+  }
   globalThis.chrome = {
     i18n: {
       getUILanguage: () => previewLanguage,
@@ -502,10 +512,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.82", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.83", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.82", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.83", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {
