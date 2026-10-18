@@ -413,6 +413,58 @@
           ok: kind === 'posts' && index === 0, posts: kind === 'posts' && index === 0 ? 12 : 0,
           error: 'timeout', stage: 'reading', stopReason: 'seven-days' }))) } };
   }
+  if (['bodyUnavailable', 'oct14Recovered'].includes(mode)) {
+    const recovered = mode === 'oct14Recovered';
+    const source = { id: 'codex-lead', weight: 1 };
+    const parent = { id: '2109812360596865224', author: 'thsottiaux', source,
+      text: 'Global reset landing by EOD PST time. Enjoy', createdAt: '2026-10-13T01:03:59Z',
+      url: 'https://x.com/thsottiaux/status/2109812360596865224',
+      assessment: { actionable: true, confidence: 'high', eventAt: null, untimedPromise: true } };
+    const completion = { id: '2109873287853707513', author: 'thsottiaux', source,
+      text: "What would you like with your side of reset? It's done.", createdAt: '2026-10-13T05:06:06Z',
+      url: 'https://x.com/thsottiaux/status/2109873287853707513',
+      replyContext: { ...parent, relation: 'quoted-post', targetId: '2109873287853707513' } };
+    const old = { id: '2108090000000000000', author: 'thsottiaux', source,
+      text: 'Banked resets have been granted to everyone.', createdAt: '2026-10-08T03:44:00Z',
+      url: 'https://x.com/thsottiaux/status/2108090000000000000' };
+    state.settings.monitorDirectX = true;
+    state.collectorHealth = { error: recovered ? null : 'body-unavailable', checkedAt: now, failures: recovered ? 0 : 2 };
+    state.signalSnapshot = { checkedAt: now, activeSignals: recovered ? [parent] : [], reports: recovered ? [completion, old] : [old],
+      leadStatus: { state: 'ok', latestPostAt: Date.parse('2026-10-13T06:21:26Z'), directOk: true,
+        directError: recovered ? null : 'body-unavailable', collectionVerified: recovered,
+        directScan: { posts: 35, conversations: 0, bodyUnavailableCount: recovered ? 0 : 1,
+          timelines: ['posts', 'replies'].flatMap(kind => ['thsottiaux','reach_vb','openai']
+            .map(author => ({ author, kind, ok: true, posts: 6, stopReason: 'seven-days' }))) } } };
+    state.hintSnapshot = { events: [], items: recovered ? [{ id: '2109812216212099456', author: 'thsottiaux', source,
+      text: 'Day 8/ Reset', createdAt: '2026-10-13T01:03:25Z', url: 'https://x.com/thsottiaux/status/2109812216212099456' }] : [] };
+  }
+  if (['oct18Recovered', 'contextQueue', 'checkpointFailure'].includes(mode)) {
+    const source = { id: 'codex-lead', weight: 1 };
+    const parent = { id: '2111492673890824348', author: 'thsottiaux', source,
+      text: 'Day 13/ Le limit reset', createdAt: '2026-10-17T16:20:57Z',
+      url: 'https://x.com/thsottiaux/status/2111492673890824348' };
+    const reply = { id: '2111492738025959922', author: 'thsottiaux', source, isReply: true,
+      text: 'Landing sometime today by EOD PST', createdAt: '2026-10-17T16:21:13Z',
+      url: 'https://x.com/thsottiaux/status/2111492738025959922',
+      replyContext: { ...parent, relation: 'conversation-before', targetId: '2111492738025959922' },
+      assessment: { actionable: true, confidence: 'high', eventAt: null, untimedPromise: true } };
+    state.signalSnapshot = { checkedAt: now, signal: reply, activeSignals: [reply], reports: [],
+      leadStatus: { state: 'ok', latestPostAt: Date.parse(reply.createdAt), directOk: true, collectionVerified: true,
+        directScan: { posts: 12, conversations: 1, timelines: ['posts', 'replies'].flatMap(kind =>
+          ['thsottiaux', 'reach_vb', 'openai'].map(author => ({ author, kind, ok: true, posts: 2, stopReason: 'seven-days' }))) } } };
+    state.hintSnapshot = { events: [], items: [parent] };
+    state.collectorHealth = { error: null, checkedAt: now, failures: 0 };
+    state.signalSnapshot.leadStatus.classification = { reviewed: 12, signals: 1, hints: 1, reports: 0, other: 10 };
+    state.signalSnapshot.leadStatus.directScan.retainedPosts = 4;
+    if (mode === 'contextQueue') {
+      state.signalSnapshot.leadStatus.directScan.contextPending = 4;
+      state.signalSnapshot.leadStatus.collectionVerified = false;
+    }
+    if (mode === 'checkpointFailure') {
+      state.signalSnapshot.leadStatus.directScan.checkpointError = true;
+      state.signalSnapshot.leadStatus.collectionVerified = false;
+    }
+  }
   globalThis.chrome = {
     i18n: {
       getUILanguage: () => previewLanguage,
@@ -512,10 +564,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.83", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.90", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.83", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.90", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {
@@ -526,7 +578,10 @@
           const account = !state.settings.monitorAccount ? { ok: true, skipped: true }
             : state.accountState?.status === "signedOut" ? { ok: false, reason: "signedOut" }
             : state.accountState?.status === "error" ? { ok: false, reason: state.accountState.reason || "unavailable" } : { ok: true };
-          return message.type === "REFRESH_ACCOUNT" ? account : { ok: true, account, signals: { ok: true } };
+          if (message.type === "REFRESH_NOW") await new Promise(resolve => setTimeout(resolve, 900));
+          const directError = state.collectorHealth?.error || state.signalSnapshot?.leadStatus?.directError;
+          return message.type === "REFRESH_ACCOUNT" ? account : { ok: !directError, account,
+            signals: { ok: !directError, directError, leadVerified: !directError } };
         }
         if (message?.type === "SAVE_THEME") {
           if (mode === "themeError") return { ok: false };

@@ -119,6 +119,32 @@ function renderPinnedEvents(data, settings, entries) {
   return { cards: events.length, news: events.filter(event => !event.officialOnly).length };
 }
 
+function collectionCheck(data, settings) {
+  const snapshot = data.signalSnapshot;
+  const health = data.collectorHealth;
+  const validAt = at => Number.isFinite(at) && at > 0 ? at : 0;
+  const checkedAt = Math.max(validAt(snapshot?.checkedAt), validAt(health?.checkedAt), validAt(data.signalError?.at));
+  const directError = validAt(health?.checkedAt) >= validAt(snapshot?.checkedAt) && health
+    ? health.error : snapshot?.leadStatus?.directError;
+  const enabled = settings.monitorSignals;
+  const directEnabled = enabled && settings.monitorLeadSource;
+  return { checkedAt, error: enabled ? (directEnabled && directError) || (data.signalError ? 'sources' : null) : null,
+    incomplete: directEnabled && Boolean(snapshot && (snapshot.leadStatus?.collectionVerified === false ||
+      ['stale', 'unavailable'].includes(snapshot.leadStatus?.state) || settings.monitorDirectX && !snapshot.leadStatus?.directOk)),
+    lastSuccessAt: validAt(health?.lastSuccessAt), enabled };
+}
+
+function collectionFailures(scan) {
+  const reasons = ['permission', 'login', 'tab-blocked', 'timeout', 'no-posts', 'page-unavailable', 'body-unavailable'];
+  const stages = { navigation: 'collectorStageNavigation', loading: 'collectorStageLoading', reading: 'collectorStageReading' };
+  return (scan?.timelines || []).filter(timeline => timeline.ok === false).slice(0, 6).map(timeline => {
+    const kind = msg(timeline.kind === 'replies' ? 'collectorReplies' : 'collectorPosts');
+    const stage = stages[timeline.stage] ? ' / ' + msg(stages[timeline.stage]) : '';
+    const reason = reasons.includes(timeline.error) ? msg('collectorReason_' + timeline.error) : msg('publicCollectionPartialHelp');
+    return RadarSignals.authorName(timeline) + ' ' + kind + stage + ': ' + reason;
+  }).join(' · ');
+}
+
 function renderNews(data, settings) {
   const allEntries = RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings);
   const pinnedCount = renderPinnedEvents(data, settings, allEntries);
@@ -130,18 +156,27 @@ function renderNews(data, settings) {
   $("signalTitle").textContent = entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
   $("newsCount").textContent = entries.length || pinnedCount.news ? (entries.length + pinnedCount.news) + "건" : !settings.monitorSignals ? "꺼짐" : "";
   const scan = lead?.directScan;
+  const collection = collectionCheck(data, settings);
   const both = scan?.timelines?.length === 6 && scan.timelines.every(t => t.ok);
-  const freshness = !settings.monitorSignals || !settings.monitorLeadSource ? 'OpenAI · Tibo · VB 수집 꺼짐' : data.signalError ? '수집 오류 · 보관된 소식' :
-    !settings.monitorDirectX ? (lead?.state === 'stale' ? '최신 글 수집을 확인해 주세요 · ' : '') + '답글 직접 확인 꺼짐 · 설정에서 연결' : !lead?.directOk ? 'X 수집 확인 필요 · 설정 확인' : lead.directError === 'partial' ? msg('publicCollectionPartial') : lead.directError ? '탭 정리 재시도 중 · 수집 소식 유지' :
+  const partial = [msg('publicCollectionPartial'), collectionFailures(scan)].filter(Boolean).join(' · ');
+  const freshness = !collection.enabled ? 'OpenAI · Tibo · VB 수집 꺼짐' : collection.error ? (collection.error === 'partial' ? partial :
+    msg('collectorReason_' + collection.error, undefined, '소식 수집 실패 · 설정에서 연결 상태를 확인해 주세요.')) :
+    !settings.monitorLeadSource ? 'OpenAI · Tibo · VB 수집 꺼짐' :
+    !settings.monitorDirectX ? (lead?.state === 'stale' ? '최신 글 수집을 확인해 주세요 · ' : '') + '답글 직접 확인 꺼짐 · 설정에서 연결' : !lead?.directOk ? 'X 수집 확인 필요 · 설정 확인' : lead.directError === 'partial' ? partial : lead.directError ? '탭 정리 재시도 중 · 수집 소식 유지' :
     !scan?.timelines || scan.timelines.length < 6 ? '이전 수집 기록 · 지금 확인을 눌러 주세요' : !both ? scan.timelines.filter(t => !t.ok).map(t => (RadarSignals.authorName(t) + ' ') + (t.kind === 'posts' ? '원글' : '답글') + ' 수집 실패').join(' · ') + ' · 설정 확인' : `원글·답글 ${scan.posts}개 확인` + (lead.latestPostAt ? ' · 최근 글 ' + RadarTime.formatLocalized(new Date(lead.latestPostAt), {
       timeZone, month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h12'
     }) : '');
   $("newsFreshness").textContent = freshness;
-  if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX && lead?.directOk && !lead.directError && !data.signalError && both && lead.collectionVerified === false) {
+  if (collection.enabled && !collection.error && settings.monitorDirectX && lead?.directOk && both && lead.collectionVerified === false) {
     $("newsFreshness").textContent = scan.contextPending ? `답글 문맥 ${scan.contextPending}개 확인 대기 · 일부 수집` : '일부 수집 · 재확인 필요';
   }
   $("newsFreshness").title = (lead?.latestPostAt ? '최근 수집 글: ' + RadarTime.formatDateTime(lead.latestPostAt, timeZone) : '최근 수집 글 없음') +
     (data.signalSnapshot?.checkedAt ? ' / 조회: ' + RadarTime.formatDateTime(data.signalSnapshot.checkedAt, timeZone) : '') + ' · OpenAI · Tibo · VB의 리셋·출시·행사 관련 글을 표시합니다.';
+  if (lead?.classification) {
+    const c = lead.classification;
+    $("newsFreshness").title += ' · ' + msg('publicCollectionProgress', [c.signals, c.hints, c.reports, c.other]);
+  }
+  if (scan?.checkpointError) $("newsFreshness").textContent = msg('publicCollectionCheckpointHelp');
   $("newsEmpty").hidden = Boolean(entries.length || pinnedCount.cards);
   $("newsEmpty").textContent = !settings.monitorSignals ? "소식 확인 꺼짐" :
     data.signalError ? "소식을 불러오지 못했어요" : lead && ["stale", "unavailable"].includes(lead.state) ? "최신 글 수집을 확인해 주세요" : "새 리셋·출시·행사 소식이 없어요";
@@ -429,6 +464,7 @@ async function render() {
     "accountState",
     "accountError",
     "signalError",
+    "collectorHealth",
     "notificationDelivery", "chatAccount", "chatCounters", "chatCounterError"
   ]);
   if (revision !== renderRevision) return;
@@ -453,7 +489,8 @@ async function render() {
     credits: settings.monitorAccount ? data.accountSnapshot?.credits : null,
     signal: settings.monitorSignals && RadarSignals.isActive(data.signalSnapshot?.signal) ? data.signalSnapshot.signal : null
   }));
-  const radarHasError = Boolean(data.signalError);
+  const collection = collectionCheck(data, settings);
+  const radarHasError = Boolean(collection.error || collection.incomplete);
   const enabled = settings.monitorSignals || settings.monitorAccount;
   $("healthDot").className = `health-dot ${!enabled ? "" : radarHasError ? "warn" : data.lastCheckedAt ? "ok" : ""}`;
   $("healthDot").title = !enabled ? "조회 꺼짐" : radarHasError
@@ -469,9 +506,12 @@ async function render() {
     $("healthDot").className = "health-dot warn";
     $("healthDot").title = "설정 → 알림 → 테스트 알림에서 확인하세요.";
   }
-  $("lastChecked").textContent = data.lastCheckedAt
-    ? msg("checkedAt", RadarTime.formatTime(data.lastCheckedAt, RadarTime.resolveTimeZone(settings)), "Checked $1")
-    : msg("notCheckedYet", undefined, "Not checked yet");
+  $("lastChecked").textContent = collection.checkedAt
+    ? msg("scanAttemptAt", RadarTime.formatDateTime(collection.checkedAt, RadarTime.resolveTimeZone(settings)), "Scan attempt: $1")
+    : msg("scanNotChecked", undefined, "No news scan yet");
+  $("lastChecked").title = collection.lastSuccessAt
+    ? msg("scanSuccessAt", RadarTime.formatDateTime(collection.lastSuccessAt, RadarTime.resolveTimeZone(settings)), "Last X response: $1") : '';
+  $("scanControls").dataset.state = $("refreshButton").disabled ? 'loading' : !collection.enabled ? 'idle' : radarHasError ? 'error' : collection.checkedAt ? 'success' : 'idle';
 }
 
 $("openSettings").addEventListener("click", () => chrome.runtime.openOptionsPage());
@@ -574,12 +614,13 @@ $("refreshButton").addEventListener("click", async () => {
   const button = $("refreshButton");
   button.classList.add("busy");
   button.disabled = true;
+  $("scanControls").dataset.state = 'loading';
   $("refreshStatus").textContent = "잔여량·소식·요금제·기록 확인 중…";
   try {
     const result = await chrome.runtime.sendMessage({ type: "REFRESH_NOW" });
     await render();
-    $("refreshStatus").textContent = result?.signals?.leadVerified === false && result?.account?.ok
-      ? "잔여량은 확인했지만 최신 Tibo 글 수집은 확인하지 못했어요." : RadarAccount.refreshMessage(result);
+    $("refreshStatus").textContent = result?.signals?.directError || result?.signals?.leadVerified === false
+      ? "X 글 수집을 완료하지 못했어요. 위의 수집 상태를 확인해 주세요." : RadarAccount.refreshMessage(result);
     if (result?.chatPlan?.ok === false) $("refreshStatus").textContent += ' 요금제 확인은 완료하지 못했어요.';
     if (result?.chatHistory?.ok === false) $("refreshStatus").textContent += ' Chat 기록 동기화는 다시 확인해 주세요.';
   } catch {
@@ -587,6 +628,7 @@ $("refreshButton").addEventListener("click", async () => {
   } finally {
     button.classList.remove("busy");
     button.disabled = false;
+    await render();
   }
 });
 

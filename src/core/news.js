@@ -105,6 +105,44 @@
   const clockLabel = p => root.RadarTime.formatTime(wallEpoch(p), 'UTC', locale());
   const dateLabel = (p, year) => locale() !== 'ko-KR' ? new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', month: 'short', day: 'numeric', weekday: 'short', ...(year ? {year: 'numeric'} : {}) }).format(new Date(wallEpoch(p))) : `${year ? p.year + '년 ' : ''}${p.month}/${p.day}(${KOREAN_DAYS[new Date(wallEpoch(p)).getUTCDay()]})`;
 
+  function endOfDayDeadline(text, item, target) {
+    const matches = [...text.matchAll(/\b(?:by|before)\s+(?:EOD|(?:the\s+)?end\s+of\s+(?:the\s+)?day)\b/ig)];
+    if (matches.length !== 1) return null;
+    if (/\d{1,2}:\d{2}/.test(text.replace(/\b(?:UTC|GMT)\s*[+-]\d{1,2}(?::?\d{2})?\b/ig, ''))) return null;
+    const clause = text.split(/(?<=[.!?;])\s+|\n/).find(part => part.includes(matches[0][0])) || '';
+    // A feedback deadline in another sentence is not a reset deadline. Keep
+    // business-day language and competing dates conservative rather than
+    // manufacturing either an execution time or a business closing hour.
+    if (!/\b(?:resets?|launch|release|ship|rollout|landing)\b/i.test(clause) ||
+        /\b(?:no|not|never|won't|will not|maybe|might|could|if|cancelled|canceled|business|working|next week|after|until|between)\b|\?/i.test(text)) return null;
+    const dates = [...text.matchAll(/\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}\/\d{1,2}(?:\/20\d{2})?\b|\b(?:Jan\w*|Feb\w*|Mar\w*|Apr\w*|May|Jun\w*|Jul\w*|Aug\w*|Sep\w*|Oct\w*|Nov\w*|Dec\w*)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan\w*|Feb\w*|Mar\w*|Apr\w*|May|Jun\w*|Jul\w*|Aug\w*|Sep\w*|Oct\w*|Nov\w*|Dec\w*)\.?(?:,?\s+20\d{2})?\b|\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|today|tonight|tomorrow|yesterday|this evening)\b/ig)];
+    if (dates.length > 1) return null;
+    const ko = locale() === 'ko-KR';
+    const unresolved = reason => ({ text: ko ? 'EOD 기한 · 날짜·시간대 미정' : 'EOD deadline · Date/time zone unconfirmed', detail: reason });
+    const zone = sourceZone(text.replace(/\bEOD\b/ig, ''), item);
+    if (!zone) return unresolved('하루 종료 기한은 있으나 시간대를 확정할 수 없어 변환하지 않았습니다.');
+    const publication = root.RadarTime.parseTimestamp(item.createdAt);
+    const anchor = publication === null ? null : parts(publication, zone);
+    const day = dates.length ? calendar(text, anchor) : anchor && { ...anchor, inferred: true };
+    if (!day) return unresolved('하루 종료 기한은 있으나 게시일 또는 원문 날짜를 확인할 수 없어 변환하지 않았습니다.');
+    const tomorrow = parts(wallEpoch({ ...day, hour: 0, minute: 0 }) + DAY_MS, { offset: 0 });
+    const instants = wallInstants(tomorrow, zone);
+    if (instants.length !== 1) return unresolved('해당 날짜의 종료 경계를 하나의 시각으로 확정할 수 없습니다.');
+    const local = parts(instants[0], target);
+    const showYear = day.year !== local.year || (anchor && day.year !== anchor.year);
+    const assumed = zone.assumed ? (ko ? ' · 시간대 추정' : ' · Assumed zone') : '';
+    return {
+      text: ko ? `${zone.label} ${dateLabel(day, showYear)} 하루 종료까지\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)} 전 · 기한${assumed}` :
+        `${zone.label} ${dateLabel(day, showYear)} · By end of day\n${target.label} ${dateLabel(local, showYear)} · Before ${clockLabel(local)} · Deadline${assumed}`,
+      detail: (ko ? 'EOD는 해당 달력일이 끝나는 경계로 환산한 기한이며 정확한 리셋·출시 실행 시각이나 실행 확정이 아닙니다. ' :
+        'EOD is shown as the calendar-day boundary, not an exact or confirmed reset/release execution time. ') +
+        (day.inferred ? (ko ? '날짜·연도는 원문 시간대의 게시일 기준입니다. ' : 'Date/year is anchored to publication in the source zone. ') : '') +
+        (zone.assumed ? (ko ? '시간대는 Tibo의 공개 활동 지역 미 서부로 추정했습니다. ' : 'The source zone is assumed from Tibo’s public US Pacific location. ') : '') +
+        (zone.label === 'PST' ? (ko ? '원문 PST(UTC−8)를 그대로 적용했으며 서머타임 PT로 바꾸지 않았습니다.' : 'Literal PST (UTC−8) is preserved, not daylight-saving PT.') : `${zone.label} → ${target.label} (${target.zone}).`),
+      deadlineAt: instants[0], assumedZone: Boolean(zone.assumed), dateInferred: Boolean(day.inferred)
+    };
+  }
+
   function schedule(item) {
     const target = root.RadarTime.countryZone();
     const text = String(item.text || '').replace(/[’‘]/g, "'");
@@ -113,6 +151,8 @@
     const clocks24 = clocks.length ? [] : [...text.replace(/\b(?:UTC|GMT)\s*[+-]\d{1,2}(?::?\d{2})?\b/ig, '')
       .matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?![\w:])/g)];
     if (!clocks.length && !clocks24.length) {
+      const deadline = endOfDayDeadline(text, item, target);
+      if (deadline) return deadline;
       const zone = sourceZone(text, item);
       const dayOnly = raw && !raw.includes('아님') && /\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|today|tonight|tomorrow)\b/i.test(text);
       return { text: dayOnly && zone ? `${raw} · ${zone.label}${zone.assumed ? ' 추정' : ''}\n${target.label} ${locale() === 'ko-KR' ? '시각 미정' : 'Time unconfirmed'}` : raw,
@@ -224,8 +264,11 @@
 
   function describe(item, key) {
     const target = root.RadarTime.countryZone();
-    const discussion = ['reset-poll', 'reset-choice'].includes(item.assessment?.rule);
-    const explicit = !discussion && /\breset(?:s|ting)?\b/i.test(item.text);
+    const discussion = ['reset-poll', 'reset-choice', 'reset-short'].includes(item.assessment?.rule);
+    const explicit = !discussion && (/\breset(?:s|ting)?\b/i.test(item.text) ||
+      item.assessment?.actionable === true && root.RadarSignals.classify(item, {
+        now: root.RadarTime.parseTimestamp(item.createdAt) ?? Date.now()
+      }).actionable);
     const timed = ['product-time', 'schedule-time'].includes(item.assessment?.rule);
     const reset = explicit || item.assessment?.report || item.assessment?.candidate && !item.assessment.topic && !timed;
     const event = reset ? null : root.RadarEvents?.resolve(item);

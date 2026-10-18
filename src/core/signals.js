@@ -33,6 +33,12 @@
     return terms.some((term) => text.includes(term));
   }
 
+  function hasFutureTiming(text) {
+    // End-of-day is a delivery deadline, not an exact execution hour. Match
+    // words rather than the substring "eod" inside an unrelated word.
+    return includesAny(text, FUTURE_TERMS) || /\b(?:by|before) (?:eod|(?:the )?end of (?:the )?day)\b/.test(text);
+  }
+
   // Rules curated from supplied short excerpts, not a trained model or verified
   // reset history. Keep future event labels and personal telemetry out of input.
   const UNRELATED = /\b(?:git|password|database|workspace|config|cache|claude|gemini|hoodies?|swag|merch(?:andise)?|door handle|giveaway|winners?|fans?)\b/;
@@ -57,6 +63,9 @@
       return typeof label === 'string' && label.trim() ? [label.trim().slice(0, 160)] : [];
     }) : [];
   }
+  function resetHeadline(text) {
+    return /^day\s+[1-9]\d{0,2}\s*[/:–—-]\s*(?:global\s+|(?:le\s+)?(?:(?:usage|weekly|rate)\s+)?limits?\s+)?reset[.!]*$/i.test(String(text || '').trim());
+  }
   function resetDiscussion(item) {
     if (!isLead(item)) return null;
     const text = normalizedText(item);
@@ -66,6 +75,10 @@
       /\b(?:yesterday|last (?:year|month|week)|(?:years?|months?) ago|previous|recap)\b/.test(text)) return null;
     if (choices.length >= 2 && choices.some(choice => /\b(?:needs?|want(?:s)?|should|time for) (?:a |another |the )?reset\b/.test(choice) && !isNegated(choice)))
       return { rule: 'reset-poll', reason: '리셋 필요 여부를 묻는 설문 · 지급·실행 약속은 아님' };
+    // Numbered rollout headlines omit a verb. Surface their reset wording
+    // without inventing a promise, completed reset, reset kind or clock time.
+    if (!item.truncated && resetHeadline(text))
+      return { rule: 'reset-short', reason: '일차별 소식에 리셋을 짧게 언급 · 실행 여부·시각 미확정' };
     if (/\b(?:updates?|releases?|features?|ships?) or (?:a |another |the )?reset\b/.test(text))
       return { rule: 'reset-choice', reason: '업데이트와 리셋을 선택지로 언급 · 실행 여부·시각 미확정' };
     return null;
@@ -81,7 +94,25 @@
       !/\b(?:last|yesterday|ago|cancelled|canceled|delivered|broke|withdrawn|cannot|can't|won't|no longer)\b/.test(normalizedText(item));
   }
 
+  function resetTimingReply(item, text) {
+    // A short delivery reply can name only its deadline. Borrow the subject
+    // solely from the same author's identified, preceding reset headline on
+    // this conversation page; timeline adjacency is insufficient evidence.
+    const parent = item.replyContext;
+    const parentAt = root.RadarTime?.parseTimestamp?.(parent?.createdAt);
+    const itemAt = root.RadarTime?.parseTimestamp?.(item.createdAt);
+    const author = value => String(value || '').replace(/^@/, '').toLowerCase();
+    const linkedHeadline = isLead(item) && !item.truncated && !parent?.truncated &&
+      parent?.relation === 'conversation-before' && parent.targetId === item.id &&
+      referenceId(parent.id) && parent.id !== item.id && author(parent.author) === author(item.author) &&
+      parent.url === `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` &&
+      Number.isFinite(parentAt) && Number.isFinite(itemAt) && parentAt < itemAt && itemAt - parentAt <= 7 * 86400000 &&
+      resetHeadline(parent.text);
+    return linkedHeadline && /^(?:landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst|est|edt|et))?(?: time)?$/.test(text);
+  }
+
   function leadResetAnnouncement(item, text) {
+    if (resetTimingReply(item, text)) return true;
     // Monitored authors often omit "Codex limits" in a short follow-up.
     // A direct forward-looking reset statement supplies that missing context;
     // it does not identify the reset kind or give an exact execution time.
@@ -89,7 +120,7 @@
       !/\b(?:was|were|had|did|not|never|happened|recap|previous)\b/.test(text);
     return isLead(item) &&
       (/\bresets? (?:are |is |will be )?(?:coming|on the way|planned|scheduled|due|land(?:ing|s)|arriv(?:ing|es)|happening|rolling out)\b/.test(text) || datedReset) &&
-      includesAny(text, FUTURE_TERMS) &&
+      hasFutureTiming(text) &&
       !/\b(?:banked|credits?|heard|hear|rumou?rs?|apparently|reportedly|said|says|last|yesterday|ago|cancelled|canceled)\b/.test(normalizedText(item)) &&
       !/["“”]/.test(String(item.text || ''));
   }
@@ -214,7 +245,7 @@
     // into an upcoming one. Qualifiers/questions must not gain a guessed ETA.
     const futureClauses = clauses(lower).filter(part =>
       (includesAny(part, RESET_TERMS) || leadResetPromise(item, part) || leadResetAnnouncement(item, part) || DIRECT_PROMISE.test(part)) &&
-      (includesAny(part, FUTURE_TERMS) || DIRECT_PROMISE.test(part))
+      (hasFutureTiming(part) || DIRECT_PROMISE.test(part))
       && !isCompleted(part) && !isNegated(part) && !SPECULATIVE.test(part)
     );
     const qualified = QUALIFIED_TIME.test(lower) || SPECULATIVE.test(lower);
@@ -223,7 +254,7 @@
     const shortAnnouncement = Boolean(futureText) && leadResetAnnouncement(item, futureText);
     const hasQuota = includesAny(lower, QUOTA_TERMS) || promised || shortAnnouncement || isLead(item) && DIRECT_PROMISE.test(futureText);
     const hasReset = includesAny(lower, RESET_TERMS) || promised || shortAnnouncement || DIRECT_PROMISE.test(futureText);
-    const hasFuture = includesAny(lower, FUTURE_TERMS) || DIRECT_PROMISE.test(futureText);
+    const hasFuture = hasFutureTiming(lower) || DIRECT_PROMISE.test(futureText);
     const completed = !futureText && (isCompleted(lower) || includesAny(lower, COMPLETE_TERMS));
     let score = 0;
     if (hasQuota) score += 3;
@@ -231,7 +262,9 @@
     if (hasFuture) score += 2;
     if (/we|we'll|we will|i will|planning|计划|我们/.test(lower)) score += 1;
     if (completed) score -= 3;
-    if (item?.isReply) score -= 1;
+    // An authenticated self-reply supplies its own missing subject; it is not
+    // the uncertain third-party reply to which the generic penalty applies.
+    if (item?.isReply && !resetTimingReply(item, futureText)) score -= 1;
     const untimedPromise = shortAnnouncement || Boolean(futureText) && DIRECT_PROMISE.test(futureText) && !includesAny(futureText, FUTURE_TERMS);
     const eventAt = futureText && !untimedPromise ? root.RadarTime?.parseTimestamp?.(item?.eventAtHint) || approximateEventTime(futureText, createdAt, now) : null;
     const future = Boolean(futureText) && (eventAt ? eventAt > now : hasFuture);
@@ -414,9 +447,10 @@
       const relevant = clauses(text.replace(/[^.!?;\n]*\?/g, '')).filter(part => !isNegated(part) && (!SPECULATIVE.test(part) || reflected(part)) && !UNRELATED.test(part) &&
         !/\b(?:not|never|didn't|don't|cannot|can't|won't|last year|last month|ago)\b/.test(part));
       const followUp = resetGrantFollowUp(item);
+      const resetCompletion = resetCompletedFollowUp(item);
       const grant = Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
         /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
-      const completed = relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
+      const completed = resetCompletion || relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
         !includesAny(part, EXCLUSIONS) && (!prospective(part) || reflected(part)) && /\bresets?\b/.test(part) &&
         ((/\b(?:codex|chatgpt|limits?|quotas?|allowance|usage|tokens?)\b/.test(part) &&
           (isCompleted(part) || /\b(?:was|were|we've|i've) (?:just |now )?reset\b/.test(part))) ||
@@ -424,7 +458,7 @@
       if (!grant && !completed && !update) continue;
       unique.set(item.id, { id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url,
-        ...((update || followUp) && item.replyContext ? { replyContext: item.replyContext } : {}),
+        ...((update || followUp || resetCompletion) && item.replyContext ? { replyContext: item.replyContext } : {}),
         assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: 'high', eventAt: null,
           ...(followUp ? { grantStage: followUp } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
@@ -434,6 +468,28 @@
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);
+  }
+
+  function resetCompletedFollowUp(item) {
+    // A playful reset question and a separate "it's done" assertion need the
+    // author's identified quoted promise. Questions and timeline adjacency
+    // alone must never establish that a reset happened.
+    const parent = item.replyContext;
+    const parentAt = root.RadarTime.parseTimestamp(parent?.createdAt);
+    const itemAt = root.RadarTime.parseTimestamp(item.createdAt);
+    const author = value => String(value || '').replace(/^@/, '').toLowerCase();
+    if (!isLead(item) || item.truncated || parent?.truncated || parent?.relation !== 'quoted-post' || parent.targetId !== item.id ||
+        author(parent.author) !== author(item.author) || !referenceId(parent.id) || parent.id === item.id ||
+        parent.url !== `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` ||
+        !Number.isFinite(parentAt) || !Number.isFinite(itemAt) || parentAt >= itemAt || itemAt - parentAt > 7 * 86400000 ||
+        /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(parent)) ||
+        !classify({ ...parent, source: item.source }, { now: parentAt }).actionable) return false;
+    const text = normalizedText(item);
+    if (!/\bresets?\b/.test(text) || isNegated(text) || UNRELATED.test(text) || includesAny(text, EXCLUSIONS) ||
+        /\b(?:banked|stored|spare|credits?|products?|launch|releases?|dev ?day|events?|not|never|cannot|can't|won't|cancelled|canceled|withdrawn|yesterday|last (?:year|month|week)|ago|previous|recap)\b/.test(text)) return false;
+    const statements = text.replace(/[^.!?;\n]*\?/g, '');
+    if (SPECULATIVE.test(statements)) return false;
+    return clauses(statements).some(part => /^(?:it's|it is|the reset is|the reset has been) (?:now )?(?:done|complete(?:d)?|finished)$/.test(part));
   }
 
   function resetGrantFollowUp(item) {
@@ -541,7 +597,7 @@
   }
 
   root.RadarSignals = Object.freeze({
-    isLead, authorName, avatarUrl, pollOptions, resetDiscussion, eventContext, hasEventTime,
+    isLead, authorName, avatarUrl, pollOptions, resetHeadline, resetDiscussion, eventContext, hasEventTime,
     classify,
     classifyHint,
     hintCandidates,

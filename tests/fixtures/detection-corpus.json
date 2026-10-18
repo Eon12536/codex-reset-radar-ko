@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "note": "A bounded regression sample, not a measurement of all live X posts or Windows delivery.",
+  "groups": {
+    "oct8": {
+      "observedAt": "2026-10-08T04:45:00.000Z",
+      "provenance": "Existing public-X regression fixture reset-grant-oct8.json",
+      "posts": [
+        {
+          "id": "2107913674593644711",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-07T19:19:17.000Z",
+          "url": "https://x.com/thsottiaux/status/2107913674593644711",
+          "text": "Day 3/\n\nThe big one is GPT-6 in Chat, but today is also a little celebration day with a new high of 40M active users across Codex and ChatGPT Work.\n\nLoading a banked reset in everyone's paid accounts. See you again tomorrow!"
+        },
+        {
+          "id": "2107913738791596286",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-07T19:19:33.000Z",
+          "url": "https://x.com/thsottiaux/status/2107913738791596286",
+          "text": "Will be there by EOD PST."
+        },
+        {
+          "id": "2108040921044639779",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-08T03:44:55.000Z",
+          "url": "https://x.com/thsottiaux/status/2108040921044639779",
+          "text": "Confirmed landed across all accounts. How are we doing so far?",
+          "quotedPost": {
+            "author": "thsottiaux",
+            "createdAt": "2026-10-07T19:19:17.000Z",
+            "text": "Day 3/\n\nThe big one is GPT-6 in Chat, but today is also a little celebration day with a new high of 40M active users across Codex and ChatGPT Work.\n\nLoading a banked reset in everyone's paid accounts. See you again tomorrow! x.com/thsottiaux/sta…"
+          }
+        }
+      ]
+    },
+    "oct17": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Public X read in Chrome on 2026-10-18; parent relationship verified only for the timing reply",
+      "posts": [
+        {
+          "id": "2111492673890824348",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:20:57Z",
+          "text": "Day 13/ Le limit reset",
+          "url": "https://x.com/thsottiaux/status/2111492673890824348"
+        },
+        {
+          "id": "2111492738025959922",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "text": "Landing sometime today by EOD PST",
+          "url": "https://x.com/thsottiaux/status/2111492738025959922"
+        },
+        {
+          "id": "2111566005684289735",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T21:12:21Z",
+          "text": "Done",
+          "url": "https://x.com/thsottiaux/status/2111566005684289735"
+        }
+      ]
+    },
+    "oct13": {
+      "observedAt": "2026-10-13T01:10:00Z",
+      "provenance": "Public X text/timestamps recorded in tests/reset-oct13.test.js",
+      "posts": [
+        {
+          "id": "2109812216212099456",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-13T01:03:25Z",
+          "text": "Day 8/ Reset",
+          "url": "https://x.com/thsottiaux/status/2109812216212099456"
+        },
+        {
+          "id": "2109812360596865224",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-13T01:03:59Z",
+          "text": "Global reset landing by EOD PST time. Enjoy",
+          "url": "https://x.com/thsottiaux/status/2109812360596865224"
+        }
+      ]
+    },
+    "negative10001": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10001",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10001",
+          "text": "Global password reset landing by EOD PST."
+        }
+      ]
+    },
+    "negative10002": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10002",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10002",
+          "text": "Git reset tomorrow."
+        }
+      ]
+    },
+    "negative10003": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10003",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10003",
+          "text": "Day 13 / Database reset"
+        }
+      ]
+    },
+    "negative10004": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10004",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10004",
+          "text": "Day 13 / Limit reset?"
+        }
+      ]
+    },
+    "negative10005": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10005",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10005",
+          "text": "Day 13 / No limit reset"
+        }
+      ]
+    },
+    "negative10006": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10006",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10006",
+          "text": "Day 13 / Limit reset cancelled"
+        }
+      ]
+    },
+    "negative10007": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10007",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10007",
+          "text": "Landing sometime today by EOD PST"
+        }
+      ]
+    },
+    "negative10008": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10008",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10008",
+          "text": "Done"
+        }
+      ]
+    },
+    "negative10009": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10009",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10009",
+          "text": "Global reset landing by EOD, but cancelled."
+        }
+      ]
+    },
+    "negative10010": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Synthetic negative control; not an observed X post",
+      "posts": [
+        {
+          "id": "10010",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:21:13Z",
+          "url": "https://x.com/thsottiaux/status/10010",
+          "text": "No global reset landing by EOD PST."
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "Observed Oct8 grant 1",
+      "group": "oct8",
+      "targetId": "2107913674593644711",
+      "expected": "report"
+    },
+    {
+      "name": "Observed Oct8 grant 2",
+      "group": "oct8",
+      "targetId": "2107913738791596286",
+      "expected": "report",
+      "parentId": "2107913674593644711"
+    },
+    {
+      "name": "Observed Oct8 grant 3",
+      "group": "oct8",
+      "targetId": "2108040921044639779",
+      "expected": "report"
+    },
+    {
+      "name": "Observed short limit reset headline",
+      "group": "oct17",
+      "targetId": "2111492673890824348",
+      "expected": "hint"
+    },
+    {
+      "name": "Observed timing self-reply",
+      "group": "oct17",
+      "targetId": "2111492738025959922",
+      "expected": "signal",
+      "parentId": "2111492673890824348",
+      "confidence": "high"
+    },
+    {
+      "name": "Observed standalone Done without verified parent",
+      "group": "oct17",
+      "targetId": "2111566005684289735",
+      "expected": "none"
+    },
+    {
+      "name": "Observed Oct13 hint",
+      "group": "oct13",
+      "targetId": "2109812216212099456",
+      "expected": "hint"
+    },
+    {
+      "name": "Observed Oct13 signal",
+      "group": "oct13",
+      "targetId": "2109812360596865224",
+      "expected": "signal"
+    },
+    {
+      "name": "Negative control: Global password reset landing by EOD PST.",
+      "group": "negative10001",
+      "targetId": "10001",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Git reset tomorrow.",
+      "group": "negative10002",
+      "targetId": "10002",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Day 13 / Database reset",
+      "group": "negative10003",
+      "targetId": "10003",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Day 13 / Limit reset?",
+      "group": "negative10004",
+      "targetId": "10004",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Day 13 / No limit reset",
+      "group": "negative10005",
+      "targetId": "10005",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Day 13 / Limit reset cancelled",
+      "group": "negative10006",
+      "targetId": "10006",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Landing sometime today by EOD PST",
+      "group": "negative10007",
+      "targetId": "10007",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Done",
+      "group": "negative10008",
+      "targetId": "10008",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: Global reset landing by EOD, but cancelled.",
+      "group": "negative10009",
+      "targetId": "10009",
+      "expected": "none"
+    },
+    {
+      "name": "Negative control: No global reset landing by EOD PST.",
+      "group": "negative10010",
+      "targetId": "10010",
+      "expected": "none"
+    }
+  ]
+}

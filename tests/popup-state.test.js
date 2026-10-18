@@ -72,11 +72,12 @@ test('an older popup read completing after a newer refresh cannot restore stale 
     w.context[name] = () => {};
   const source = fs.readFileSync(require.resolve('../src/popup/popup.js'), 'utf8');
   const render = source.slice(source.indexOf('async function render()'), source.indexOf('$("openSettings").addEventListener'));
-  vm.runInContext('let renderRevision = 0; ' + render, w.context);
+  const collection = source.slice(source.indexOf('function collectionCheck('), source.indexOf('function renderNews('));
+  vm.runInContext('let renderRevision = 0; ' + collection + render, w.context);
   const now = Date.now();
   const settings = { monitorSignals: false, timezoneMode: 'manual', timezoneOverride: 'Asia/Seoul' };
-  const old = { settings, lastCheckedAt: now - 60000 };
-  const current = { settings, lastCheckedAt: now };
+  const old = { settings, lastCheckedAt: now - 60000, signalSnapshot: { checkedAt: now - 60000 } };
+  const current = { settings, lastCheckedAt: now, signalSnapshot: { checkedAt: now } };
   const first = w.context.render();
   const second = w.context.render();
   assert.equal(reads.length, 2);
@@ -85,4 +86,41 @@ test('an older popup read completing after a newer refresh cannot restore stale 
   assert.deepEqual(painted, [now]);
   assert.equal(receipts.length, 1);
   assert.ok(elements.get('lastChecked').textContent.includes(w.context.RadarTime.formatTime(now, 'Asia/Seoul')));
+});
+
+test('news scan time never advances from an account-only check and latest collection errors override cached news', () => {
+  const source = fs.readFileSync(require.resolve('../src/popup/popup.js'), 'utf8');
+  const context = {};
+  vm.runInNewContext(source.slice(source.indexOf('function collectionCheck('), source.indexOf('function renderNews(')), context);
+  const settings = { monitorSignals: true, monitorLeadSource: true };
+  const state = { signalSnapshot: { checkedAt: 1000, leadStatus: { directOk: true } }, lastCheckedAt: 9000 };
+  assert.equal(context.collectionCheck(state, settings).checkedAt, 1000);
+  assert.equal(context.collectionCheck({ lastCheckedAt: 9000 }, settings).checkedAt, 0);
+  state.collectorHealth = { checkedAt: 2000, error: 'tab-blocked', lastSuccessAt: 1000 };
+  assert.equal(context.collectionCheck(state, settings).checkedAt, 2000);
+  assert.equal(context.collectionCheck(state, settings).error, 'tab-blocked');
+  state.signalSnapshot.checkedAt = 3000;
+  assert.equal(context.collectionCheck(state, settings).error, null);
+  state.signalError = { at: 4000 };
+  assert.equal(context.collectionCheck(state, settings).checkedAt, 4000);
+  assert.equal(context.collectionCheck(state, settings).error, 'sources');
+  assert.equal(context.collectionCheck(state, { ...settings, monitorLeadSource: false }).error, 'sources');
+  assert.equal(context.collectionCheck({ ...state, signalError: null }, { ...settings, monitorLeadSource: false }).error, null);
+  assert.equal(context.collectionCheck(state, { monitorSignals: false }).error, null);
+});
+
+
+test('partial collection names the failed author, timeline and stage without hiding the diagnostic reason', () => {
+  const source = fs.readFileSync(require.resolve('../src/popup/popup.js'), 'utf8');
+  const context = { msg: key => ({ collectorPosts: '원글', collectorReplies: '답글', collectorStageReading: '본문 읽기', collectorStageLoading: '페이지 로딩', 'collectorReason_timeout': '시간 초과', 'collectorReason_no-posts': '본문 미검출' })[key] || key,
+    RadarSignals: { authorName: item => ({ thsottiaux: 'Tibo', reach_vb: 'VB', openai: 'OpenAI' })[item.author] } };
+  vm.runInNewContext(source.slice(source.indexOf('function collectionFailures('), source.indexOf('function renderNews(')), context);
+  const details = context.collectionFailures({ timelines: [
+    { author: 'thsottiaux', kind: 'posts', ok: false, stage: 'reading', error: 'no-posts' },
+    { author: 'reach_vb', kind: 'replies', ok: false, stage: 'loading', error: 'timeout' },
+    { author: 'openai', kind: 'posts', ok: true } ] });
+  assert.match(details, /Tibo 원글 \/ 본문 읽기: 본문 미검출/);
+  assert.match(details, /VB 답글 \/ 페이지 로딩: 시간 초과/);
+  assert.ok(!details.includes('OpenAI'));
+  assert.equal(context.collectionFailures(null), '');
 });

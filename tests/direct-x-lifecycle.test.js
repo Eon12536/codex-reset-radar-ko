@@ -131,18 +131,22 @@ test('unexpired ownership remains scheduled until the deadline unless the worker
   assert.equal(b.tabs.size, 0);
 });
 
-test('a user selection followed by deselection permanently preserves the scan tab', async () => {
+test('selection followed by deselection stops reading but closes the owned X reader', async () => {
   const b = browser({ script: async id => {
     b.tabs.get(id).active = true;
     b.listeners.activate({ tabId: id });
     b.tabs.get(id).active = false;
   } }), core = b.load();
-  await assert.rejects(read(core), /X_PAGE_UNAVAILABLE/);
-  assert.equal(b.tabs.size, 1);
-  assert.equal(b.calls.some(c => ['update', 'remove'].includes(c[0])), false);
-  assert.equal(b.session[KEY].claimed, true);
-  for (let i = 0; i < 20; i++) await assert.rejects(read(core), /X_TAB_BLOCKED/);
-  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
+  for (let i = 0; i < 20; i++) {
+    await assert.rejects(read(core), /X_PAGE_UNAVAILABLE/);
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.session[KEY], undefined);
+    assert.equal(b.local[core.GUARD_KEY], undefined);
+  }
+  assert.equal(b.calls.some(c => c[0] === 'update'), false);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 20);
+  assert.equal(b.calls.filter(c => c[0] === 'remove').length, 20);
+  assert.equal(b.maxTabs(), 1);
 });
 
 test('selected, pinned, moved, claimed and privately navigated tabs are preserved during recovery', async () => {
@@ -226,14 +230,15 @@ test('selection while ownership restoration is delayed is preserved after desele
   assert.equal(b.calls.length, 0);
 });
 
-test('selection before tab creation returns is preserved after a quick deselection', async () => {
+test('selection before tab creation returns still closes the confirmed reader on failure', async () => {
   const b = browser({ created: async id => {
     b.listeners.activate({ tabId: id });
     b.listeners.activate({ tabId: 8 });
   } });
   await assert.rejects(read(b.load()), /X_PAGE_UNAVAILABLE/);
-  assert.equal(b.tabs.size, 1);
-  assert.equal(b.calls.some(c => ['script', 'update', 'remove'].includes(c[0])), false);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.calls.some(c => ['script', 'update'].includes(c[0])), false);
+  assert.deepEqual(b.calls.filter(c => c[0] === 'remove'), [['remove', 10]]);
 });
 
 test('deceptive redirect origins and unrelated public paths cannot authorize tab removal', async () => {
@@ -377,8 +382,8 @@ test('50 update cycles recover interrupted readers without accumulating tabs bes
   assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 8), false);
 });
 
-test('reload and browser restart losing session ownership cannot open another scan tab', async () => {
-  const b = browser({ script: id => b.listeners.activate({ tabId: id }) });
+test('reload and browser restart losing session ownership cannot duplicate a pinned scan tab', async () => {
+  const b = browser({ script: id => { b.tabs.get(id).pinned = true; b.listeners.activate({ tabId: id }); } });
   await assert.rejects(read(b.load()), /X_PAGE_UNAVAILABLE/);
   for (let i = 0; i < 20; i++) {
     delete b.session[KEY];
@@ -465,17 +470,135 @@ test('legacy migration refuses marked readers and malformed ownership records', 
   assert.equal(b.calls.length, 0);
 });
 
-test('an active marked reader is protected after session loss and automatically resumes when closed', async () => {
+test('an active marked reader is closed after session loss before the next scan', async () => {
   const b = browser();
   const token = '00000000-0000-4000-8000-000000000079';
   const core = b.load();
   b.local[core.GUARD_KEY] = { blocked: true, reason: 'session-lost', lease: lease({ token }) };
   b.tabs.set(7, { id: 7, windowId: 1, active: true, url: PAGE + '#radar-x-reader=' + token });
-  await assert.rejects(read(core), /X_TAB_BLOCKED/);
-  assert.equal(b.calls.some(call => call[0] === 'remove'), false);
-  b.tabs.delete(7);
   assert.equal((await read(core)).items.length, 1);
+  assert.deepEqual(b.calls.filter(c => ['create', 'remove'].includes(c[0])), [['remove', 7], ['create', 10], ['remove', 10]]);
+  assert.equal(b.tabs.size, 0);
   assert.equal(b.maxTabs(), 1);
+});
+
+test('an active reader closes on abort without touching the existing user X tab', async () => {
+  const controller = new AbortController();
+  const b = browser({ tab: { id: 7, url: PAGE }, script: async id => {
+    b.tabs.get(id).active = true;
+    b.listeners.activate({ tabId: id });
+    controller.abort();
+  } });
+  await assert.rejects(b.load().read(controller.signal, { authors: ['thsottiaux'] }));
+  assert.deepEqual([...b.tabs.keys()], [7]);
+  assert.deepEqual(b.calls.filter(c => c[0] === 'remove'), [['remove', 10]]);
+});
+
+test('previously selected nonce-marked status readers close after an extension update', async () => {
+  const token = '00000000-0000-4000-8000-000000000084';
+  const status = 'https://x.com/OpenAI/status/2104993967985381673';
+  for (const sessionLost of [false, true]) {
+    const stored = lease({ token, claimed: true, urls: [PAGE, status] });
+    const b = browser({ stored: sessionLost ? undefined : stored,
+      tab: { id: 7, active: true, url: status + '#radar-x-reader=' + token } });
+    const core = b.load();
+    b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'tab-open', lease: stored };
+    assert.equal(await core.cleanup({ recover: true }), true);
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.session[KEY], undefined);
+    assert.equal(b.local[core.GUARD_KEY], undefined);
+  }
+});
+
+test('selected reader removal failure keeps one fenced tab until cleanup retry succeeds', async () => {
+  const b = browser({ failRemove: true, script: async id => {
+    b.tabs.get(id).active = true;
+    b.listeners.activate({ tabId: id });
+  } }), core = b.load();
+  await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+  await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+  assert.equal(b.calls.filter(c => c[0] === 'create').length, 1);
+  assert.equal(b.alarms.has(core.CLEANUP_ALARM), true);
+  b.faults.failRemove = false;
+  assert.equal(await core.cleanup({ recover: true }), true);
+  assert.equal(b.tabs.size, 0);
+});
+
+test('nonce-marked reader ownership never overrides pinning, moving or a pending user navigation', async () => {
+  const token = '00000000-0000-4000-8000-000000000084';
+  const url = PAGE + '#radar-x-reader=' + token;
+  for (const patch of [{ pinned: true }, { windowId: 2 }, { url: 'https://x.com/i/chat' },
+    { pendingUrl: 'https://example.com/' }, { pendingUrl: 'https://x.com/i/chat' }]) {
+    const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url, ...patch } });
+    assert.equal(await b.load().cleanup({ recover: true }), false, JSON.stringify(patch));
+    assert.equal(b.calls.some(c => c[0] === 'remove'), false);
+    // Explicit user changes remain protected, even if later changed back.
+    Object.assign(b.tabs.get(7), { active: false, pinned: false, windowId: 1, url, pendingUrl: undefined });
+    assert.equal(await b.load().cleanup({ recover: true }), false, JSON.stringify(patch));
+    assert.equal(b.tabs.size, 1);
+  }
+});
+
+test('selection cleanup requires the exact stored reader nonce and requested URL', async () => {
+  const token = '00000000-0000-4000-8000-000000000084';
+  for (const url of [PAGE, PAGE + '#radar-x-reader=00000000-0000-4000-8000-000000000099',
+    'https://x.com/reach_vb#radar-x-reader=' + token, 'https://x.com/i/flow/login#radar-x-reader=' + token]) {
+    const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url } });
+    assert.equal(await b.load().cleanup({ recover: true }), false, url);
+    assert.equal(b.calls.some(c => c[0] === 'remove'), false);
+  }
+});
+
+test('canonical account casing and trailing slash do not strand a selected marked reader', async () => {
+  const token = '00000000-0000-4000-8000-000000000085';
+  const status = 'https://x.com/OpenAI/status/2104993967985381673';
+  for (const pendingUrl of [undefined, 'https://x.com/openai/status/2104993967985381673/#radar-x-reader=' + token]) {
+    const b = browser({ stored: lease({ token, claimed: true, urls: [status] }),
+      tab: { id: 7, active: true, url: 'https://x.com/openai/status/2104993967985381673/#radar-x-reader=' + token, pendingUrl } });
+    assert.equal(await b.load().cleanup({ recover: true }), true);
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.session[KEY], undefined);
+  }
+});
+
+test('session-loss recovery checks the known reader nonce even when a canonical URL misses its query filter', async () => {
+  const token = '00000000-0000-4000-8000-000000000085';
+  const stored = lease({ token, claimed: true });
+  const b = browser({ tab: { id: 7, active: true, url: 'https://x.com/ThSottiaux/#radar-x-reader=' + token } });
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'tab-open', lease: stored };
+  assert.equal(await core.cleanup({ recover: true }), true);
+  assert.equal(b.tabs.size, 0);
+});
+
+test('pending user navigation protects even an inactive owned reader before its URL changes', async () => {
+  const token = '00000000-0000-4000-8000-000000000084';
+  const url = PAGE + '#radar-x-reader=' + token;
+  for (const pendingUrl of ['https://x.com/i/chat', 'https://example.com/', PAGE]) {
+    const b = browser({ stored: lease({ token }), tab: { id: 7, url, pendingUrl } });
+    assert.equal(await b.load().cleanup({ recover: true }), false, pendingUrl);
+    assert.equal(b.calls.some(c => c[0] === 'remove'), false);
+    b.tabs.get(7).pendingUrl = undefined;
+    assert.equal(await b.load().cleanup({ recover: true }), false);
+  }
+});
+
+test('a pending user navigation during reading prevents further scan navigation or removal', async () => {
+  const b = browser({ script: id => { b.tabs.get(id).pendingUrl = 'https://x.com/i/chat'; } });
+  await assert.rejects(read(b.load()), /X_PAGE_UNAVAILABLE/);
+  assert.equal(b.calls.filter(c => c[0] === 'script').length, 1);
+  assert.equal(b.calls.some(c => ['update', 'remove'].includes(c[0])), false);
+  assert.equal(b.tabs.size, 1);
+});
+
+test('session loss must not erase a known reader move to another window', async () => {
+  const token = '00000000-0000-4000-8000-000000000084';
+  const b = browser({ tab: { id: 7, windowId: 2, active: true, url: PAGE + '#radar-x-reader=' + token } });
+  b.local[KEY + 'GuardV1'] = { version: 2, blocked: true, lease: lease({ token, claimed: true }) };
+  assert.equal(await b.load().cleanup({ recover: true }), false);
+  assert.equal(b.calls.some(c => c[0] === 'remove'), false);
+  assert.equal(b.session[KEY].protected, true);
+  assert.equal(b.local[KEY + 'GuardV1'].lease.protected, true);
 });
 
 test('session-loss recovery checks redirected readers before proving absence', async () => {

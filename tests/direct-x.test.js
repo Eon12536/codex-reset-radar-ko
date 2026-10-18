@@ -32,28 +32,48 @@ test('only bounded recent Tibo posts and validated public status URLs survive no
   assert.equal(Direct.normalize([{ ...good, text: 'a'.repeat(7000) }])[0].text.length, 6000);
 });
 
-function reader({ permission = true, finalUrl = POST_PAGE, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false } = {}) {
+function reader({ permission = true, finalUrl = POST_PAGE, normalizeUrl = url => url, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false, build = 'fixture-build' } = {}) {
   const calls = [];
   const session = {}, local = {}, alarms = new Map();
   let url = finalUrl;
-  const chrome = { permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
+  const chrome = { runtime: { getManifest: () => ({ version: build }) }, permissions: { contains: async value => { calls.push(['permission', value]); return permission; } },
     storage: { local: { get: async key => ({ [key]: local[key] }), set: async value => Object.assign(local, structuredClone(value)), remove: async key => { delete local[key]; } }, session: { get: async key => ({ [key]: session[key] }), set: async value => Object.assign(session, structuredClone(value)), remove: async key => { delete session[key]; } } },
     alarms: { create: async (name, options) => alarms.set(name, options), clear: async name => alarms.delete(name) },
-    tabs: { create: async options => { calls.push(['create', options]); url = finalUrl === POST_PAGE ? options.url : finalUrl; return { id: 33, windowId: 1, active }; },
+    tabs: { create: async options => { calls.push(['create', options]); url = normalizeUrl(finalUrl === POST_PAGE ? options.url : finalUrl); return { id: 33, windowId: 1, active }; },
       get: async () => ({ id: 33, windowId: 1, status: 'complete', url, active }), remove: async id => calls.push(['remove', id]),
-      update: async (id, options) => { calls.push(['update', options]); url = options.url; },
+      update: async (id, options) => { calls.push(['update', options]); url = normalizeUrl(options.url); },
       onUpdated: { addListener() {}, removeListener() {} } },
-    scripting: { executeScript: async value => { const url = new URL(chromeUrl()).origin + new URL(chromeUrl()).pathname;
+    scripting: { executeScript: async value => { const current = new URL(chromeUrl());
+      const url = current.origin + current.pathname.replace(/\/$/, '').replace(/^\/thsottiaux/i, '/thsottiaux').replace(/^\/openai/i, '/OpenAI');
       calls.push(['script', value]); if (activateOnScript === true || activateOnScript === calls.filter(c => c[0] === 'script').length) active = true; if (fail || (postFail && url === POST_PAGE) || (replyFail && url === PAGE)) throw new Error('mock failure');
       return [{ frameId: 0, result: url.startsWith('https://x.com/OpenAI') ? { rows: [row('789', 'OpenAI', 'Join us for DevDay tomorrow')] } : url.startsWith('https://x.com/reach_vb') ? vbTimeline || {rows: [row('456','reach_vb','Reset should be reflected for everyone')]} : [PAGE, POST_PAGE].includes(url)
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
   const chromeUrl = () => url;
   const context = vm.createContext({ chrome, URL, Date, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
+  vm.runInContext(fs.readFileSync(require.resolve('../src/core/signals'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/direct-x'), 'utf8'), context);
   return { core: { ...context.RadarDirectX, read: (signal, options = {}) => context.RadarDirectX.read(signal, {authors, ...options}) }, calls };
 }
+
+test('direct scan retrieves the reset headline context for a short EOD reply, including cached reads, then closes its tab', async () => {
+  const parent = { ...row('101', 'thsottiaux', 'Day 13/ Le limit reset'), createdAt: new Date(Date.now() - 60000).toISOString() };
+  const reply = row('102', 'thsottiaux', 'Landing sometime today by EOD PST');
+  const r = reader({ timeline: { rows: [parent, reply] }, conversation: url => url.endsWith('/102')
+    ? { targetId: reply.id, rows: [parent, reply] } : { targetId: parent.id, rows: [parent] } });
+  const result = await r.core.read(new AbortController().signal);
+  const item = result.items.find(item => item.id === reply.id);
+  assert.equal(item.replyContext?.relation, 'conversation-before');
+  assert.equal(item.replyContext?.id, parent.id);
+  assert.equal(Signals.classify(item).confidence, 'high');
+  assert.equal(Signals.classify(item).actionable, true);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  const cached = await r.core.read(new AbortController().signal, { contextCache: result.contextCache });
+  assert.equal(Signals.classify(cached.items.find(item => item.id === reply.id)).actionable, true);
+  assert.equal(r.calls.filter(call => call[0] === 'create').length, 2);
+  assert.equal(r.calls.filter(call => call[0] === 'remove').length, 2);
+});
 
 test('direct reader never requests permissions or creates a tab before opt-in', async () => {
   const r = reader({ permission: false });
@@ -75,6 +95,31 @@ test('reader uses only its own inactive fixed-URL tab and a bundled isolated scr
   assert.equal(diagnostics.conversations, 1);
   assert.deepEqual(r.calls.filter(c => c[0] === 'update').map(c => c[1].url.split('#')[0]), [PAGE, 'https://x.com/thsottiaux/status/123']);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('same-account path canonicalization keeps all timelines and conversation collection working', async () => {
+  const r = reader({ authors: ['thsottiaux', 'reach_vb', 'openai'], normalizeUrl: value => {
+    const url = new URL(value);
+    url.pathname = url.pathname.toLowerCase() + '/';
+    return url.href;
+  } });
+  const { items, diagnostics } = await r.core.read(new AbortController().signal);
+  assert.equal(diagnostics.timelines.length, 6);
+  assert.equal(diagnostics.timelines.every(timeline => timeline.ok), true);
+  assert.ok(items.some(item => item.author === 'OpenAI'));
+  assert.ok(diagnostics.conversations > 0);
+  assert.equal(diagnostics.cleanupError, undefined);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('canonicalization never permits a changed reader nonce, query, origin or public account', async () => {
+  for (const change of [url => { url.hash = ''; }, url => { url.hash = 'radar-x-reader=00000000-0000-4000-8000-000000000099'; },
+    url => { url.search = '?redirect=1'; }, url => { url.hostname = 'x.com.evil.test'; },
+    url => { url.pathname = '/reach_vb/'; }, url => { url.pathname = '/i/chat/'; }]) {
+    const r = reader({ normalizeUrl: value => { const url = new URL(value); change(url); return url.href; } });
+    await assert.rejects(r.core.read(new AbortController().signal), /X_PAGE_UNAVAILABLE/);
+    assert.equal(r.calls.some(call => call[0] === 'script'), false);
+  }
 });
 
 test('clock-only Tibo replies trigger a bounded product conversation lookup', async () => {
@@ -110,17 +155,19 @@ test('automatic X home/timeline redirects do not accumulate inactive scan tabs a
   }
 });
 
-test('a scan tab activated by the user is left open and never read or navigated again', async () => {
+test('a selected scan tab is closed without reading or navigating it again', async () => {
   const r = reader({ active: true });
   await assert.rejects(r.core.read(new AbortController().signal), /UNAVAILABLE/);
-  assert.equal(r.calls.some(c => ['script', 'update', 'remove'].includes(c[0])), false);
+  assert.equal(r.calls.some(c => ['script', 'update'].includes(c[0])), false);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
-test('activation during a scan stops later navigation and preserves the tab the user selected', async () => {
+test('activation during a scan stops later navigation and closes the owned tab', async () => {
   const r = reader({ activateOnScript: true });
   await assert.rejects(r.core.read(new AbortController().signal), /UNAVAILABLE/);
   assert.equal(r.calls.filter(c => c[0] === 'script').length, 1);
-  assert.equal(r.calls.some(c => ['update', 'remove'].includes(c[0])), false);
+  assert.equal(r.calls.some(c => c[0] === 'update'), false);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
 test('user activation leaves earlier collected posts available and reports an incomplete scan', async () => {
@@ -132,7 +179,8 @@ test('user activation leaves earlier collected posts available and reports an in
   assert.equal(result.diagnostics.timelines[1].ok, false);
   assert.equal(r.calls.filter(c => c[0] === 'script').length, 2);
   assert.equal(r.calls.filter(c => c[0] === 'update').length, 1);
-  assert.equal(r.calls.some(c => c[0] === 'remove'), false);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  assert.equal(result.diagnostics.cleanupError, undefined);
 });
 
 test('already cancelled reads do not create a tab', async () => {
@@ -215,6 +263,16 @@ async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navig
   const result = await vm.runInContext(fs.readFileSync(require.resolve('../src/x-reader'), 'utf8'), context);
   return { result, scrolls, elapsed };
 }
+
+test('canonical trailing slashes do not hide rendered posts or exact conversation targets', async () => {
+  const post = row('123', 'OpenAI', 'Global reset today');
+  for (const pathname of ['/openai/', '/OpenAI/with_replies/', '/OpenAI/status/123/']) {
+    const { result } = await domRead([[article(post)]], { pathname });
+    assert.equal(result.rows.length, 1, pathname);
+    assert.equal(result.rows[0].id, '123');
+    assert.notEqual(result.stopReason, 'wrong-page');
+  }
+});
 
 test('public poll choices are read separately from the body without voting or borrowing a quote poll', async () => {
   const options = ['👌 (great release)', '🫨 (needs a reset)'];
@@ -437,6 +495,87 @@ test('conversation lookups advance past the first three replies and reuse verifi
   assert.equal(result.items.filter(item => item.replyContext?.id === '700').length, 7);
   assert.equal(r.calls.filter(call => call[0] === 'update' && call[1].url.includes('/status/')).length, 7);
   assert.ok(Object.values(cache).every(entry => entry.result.rows.length === 2));
+});
+
+test('pending conversations survive disappearing timeline rows and a new reader after checkpoints', async () => {
+  const posts = Array.from({ length: 7 }, (_, i) => row(String(1800 + i), 'thsottiaux', 'Tuesday 👀'));
+  const parent = { ...row('1700', 'someone', 'Could you reset Codex limits?'), createdAt: new Date(Date.now() - 3600000).toISOString() };
+  let checkpoint;
+  const conversation = url => {
+    const item = posts.find(post => post.url === url);
+    return { targetId: item.id, rows: [parent, item] };
+  };
+  const first = reader({ timeline: { rows: posts }, conversation });
+  await first.core.read(new AbortController().signal, { onCheckpoint: async value => { checkpoint = structuredClone(value); } });
+  assert.equal(checkpoint.posts.length, 7);
+  const next = reader({ timeline: { rows: [row('1900', 'thsottiaux', 'Unrelated update')] }, conversation });
+  const second = await next.core.read(new AbortController().signal, { contextCache: checkpoint.contextCache,
+    retainedPosts: checkpoint.posts, onCheckpoint: async value => { checkpoint = structuredClone(value); } });
+  assert.equal(second.diagnostics.contextPending, 1);
+  const third = await next.core.read(new AbortController().signal, { contextCache: checkpoint.contextCache, retainedPosts: checkpoint.posts });
+  assert.equal(third.diagnostics.contextPending, 0);
+  assert.equal(third.items.filter(item => item.replyContext?.id === parent.id).length, 7);
+  assert.deepEqual(next.calls.at(-1), ['remove', 33]);
+});
+
+test('a timeline checkpoint preserves newly read reset evidence before cancellation interrupts the scan', async () => {
+  const item = row('2200', 'thsottiaux', 'A reset is coming tomorrow.');
+  const controller = new AbortController(); let checkpoint;
+  const r = reader({ timeline: { rows: [item] } });
+  await assert.rejects(r.core.read(controller.signal, { onCheckpoint: async value => {
+    checkpoint = structuredClone(value); controller.abort();
+  } }));
+  assert.equal(checkpoint.posts[0].id, item.id);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('checkpoint storage failure is reported while retaining current evidence and closing the owned tab', async () => {
+  const item = row('2400', 'thsottiaux', 'An ordinary public post');
+  const r = reader({ timeline: { rows: [item] } });
+  const result = await r.core.read(new AbortController().signal, { onCheckpoint: async () => { throw new Error('quota'); } });
+  assert.equal(result.items[0].id, item.id);
+  assert.equal(result.diagnostics.checkpointError, true);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('reset and deadline replies receive priority without permanently starving other conversations', async () => {
+  const posts = Array.from({ length: 6 }, (_, i) => row(String(2800 + i), 'thsottiaux', 'Tuesday 👀'));
+  const reset = { ...row('2700', 'thsottiaux', 'Landing sometime today by EOD PST'), createdAt: new Date(Date.now() - 60000).toISOString() };
+  const parent = { ...row('2600', 'thsottiaux', 'Day 13 / Le limit reset'), createdAt: new Date(Date.now() - 120000).toISOString() };
+  const r = reader({ timeline: { rows: [...posts, reset] }, conversation: url => {
+    const item = [...posts, reset].find(post => post.url === url);
+    return { targetId: item.id, rows: item === reset ? [parent, item] : [item] };
+  } });
+  const first = await r.core.read(new AbortController().signal);
+  assert.equal(Signals.classify(first.items.find(item => item.id === reset.id)).actionable, true);
+  let result = first;
+  for (let i = 0; i < 2; i++) result = await r.core.read(new AbortController().signal, { contextCache: result.contextCache });
+  assert.equal(result.diagnostics.contextPending, 0);
+});
+
+test('a pre-update no-parent verdict is re-read under the current context schema', async () => {
+  const item = row('3200', 'thsottiaux', 'Landing sometime today by EOD PST');
+  const parent = { ...row('3100', 'thsottiaux', 'Day 13 / Le limit reset'), createdAt: new Date(Date.now() - 60000).toISOString() };
+  let hydrated = false;
+  const r = reader({ timeline: { rows: [item] }, conversation: () => ({ targetId: item.id, rows: hydrated ? [parent, item] : [item] }) });
+  const first = await r.core.read(new AbortController().signal);
+  first.contextCache[item.id].schema = 0;
+  hydrated = true;
+  const next = await r.core.read(new AbortController().signal, { contextCache: first.contextCache });
+  assert.equal(next.diagnostics.conversations, 1);
+  assert.equal(Signals.classify(next.items[0]).actionable, true);
+});
+
+test('a real extension version change invalidates a previous no-parent cache immediately', async () => {
+  const item = row('3400', 'thsottiaux', 'Landing sometime today by EOD PST');
+  const parent = { ...row('3300', 'thsottiaux', 'Day 13 / Le limit reset'), createdAt: new Date(Date.now() - 60000).toISOString() };
+  const previous = reader({ build: '0.2.89', timeline: { rows: [item] }, conversation: { targetId: item.id, rows: [item] } });
+  const old = await previous.core.read(new AbortController().signal);
+  const updated = reader({ build: '0.2.90', timeline: { rows: [item] }, conversation: { targetId: item.id, rows: [parent, item] } });
+  const current = await updated.core.read(new AbortController().signal, { contextCache: old.contextCache });
+  assert.equal(current.diagnostics.conversations, 1);
+  assert.notEqual(current.contextCache[item.id].schema, old.contextCache[item.id].schema);
+  assert.equal(Signals.classify(current.items[0]).actionable, true);
 });
 
 test('an unrelated conversation is cached too, but edited tweet text causes a new lookup', async () => {

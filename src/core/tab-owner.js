@@ -1,5 +1,6 @@
 (function initTabOwner(root) {
-  function create({ key, alarm, accepts, matches, prefix, recovery }) {
+  function create({ key, alarm, accepts, matches, prefix, recovery, closeSelectedReader = false,
+    sameReaderPage = (actual, expected) => actual === expected }) {
     const chrome = root.chrome;
     const guardKey = key + 'GuardV1';
     let tab, inUse = false, creating = false, restoring = false, creationJob, operations = Promise.resolve();
@@ -13,6 +14,9 @@
       const value = new URL(url);
       value.hash = recovery.marker + '=' + token;
       return value.href;
+    }
+    function exactReaderUrl(url) {
+      return Boolean(recovery && tokenValid(tab?.token) && tab.urls.some(requested => sameReaderPage(url, marked(requested))));
     }
     async function persistGuard(blocked, reason) {
       const previous = recovery ? (await chrome.storage.local.get(guardKey))[guardKey] : null;
@@ -38,7 +42,10 @@
         try {
           const previous = await chrome.tabs.get(lease.id);
           knownReaderPresent = true;
-          if (previous.url === 'about:blank') candidates.push(previous);
+          // A canonical URL can miss the query's literal path filter. The
+          // durable ID only supplies a candidate; the nonce AND allowed route
+          // below must still prove ownership before it can be adopted.
+          candidates.push(previous);
         } catch (cause) {
           if (!/No tab with id|Invalid tab ID/i.test(String(cause?.message))) throw cause;
           knownReaderMissing = true;
@@ -54,6 +61,9 @@
           const current = owned[0];
           return { ...(lease || { startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, urls, claimed: false }),
             id: current.id, windowId: current.windowId, token,
+            // A surviving ID in a different window is a known user move.
+            // Only newly assigned IDs may adopt a restored browser window.
+            protected: Boolean(lease?.protected || (lease?.id === current.id && lease.windowId !== current.windowId)),
             claimed: Boolean(lease?.claimed || current.active || current.pinned) };
         }
         // A create interrupted before its ID was stored can still complete.
@@ -88,7 +98,8 @@
       return value && Number.isInteger(value.id) && value.id >= 0 && Number.isInteger(value.windowId) && value.windowId >= 0 &&
         Number.isFinite(value.startedAt) && Number.isFinite(value.expiresAt) && value.startedAt > 0 &&
         value.expiresAt > value.startedAt && value.expiresAt - value.startedAt <= 300000 &&
-        typeof value.claimed === 'boolean' && Array.isArray(value.urls) && value.urls.length > 0 && value.urls.length <= 12 && value.urls.every(accepts);
+        typeof value.claimed === 'boolean' && (value.protected === undefined || typeof value.protected === 'boolean') &&
+        Array.isArray(value.urls) && value.urls.length > 0 && value.urls.length <= 12 && value.urls.every(accepts);
     }
     async function watch(when) {
       await chrome.alarms.create(alarm, { when: Math.max(Date.now() + 60000, when) });
@@ -147,13 +158,22 @@
           }
           // Preserve user/ambiguous tabs AND the ownership record. Forgetting
           // that record previously allowed every retry to leave one more tab.
-          const userClaimed = tab.claimed || current.active || current.pinned || current.windowId !== tab.windowId ||
+          // X reader selection interrupts reading, but does not turn an exact
+          // nonce-marked temporary reader into a permanent tab. Legacy claims
+          // from selection can be released too. Explicit user changes remain
+          // protected across restarts, including navigation still in flight.
+          const pendingNavigation = closeSelectedReader && typeof current.pendingUrl === 'string' &&
+            current.pendingUrl.length > 0 && !exactReaderUrl(current.pendingUrl);
+          const userChanged = tab.protected || current.pinned || current.windowId !== tab.windowId || pendingNavigation ||
             (typeof current.url === 'string' && current.url.length > 0 && !matches(current.url, tab.urls));
+          const closeSelected = closeSelectedReader && exactReaderUrl(current.url) && !userChanged;
+          const userClaimed = userChanged || (!closeSelected && (tab.claimed || current.active));
           if (userClaimed || !matches(current.url, tab.urls)) {
             inUse = false;
             // A temporarily unavailable URL is not a user gesture. Keep the
             // lease fenced, but allow a later read to prove safe ownership.
             tab.claimed = Boolean(userClaimed);
+            if (userChanged) tab.protected = true;
             await persistGuard(true, 'tab-open');
             await chrome.storage.session.set({ [key]: tab });
             await watch(Date.now() + 60000);

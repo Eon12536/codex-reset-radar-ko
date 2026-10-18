@@ -2,8 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import archiver from "archiver";
 import sharp from "sharp";
+import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "..");
+// Fail before producing a release ZIP if any known detection regresses.
+execFileSync(process.execPath, ['--test', 'tests/detection-corpus.test.js'], { cwd: root, stdio: 'inherit' });
 const dist = path.join(root, "dist");
 const icons = path.join(root, "assets", "icons");
 fs.mkdirSync(dist, { recursive: true });

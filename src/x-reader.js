@@ -2,14 +2,17 @@
 // Reads rendered posts, never cookies, credentials, private pages or page state.
 (async function readPublicAuthorPage() {
   const author = /^\/(thsottiaux|reach_vb|openai)(?:\/|$)/i.exec(location.pathname)?.[1]?.toLowerCase();
-  const timeline = author && ['/' + author, '/' + author + '/with_replies'].includes(location.pathname.toLowerCase());
-  const targetId = /^\/(?:thsottiaux|reach_vb|openai)\/status\/([1-9]\d{0,24})$/i.exec(location.pathname)?.[1];
+  const timeline = author && ['/' + author, '/' + author + '/with_replies'].includes(location.pathname.replace(/\/$/, '').toLowerCase());
+  const targetId = /^\/(?:thsottiaux|reach_vb|openai)\/status\/([1-9]\d{0,24})\/?$/i.exec(location.pathname)?.[1];
   const path = location.pathname;
   const allowed = () => location.origin === "https://x.com" && location.pathname === path;
   if (!allowed() || (!timeline && !targetId)) return { rows: [], stopReason: "wrong-page", pages: 0 };
   const deadline = Date.now() + (timeline ? 24000 : 18000); // Return collected rows before the worker deadline.
   const seen = new Map();
   const expanded = new Set();
+  const unavailableBodies = new Map();
+  const mediaOnly = new Map();
+  let latestOrder = [];
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   function originalText(node) {
@@ -24,6 +27,8 @@
   function collect() {
     if (!allowed()) return [];
     const rows = [];
+    latestOrder = [];
+    let previousId = '';
     for (const article of document.querySelectorAll('article[data-testid="tweet"]')) {
       // Exclude identity/body inside a quoted post's role=link container.
       const own = element => element?.closest('article[data-testid="tweet"]') === article &&
@@ -33,6 +38,26 @@
       const match = /^\/([a-zA-Z0-9_]{1,15})\/status\/([1-9]\d{0,24})\/?$/.exec(href);
       const body = Array.from(article.querySelectorAll('[data-testid="tweetText"]')).find(own);
       if (!match || !time.getAttribute("datetime")) continue;
+      const adjacentId = previousId;
+      previousId = match[2];
+      latestOrder.push(match[2]);
+      const text = originalText(body).slice(0, 6000);
+      if (!text.trim()) {
+        // The timestamp can hydrate before the author's own body, and X may
+        // recycle an article into this state after its full text was read.
+        // Neither is new text evidence. A quote is never a replacement body.
+        const bodyAt = Date.parse(time.getAttribute('datetime'));
+        if ((targetId || match[1].toLowerCase() === author) && !seen.get(match[2])?.text?.trim() &&
+            Number.isFinite(bodyAt) && bodyAt > 0 && bodyAt <= Date.now() + 300000 && Date.now() - bodyAt <= 7 * 86400000) {
+          const metadata = { id: match[2], author: match[1], createdAt: time.getAttribute('datetime') };
+          const hasMedia = Array.from(article.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')).some(own);
+          const target = hasMedia ? mediaOnly : unavailableBodies;
+          if (target.size < 160 || target.has(match[2])) target.set(match[2], metadata);
+          (hasMedia ? unavailableBodies : mediaOnly).delete(match[2]);
+        }
+        continue;
+      }
+      unavailableBodies.delete(match[2]); mediaOnly.delete(match[2]);
       // Poll labels are rendered outside tweetText. Keep only this author's
       // own choices, separate from promises and from a quoted post's poll.
       const poll = Array.from(article.querySelectorAll('[data-testid="cardPoll"]')).find(own);
@@ -50,13 +75,12 @@
         return { author: quotedAuthor, text: originalText(quotedBody).slice(0, 6000), createdAt: quotedTime.getAttribute('datetime'),
           truncated: Boolean(card.querySelector('[data-testid="tweet-text-show-more-link"]')) };
       }).filter(Boolean);
-      const previous = rows.at(-1);
-      rows.push({ id: match[2], author: match[1], text: originalText(body).slice(0, 6000),
+      rows.push({ id: match[2], author: match[1], text,
         ...(pollOptions.length ? { pollOptions } : {}),
         avatarUrl, createdAt: time.getAttribute("datetime"), url: `https://x.com/${match[1]}/status/${match[2]}`,
         truncated: Array.from(article.querySelectorAll('[data-testid="tweet-text-show-more-link"]')).some(own),
         ...(quote.length === 1 ? { quotedPost: quote[0] } : {}),
-        adjacentId: previous?.id || "" });
+        adjacentId });
       if (rows.length >= 160) break;
     }
     return rows;
@@ -80,11 +104,26 @@
 
   function remember(rows) {
     for (const row of rows) {
+      if (!row.text?.trim()) continue;
       if (seen.size >= 160 && !seen.has(row.id)) break;
       const previous = seen.get(row.id);
       seen.set(row.id, { ...previous, ...row, adjacentId: row.adjacentId || previous?.adjacentId || "",
         ...(previous && !previous.truncated && row.truncated ? { text: previous.text, truncated: false } : {}) });
     }
+  }
+
+  function bodyStatus(beforeTarget = false) {
+    // Later comments cannot explain the target's reply context. Missing text
+    // there must not postpone a valid read of the target and its own parent.
+    const targetPosition = beforeTarget ? latestOrder.indexOf(targetId) : -1;
+    const eligible = targetPosition < 0 ? null : new Set(latestOrder.slice(0, targetPosition + 1));
+    const missing = [...unavailableBodies.values()].filter(row => !eligible || eligible.has(row.id));
+    const media = [...mediaOnly.values()].filter(row => !eligible || eligible.has(row.id));
+    return { bodyUnavailableCount: missing.length,
+      bodyUnavailable: missing.slice(0, 160),
+      bodyUnavailableLatestAt: Math.max(0, ...missing
+        .map(row => Date.parse(row.createdAt)).filter(Number.isFinite)) || null,
+      mediaOnlyCount: media.length };
   }
 
   // Page completion does not imply hydrated posts. Wait for the requested row.
@@ -109,7 +148,7 @@
       index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
     }
     // Comments after the target cannot explain what it was replying to.
-    return { rows: index < 0 ? [] : rows.slice(0, index + 1), targetId, pages: 1,
+    return { rows: index < 0 ? [] : rows.slice(0, index + 1), targetId, pages: 1, ...bodyStatus(true),
       stopReason: index < 0 ? "target-missing" : "conversation" };
   }
 
@@ -137,5 +176,5 @@
   }
   if (!allowed()) return { rows: [], stopReason: "navigated", pages };
   remember(collect());
-  return { rows: [...seen.values()], pages: Math.min(pages + 1, 25), stopReason, expanded: expanded.size };
+  return { rows: [...seen.values()], pages: Math.min(pages + 1, 25), stopReason, expanded: expanded.size, ...bodyStatus() };
 })();

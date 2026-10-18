@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.83";
+const NOTIFICATION_BUILD = "0.2.90";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -200,7 +200,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
       await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
     }
     if (!sanitized.monitorSignals || !sanitized.monitorLeadSource || !sanitized.monitorDirectX) {
-      await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache"]);
+      await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache", "directXPendingPosts"]);
       await chrome.alarms.clear(PUBLIC_RETRY_ALARM);
     }
     if (!sanitized.monitorAccount) await purgeAccountState();
@@ -821,7 +821,7 @@ async function clearSignalState() {
   await chrome.storage.local.remove(["publicResumeCheck", "publicDeliveryReadyAt"]);
   await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
   await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
-  await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache"]);
+  await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache", "directXPendingPosts"]);
   await chrome.alarms.clear(PUBLIC_RETRY_ALARM);
   const settings = await loadSettings();
   const { accountSnapshot } = await chrome.storage.local.get("accountSnapshot");
@@ -886,23 +886,26 @@ async function reconcileSignalNotifications(signals, settings, epoch, reviewed =
 
 async function revalidateCachedSignals(epoch) {
   const settings = await loadSettings();
-  const state = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "accountSnapshot", "scheduleSnapshot"]);
+  const state = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "accountSnapshot", "scheduleSnapshot", "directXPendingPosts", "directXContextCache"]);
   if (epoch !== stateEpoch) return;
-  const cached = state.signalSnapshot?.activeSignals || (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : []);
+  const retained = settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX
+    ? RadarDirectX.restorePosts(state.directXPendingPosts, state.directXContextCache) : [];
+  const cached = [...(state.signalSnapshot?.activeSignals || (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : [])), ...retained];
   const schedule = settings.monitorSignals && settings.monitorLeadSource ? RadarSchedule.reconcile(state.scheduleSnapshot) : { events: [] };
   const suppressed = RadarSchedule.supersededIds(schedule);
   const activeSignals = settings.monitorSignals ? reclassifiedSignals(cached).filter(item => !suppressed.has(item.id)) : [];
   const signal = activeSignals[0] || null;
   const hints = settings.monitorSignals && settings.monitorLeadSource
     ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...cached], { limit: 100 }).filter(item => !suppressed.has(item.id)) : [];
-  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports(state.signalSnapshot?.reports || []) : [];
+  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...retained]) : [];
   const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...cached, ...(state.signalSnapshot?.reports || [])];
   const eventAlerts = settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline) : { entries: {} };
-  if (state.signalSnapshot || state.hintSnapshot || state.scheduleSnapshot) {
+  if (state.signalSnapshot || state.hintSnapshot || state.scheduleSnapshot || Array.isArray(state.directXPendingPosts)) {
     const advice = RadarAdvice.make({ usage: settings.monitorAccount ? state.accountSnapshot?.usage : null,
       credits: settings.monitorAccount ? state.accountSnapshot?.credits : null, signal });
     await chrome.storage.local.set({
-      ...(state.signalSnapshot ? { signalSnapshot: { ...state.signalSnapshot, signal, activeSignals, reports } } : {}),
+      signalSnapshot: { ...state.signalSnapshot, signal, activeSignals, reports },
+      ...(Array.isArray(state.directXPendingPosts) ? { directXPendingPosts: RadarDirectX.archivePosts(retained) } : {}),
       hintSnapshot: { ...state.hintSnapshot, items: hints, events: settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.reconcile([], eventBaseline) : [], eventAlerts },
       scheduleSnapshot: schedule,
       adviceSnapshot: advice
@@ -942,9 +945,15 @@ async function runSignalRefresh(quiet) {
     if (!sources.length) return mutate(clearSignalState);
     const results = await Promise.allSettled(sources.map(async (source) => {
       if (source.kind === "x-page") {
-        const { directXContextCache = {} } = await chrome.storage.local.get("directXContextCache");
+        const { directXContextCache = {}, directXPendingPosts = [] } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts"]);
         let direct;
-        try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache }); }
+        try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache, retainedPosts: directXPendingPosts,
+          onCheckpoint: value => mutate(async () => {
+            if (epoch !== stateEpoch || controller.signal.aborted) return;
+            const current = await loadSettings();
+            if (epoch !== stateEpoch || !current.monitorSignals || !current.monitorLeadSource || !current.monitorDirectX) return;
+            await chrome.storage.local.set({ directXPendingPosts: value.posts, directXContextCache: value.contextCache });
+          }) }); }
         catch (error) { directFailure = RadarDirectX.failureReason(error); throw error; }
         return { source, items: Array.isArray(direct) ? direct : direct.items, diagnostics: direct.diagnostics || null, contextCache: direct.contextCache };
       }
@@ -972,13 +981,14 @@ async function runSignalRefresh(quiet) {
       // Usable posts do not prove that the other author/timeline reads worked.
       // Keep partial results flowing while retaining their collection failure.
       const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) :
-        directScan?.cleanupError || (directScan?.timelines?.some(t => t.ok === false) ? "partial" : null);
+        directScan?.cleanupError || (directScan?.bodyUnavailableCount > 0 ? "body-unavailable" : null) ||
+        (directScan?.timelines?.some(t => t.ok === false) ? "partial" : null);
       const leadVerified = latestPostAt > 0 && Date.now() - latestPostAt <= 3 * 86400000;
       // A fresh post from one person/feed cannot certify the other timelines.
       const collectionVerified = leadVerified && (!settings.monitorDirectX || (directOk &&
         directScan?.timelines?.length === RadarDirectX.AUTHORS.length * 2 && directScan.timelines.every(t => t.ok) &&
         !directScan.timelines.some(t => ['time-budget', 'scan-limit', 'post-limit'].includes(t.stopReason)) &&
-        !directScan.conversationFailures && !directScan.contextPending && !directScan.cleanupError));
+        !directScan.conversationFailures && !directScan.contextPending && !directScan.cleanupError && !directScan.bodyUnavailableCount && !directScan.checkpointError));
       const catchUp = Boolean(state.publicResumeCheck);
       const seen = new Set(state.seenSignalIds || []);
       const existingSignals = state.signalSnapshot?.activeSignals ||
@@ -1002,6 +1012,13 @@ async function runSignalRefresh(quiet) {
       const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...existingSignals, ...(state.signalSnapshot?.reports || [])];
       const eventAlerts = currentSettings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline, items) : { entries: {} };
       const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);
+      const publicItems = [...new Map(items.filter(item => RadarSignals.isLead(item)).map(item => [item.id, item])).values()];
+      const classifiedIds = new Set([...activeSignals, ...hints, ...reports].map(item => item.id));
+      const classification = { reviewed: publicItems.length,
+        signals: publicItems.filter(item => activeSignals.some(signal => signal.id === item.id)).length,
+        hints: publicItems.filter(item => hints.some(hint => hint.id === item.id)).length,
+        reports: publicItems.filter(item => reports.some(report => report.id === item.id)).length,
+        other: publicItems.filter(item => !classifiedIds.has(item.id)).length };
       const snapshot = {
         signal,
         activeSignals,
@@ -1009,7 +1026,7 @@ async function runSignalRefresh(quiet) {
         checkedAt: Date.now(),
         leadStatus: { state: !settings.monitorLeadSource ? "off" : leadVerified ? "ok" : latestPostAt ? "stale" : "unavailable",
           latestPostAt: latestPostAt || null, directEnabled: settings.monitorDirectX, directOk,
-          directError, directScan, collectionVerified,
+          directError, directScan, collectionVerified, classification,
           mode: directOk ? "x-page" : "feed" },
         sources: results.map((result, index) => ({
           id: sources[index].id,
@@ -1034,6 +1051,9 @@ async function runSignalRefresh(quiet) {
           { publicResumeCheck: { ...state.publicResumeCheck, collectedAt: Date.now() } } : {}),
         ...(leadResults.find(result => result.source.id === 'x-direct')?.contextCache ?
           { directXContextCache: leadResults.find(result => result.source.id === 'x-direct').contextCache } : {}),
+        ...(directOk && currentSettings.monitorDirectX && currentSettings.monitorLeadSource ? {
+          directXPendingPosts: RadarDirectX.archivePosts(leadResults.find(result => result.source.id === 'x-direct').items)
+        } : {}),
         hintSnapshot: { items: hints, events: currentSettings.monitorLeadSource ? RadarEvents.reconcile(eventBaseline, items) : [], eventAlerts, checkedAt: Date.now() },
         scheduleSnapshot: schedule,
         seenSignalIds: nextSeen,
@@ -1117,11 +1137,12 @@ async function recordCollectionHealth(snapshot, settings, epoch) {
   if (epoch !== stateEpoch) return;
   // A new install awaiting optional access is not a broken connection.
   if (error === 'permission' && !collectorHealth.lastSuccessAt) return;
-  const replacingFailure = error === 'partial' && Boolean(collectorHealth.error);
+  const partial = ['partial', 'body-unavailable'].includes(error);
+  const replacingFailure = partial && Boolean(collectorHealth.error);
   if (failures < 2 && !['tab-blocked', 'login'].includes(error) && !replacingFailure) return;
   if (notificationHistory[id]) return;
   if (!pendingNotifications.some(item => item.id === id)) await createNotification(id, {
-    title: msg(error === 'partial' ? 'collectorPartialTitle' : 'collectorFailureTitle'),
+    title: msg(partial ? 'collectorPartialTitle' : 'collectorFailureTitle'),
     message: error === 'partial' ? msg('collectorPartialMessage') : error === 'tab-blocked' ? msg('collectorTabBlockedMessage') :
       msg('collectorFailureMessage', msg('collectorReason_' + error)),
     buttons: [{ title: msg('settings') }]
@@ -1284,7 +1305,7 @@ function hintNotificationOptions(hint) {
 }
 
 function hintNotificationEnabled(hint, settings) {
-  const discussion = ['reset-poll', 'reset-choice'].includes(hint?.assessment?.rule);
+  const discussion = ['reset-poll', 'reset-choice', 'reset-short'].includes(hint?.assessment?.rule);
   return Boolean(settings.monitorSignals && settings.monitorLeadSource && hint?.assessment?.candidate &&
     hint.assessment.topic !== 'event' && (discussion ? settings.notifyResetHints : settings.notifyHints));
 }
