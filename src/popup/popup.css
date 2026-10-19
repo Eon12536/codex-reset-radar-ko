@@ -220,6 +220,7 @@ html[lang="en-US"] .news-timing-note { max-width: 128px; }
 .refresh-button { background: var(--action-bg); border-color: var(--action-bg); color: var(--action-text); }
 
 .news-kind { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+.news-published { display: block; color: var(--muted); font-size: 10px; line-height: 1.4; margin: 2px 0; overflow-wrap: anywhere; }
 
 /* Light-only hierarchy: white panels, clear edges and readable supporting text. */
 :root[data-theme="light"] .quota-row,

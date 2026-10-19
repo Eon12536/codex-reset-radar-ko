@@ -9,8 +9,8 @@ test('release corpus retains the observed examples and independent negative cont
   assert.equal(corpus.schema, 1);
   const observed = corpus.cases.filter(example => !corpus.groups[example.group].provenance.startsWith('Synthetic'));
   const controls = corpus.cases.filter(example => corpus.groups[example.group].provenance.startsWith('Synthetic'));
-  assert.ok(observed.length >= 8);
-  assert.ok(observed.filter(example => example.expected !== 'none').length >= 7);
+  assert.ok(observed.length >= 9);
+  assert.ok(observed.filter(example => example.expected !== 'none').length >= 8);
   assert.ok(controls.length >= 10);
   for (const example of corpus.cases) {
     assert.ok(['signal', 'hint', 'report', 'none'].includes(example.expected));
@@ -21,14 +21,21 @@ test('release corpus retains the observed examples and independent negative cont
 for (const example of corpus.cases) test('release detection gate: ' + example.name, () => {
   const group = corpus.groups[example.group];
   const now = Date.parse(group.observedAt);
-  let item = Direct.linkQuotedContexts(Direct.normalize(group.posts, now)).find(item => item.id === example.targetId);
+  const timeline = Direct.linkQuotedContexts(Direct.normalize(group.posts, now));
+  for (const link of example.timelineContexts || []) {
+    const index = timeline.findIndex(item => item.id === link.targetId);
+    timeline[index] = Direct.conversationContext(timeline[index], { targetId: link.targetId,
+      rows: [group.posts.find(row => row.id === link.parentId), group.posts.find(row => row.id === link.targetId)] }, now);
+  }
+  let item = timeline.find(item => item.id === example.targetId);
   assert.ok(item, 'The observed target must survive collection normalization');
   if (example.parentId) item = Direct.conversationContext(item, { targetId: item.id,
     rows: [group.posts.find(row => row.id === example.parentId), group.posts.find(row => row.id === item.id)] }, now);
   const assessment = Signals.classify(item, { now });
   const hint = Signals.classifyHint(item, { now });
-  const reports = Signals.reports([item], { now });
+  const reports = Signals.reports(example.useTimeline ? timeline : [item], { now }).filter(report => report.id === item.id);
   const category = assessment.actionable ? 'signal' : reports.length ? 'report' : hint.candidate ? 'hint' : 'none';
   assert.equal(category, example.expected);
   if (example.confidence) assert.equal(assessment.confidence, example.confidence, 'Default alert threshold must still admit this promise');
+  if (example.completionLink) assert.equal(reports[0].assessment.completionLink, example.completionLink);
 });

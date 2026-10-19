@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.90";
+const NOTIFICATION_BUILD = "0.2.91";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -897,7 +897,7 @@ async function revalidateCachedSignals(epoch) {
   const signal = activeSignals[0] || null;
   const hints = settings.monitorSignals && settings.monitorLeadSource
     ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...cached], { limit: 100 }).filter(item => !suppressed.has(item.id)) : [];
-  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...retained]) : [];
+  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...cached, ...retained]) : [];
   const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...cached, ...(state.signalSnapshot?.reports || [])];
   const eventAlerts = settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline) : { entries: {} };
   if (state.signalSnapshot || state.hintSnapshot || state.scheduleSnapshot || Array.isArray(state.directXPendingPosts)) {
@@ -1008,7 +1008,7 @@ async function runSignalRefresh(quiet) {
       const activeSignals = reclassifiedSignals(existingSignals, items).filter(item => !suppressed.has(item.id));
       const signal = activeSignals[0] || null;
       const hints = currentSettings.monitorLeadSource ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...items].filter(item => !suppressed.has(item.id)), { limit: 100 }) : [];
-      const reports = currentSettings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...items]) : [];
+      const reports = currentSettings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...existingSignals, ...items]) : [];
       const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...existingSignals, ...(state.signalSnapshot?.reports || [])];
       const eventAlerts = currentSettings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline, items) : { entries: {} };
       const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);
@@ -1164,7 +1164,7 @@ function signalNotificationEnabled(signal, settings) {
 }
 
 function reportNotificationOptions(report) {
-  return { title: report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + ' · Banked reset 지급 공지' : report.assessment.report === 'reset-update' ? RadarSignals.authorName(report) + ' · 리셋 후속 안내' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
+  return { title: report.assessment.completionLink === 'inferred' ? RadarSignals.authorName(report) + ' · 리셋 완료 표현 (연결 추정)' : report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + ' · Banked reset 지급 공지' : report.assessment.report === 'reset-update' ? RadarSignals.authorName(report) + ' · 리셋 후속 안내' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
     message: `${RadarTime.formatDateTime(report.createdAt, 'Asia/Seoul', 'ko-KR')} 게시 · ${report.assessment.reason}. 원문과 내 계정 잔여량을 확인하세요.`,
     buttons: [{ title: '원문 보기' }] };
 }
@@ -1372,6 +1372,7 @@ async function maybeNotifyEvent(notice, settings, epoch) {
 
 function recoveryNotificationOptions(event, settings) {
   const labels = { fiveHour: "5시간", weekly: "주간" };
+  const scope = [...new Set(event.windows.map(window => labels[window.kind]).filter(Boolean))].join('·');
   const details = event.windows.map(window => {
     const rounded = Math.round(window.previousRemaining * 100) / 100;
     const before = rounded >= 100 ? "100% 미만" : `${rounded}%`;
@@ -1381,7 +1382,7 @@ function recoveryNotificationOptions(event, settings) {
   const at = RadarTime.formatDateTime(event.observedAt, RadarTime.resolveTimeZone(settings));
   return {
     title: event.windows.every(window => (window.remaining ?? 100) === 100)
-      ? "Codex 잔여량이 100%로 리셋됐어요" : "Codex 리셋 주기 변경과 잔여량 회복을 확인했어요",
+      ? `Codex ${scope} 잔여량이 100%로 리셋됐어요` : `Codex ${scope} 리셋 주기 변경과 잔여량 회복을 확인했어요`,
     message: `${event.catchUp ? "다시 확인한 결과: " : ""}${details}. ${at} 조회값입니다.${event.catchUp ? " 정확한 회복 시각은 알 수 없습니다." : ""}`,
     buttons: [{ title: "알림 설정" }]
   };

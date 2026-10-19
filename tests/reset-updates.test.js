@@ -85,7 +85,9 @@ test('official follow-up uses Windows notification path with hints off, marks ba
   const news = News.select(w.local.signalSnapshot, w.local.hintSnapshot, Settings.sanitize());
   assert.equal(news.label, '리셋 후속');
   assert.equal(news.kindLabel, '리셋 반영 조사·보완');
-  assert.match(news.timing, /후속 안내.*게시/);
+  assert.equal(news.timing, '후속 안내');
+  assert.match(news.publishedText, /게시/);
+  assert.equal(news.publishedAt, Date.parse(w.item.createdAt));
   assert.equal(w.local.signalSnapshot.signal, null);
   assert.equal(w.local.recoveryState, undefined);
   assert.equal(w.local.creditGrantState, undefined);

@@ -45,8 +45,10 @@ test('reset announcements and completion posts use the selected country without 
   const report = { ...post('All Codex usage limits have now reset.'), createdAt: '2026-09-29T01:00:00Z' };
   const news = r.RadarNews.list({ reports: [report] }, null, { monitorSignals: true, monitorLeadSource: true });
   assert.equal(news.length, 1);
-  assert.match(news[0].timing, /US Eastern \(ET\).*Sep 28.*9:00 PM/);
-  assert.doesNotMatch(news[0].timing, /KST|Korea|한국/);
+  assert.equal(news[0].timing, 'Reset complete');
+  assert.match(news[0].publishedText, /US Eastern \(ET\).*9\/28\/2026.*9:00 PM/);
+  assert.equal(news[0].publishedAt, Date.parse(report.createdAt));
+  assert.doesNotMatch(news[0].publishedText, /KST|Korea|한국/);
 });
 
 test('US and UK use regional daylight saving rules instead of a fixed standard offset', () => {

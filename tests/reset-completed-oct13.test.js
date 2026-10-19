@@ -69,7 +69,7 @@ test('verified completion wording works for each monitored author without relyin
 test('questions alone, unrelated, speculative, negated and historical completions stay outside reset reports', () => {
   const [, item] = posts();
   for (const text of [
-    "What would you like with your side of reset?", "It's done.",
+    "What would you like with your side of reset?",
     "What would you like with your side of reset? Is it done?",
     "What would you like with your side of reset? It's not done.",
     "No reset. It's done.", "Password reset? It's done.",
@@ -80,6 +80,7 @@ test('questions alone, unrelated, speculative, negated and historical completion
     "Reset? Yesterday it was done.", "Last year: reset. It's done.",
     "Reset? It's done. But the reset was cancelled."
   ]) assert.equal(Signals.reports([{ ...item, text }], { now: NOW }).length, 0, text);
+  assert.equal(Signals.reports([{ ...item, text: "It's done.", replyContext: null }], { now: NOW }).length, 0);
 });
 
 test('startup keeps the completion above older banked reports and sends its Windows notification once', async () => {

@@ -438,7 +438,7 @@
     state.hintSnapshot = { events: [], items: recovered ? [{ id: '2109812216212099456', author: 'thsottiaux', source,
       text: 'Day 8/ Reset', createdAt: '2026-10-13T01:03:25Z', url: 'https://x.com/thsottiaux/status/2109812216212099456' }] : [] };
   }
-  if (['oct18Recovered', 'contextQueue', 'checkpointFailure'].includes(mode)) {
+  if (['oct18Recovered', 'contextQueue', 'checkpointFailure', 'oct19Done'].includes(mode)) {
     const source = { id: 'codex-lead', weight: 1 };
     const parent = { id: '2111492673890824348', author: 'thsottiaux', source,
       text: 'Day 13/ Le limit reset', createdAt: '2026-10-17T16:20:57Z',
@@ -456,6 +456,16 @@
     state.collectorHealth = { error: null, checkedAt: now, failures: 0 };
     state.signalSnapshot.leadStatus.classification = { reviewed: 12, signals: 1, hints: 1, reports: 0, other: 10 };
     state.signalSnapshot.leadStatus.directScan.retainedPosts = 4;
+    if (mode === 'oct19Done') {
+      const done = { id: '2111566005684289735', author: 'thsottiaux', source,
+        text: 'Done', createdAt: '2026-10-17T21:12:21Z', url: 'https://x.com/thsottiaux/status/2111566005684289735',
+        replyContext: { ...reply, relation: 'previous-announcement', targetId: '2111566005684289735' },
+        assessment: { report: 'completed-reset', actionable: false, confidence: 'medium', eventAt: null, completionLink: 'inferred' } };
+      state.signalSnapshot.reports = [done];
+      state.signalSnapshot.leadStatus.latestPostAt = Date.parse(done.createdAt);
+      state.signalSnapshot.leadStatus.classification.reports = 1;
+      state.signalSnapshot.leadStatus.classification.other = 9;
+    }
     if (mode === 'contextQueue') {
       state.signalSnapshot.leadStatus.directScan.contextPending = 4;
       state.signalSnapshot.leadStatus.collectionVerified = false;
@@ -564,10 +574,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.90", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.91", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.90", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.91", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

@@ -201,6 +201,9 @@ function createNewsRow(news, entries, compact = false) {
     timing.title = news.timingDetail + " 게시 " + RadarTime.formatDateTime(news.item.createdAt, timeZone) + " · 이미 지난 일정일 수 있습니다.";
     heading.append(badge, timing);
     const kind = document.createElement("span"); kind.className = "news-kind"; kind.textContent = (RadarSignals.isLead(news.item) ? RadarSignals.authorName(news.item) + " · " : "") + news.kindLabel;
+    const published = document.createElement('time'); published.className = 'news-published';
+    published.textContent = news.publishedText;
+    if (Number.isFinite(news.publishedAt)) published.dateTime = new Date(news.publishedAt).toISOString();
     const quote = document.createElement("blockquote"); quote.className = "news-quote";
     quote.textContent = [news.item.text, ...RadarSignals.pollOptions(news.item.pollOptions)].join('\n');
     const link = document.createElement("button"); link.type = "button"; link.className = "text-action news-link";
@@ -210,8 +213,8 @@ function createNewsRow(news, entries, compact = false) {
     link.addEventListener("click", () => openNews(news.key, link));
     const avatar = RadarNewsAvatar.create(news.item, entries);
     const content = document.createElement('div'); content.className = 'news-content';
-    if (compact) { kind.textContent = RadarSignals.authorName(news.item); content.append(kind, quote, link); }
-    else content.append(heading, kind, quote, link);
+    if (compact) { kind.textContent = RadarSignals.authorName(news.item); content.append(kind, published, quote, link); }
+    else content.append(heading, kind, published, quote, link);
     row.append(avatar, content); return row;
 }
 

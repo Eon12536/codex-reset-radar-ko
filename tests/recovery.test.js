@@ -50,6 +50,7 @@ test("both quotas recovering together produce one Korean desktop notification an
   await h.refresh();
   assert.equal(h.delivered.length, 1);
   assert.match(h.delivered[0].title, /100%로 리셋/);
+  assert.match(h.delivered[0].title, /5시간·주간/);
   assert.match(h.delivered[0].message, /5시간 60% → 100%.*주간 75% → 100%/);
   assert.equal(h.delivered[0].type, "basic");
   assert.equal(h.delivered[0].contextMessage, "Codex 리셋 레이더");
@@ -65,8 +66,12 @@ test("each quota can recover separately and recover again after new consumption 
   assert.equal(h.delivered.length, 3);
   assert.equal(new Set(h.delivered.map(item => item.id)).size, 3);
   assert.match(h.delivered[0].message, /5시간/);
+  assert.match(h.delivered[0].title, /5시간/);
+  assert.doesNotMatch(h.delivered[0].title, /주간/);
   assert.doesNotMatch(h.delivered[0].message, /주간/);
   assert.match(h.delivered[1].message, /주간/);
+  assert.match(h.delivered[1].title, /주간/);
+  assert.doesNotMatch(h.delivered[1].title, /5시간/);
 });
 
 test("rounding, partial recovery and a passed reset timestamp do not mean full recovery", async () => {

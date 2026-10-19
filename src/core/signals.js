@@ -429,10 +429,94 @@
     return banked && ordinary ? 'both' : banked ? 'banked' : ordinary ? 'ordinary' : 'unknown';
   }
 
+  const SHORT_COMPLETION = /^(?:done|all done|complete(?:d)?|finished|it(?:'s| is) (?:now )?(?:done|complete(?:d)?|finished))[.!]*$/;
+  const publicIdentity = item => referenceId(item?.id) && /^@?(?:thsottiaux|reach_vb|openai)$/i.test(item.author || '') &&
+    item.url === `https://x.com/${String(item.author).replace(/^@/, '')}/status/${item.id}`;
+  const sameAuthor = (a, b) => String(a?.author || '').replace(/^@/, '').toLowerCase() === String(b?.author || '').replace(/^@/, '').toLowerCase();
+
+  function shortResetCompletion(item) {
+    if (!isLead(item) || !publicIdentity(item) || item.truncated || !SHORT_COMPLETION.test(normalizedText(item))) return null;
+    const parent = item.replyContext, inferred = parent?.relation === 'previous-announcement';
+    const before = root.RadarTime.parseTimestamp(parent?.createdAt), at = root.RadarTime.parseTimestamp(item.createdAt);
+    if ((!inferred && !['quoted-post', 'conversation-before'].includes(parent?.relation)) || parent?.targetId !== item.id ||
+        !publicIdentity(parent) || parent.id === item.id || !sameAuthor(parent, item) || parent.truncated ||
+        !Number.isFinite(before) || !Number.isFinite(at) || before >= at || at - before > (inferred ? 1 : 7) * 86400000 ||
+        /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(parent))) return null;
+    return classify({ ...parent, source: item.source }, { now: before }).actionable || !inferred && resetHeadline(parent.text)
+      ? { inferred } : null;
+  }
+
+  function completionReference(item, targetId, relation, nested = true) {
+    const parent = { id: item.id, author: item.author, text: String(item.text).slice(0, 6000),
+      createdAt: item.createdAt, url: item.url, truncated: Boolean(item.truncated), relation, targetId };
+    if (nested && publicIdentity(item.replyContext) && ['quoted-post', 'conversation-before'].includes(item.replyContext?.relation))
+      parent.replyContext = completionReference(item.replyContext, item.id, item.replyContext.relation, false);
+    return parent;
+  }
+
+  function linkResetCompletions(items, options = {}) {
+    const now = options.now ?? Date.now();
+    const originals = (Array.isArray(items) ? items : []).filter(item => item?.id);
+    const byId = new Map();
+    for (const item of originals) {
+      const prior = byId.get(item.id), context = prior?.replyContext;
+      // A later timeline/archive copy can omit a conversation already read.
+      // Keep its bounded public evidence only for the exact unchanged post;
+      // an edited body or an explicit new context always takes precedence.
+      const samePost = prior && publicIdentity(item) && sameAuthor(prior, item) && prior.url === item.url &&
+        prior.text === item.text && !prior.truncated && !item.truncated &&
+        root.RadarTime.parseTimestamp(prior.createdAt) === root.RadarTime.parseTimestamp(item.createdAt);
+      byId.set(item.id, samePost && !item.replyContext && !item.quotedPost && context?.targetId === item.id &&
+        publicIdentity(context) && ['quoted-post', 'conversation-before', 'previous-announcement'].includes(context.relation)
+        ? { ...item, replyContext: completionReference(context, item.id, context.relation) } : item);
+    }
+    // Retained reports keep the bounded public evidence, never a permanent
+    // verdict. Prefer a newly collected edit over the saved promise body.
+    for (const item of originals) if (shortResetCompletion(item)?.inferred && !byId.has(item.replyContext.id))
+      byId.set(item.replyContext.id, { ...item.replyContext, source: item.source });
+    const rows = [...byId.values()].sort((a, b) => (root.RadarTime.parseTimestamp(a.createdAt) || 0) - (root.RadarTime.parseTimestamp(b.createdAt) || 0));
+    const consumed = new Set();
+    return rows.map(item => {
+      const at = root.RadarTime.parseTimestamp(item.createdAt);
+      if (!isLead(item) || !publicIdentity(item) || !at || at > now + 300000 || now - at > 7 * 86400000) return item;
+      const reference = item.replyContext, full = byId.get(reference?.id);
+      if (['quoted-post', 'conversation-before'].includes(reference?.relation) && full &&
+          publicIdentity(full) && sameAuthor(full, reference) && full.url === reference.url && full.text === reference.text &&
+          root.RadarTime.parseTimestamp(full.createdAt) === root.RadarTime.parseTimestamp(reference.createdAt) && full.replyContext)
+        item = { ...item, replyContext: { ...reference, replyContext: full.replyContext } };
+      if (item.replyContext?.relation === 'previous-announcement') {
+        const { replyContext: _inferred, ...original } = item; item = original;
+      }
+      if (resetCompletedFollowUp(item) || shortResetCompletion(item)) { consumed.add(item.replyContext.id); return item; }
+      if (item.truncated || item.replyContext || item.quotedPost || item.isReply || !SHORT_COMPLETION.test(normalizedText(item))) return item;
+      const groups = new Map();
+      for (const claim of rows) {
+        const before = root.RadarTime.parseTimestamp(claim.createdAt);
+        if (!isLead(claim) || !publicIdentity(claim) || !sameAuthor(claim, item) || claim.truncated ||
+            !before || before >= at || at - before > 86400000 || consumed.has(claim.id) ||
+            /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(claim)) || !classify(claim, { now: before }).actionable) continue;
+        const parent = claim.replyContext;
+        const key = ['quoted-post', 'conversation-before'].includes(parent?.relation) && parent.targetId === claim.id &&
+          publicIdentity(parent) && sameAuthor(parent, claim) ? parent.id : claim.id;
+        if (!consumed.has(key)) groups.set(key, claim);
+      }
+      // Multiple independent promises cannot establish which one "Done" means.
+      if (groups.size !== 1) return item;
+      const [key, promise] = [...groups][0], before = root.RadarTime.parseTimestamp(promise.createdAt);
+      if (rows.some(other => {
+        const when = root.RadarTime.parseTimestamp(other.createdAt), text = normalizedText(other);
+        if (!isLead(other) || !sameAuthor(other, item) || when <= before || when >= at || UNRELATED.test(text)) return false;
+        return /\b(?:resets?|limits?|quota)\b/.test(text) && (isNegated(text) || QUALIFIED_TIME.test(text) || isCompleted(text) || /\b(?:cancelled|canceled|withdrawn|banked|credits?)\b/.test(text)) || Boolean(productEventHint(other, text));
+      })) return item;
+      consumed.add(key); consumed.add(promise.id);
+      return { ...item, replyContext: completionReference(promise, item.id, 'previous-announcement') };
+    });
+  }
+
   function reports(items, options = {}) {
     const now = options.now ?? Date.now();
     const unique = new Map();
-    for (const item of items || []) {
+    for (const item of linkResetCompletions(items, options)) {
       if (!item?.id) continue;
       unique.delete(item.id);
       const at = root.RadarTime.parseTimestamp(item.createdAt);
@@ -447,7 +531,8 @@
       const relevant = clauses(text.replace(/[^.!?;\n]*\?/g, '')).filter(part => !isNegated(part) && (!SPECULATIVE.test(part) || reflected(part)) && !UNRELATED.test(part) &&
         !/\b(?:not|never|didn't|don't|cannot|can't|won't|last year|last month|ago)\b/.test(part));
       const followUp = resetGrantFollowUp(item);
-      const resetCompletion = resetCompletedFollowUp(item);
+      const shortCompletion = shortResetCompletion(item);
+      const resetCompletion = resetCompletedFollowUp(item) || Boolean(shortCompletion);
       const grant = Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
         /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
       const completed = resetCompletion || relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
@@ -459,12 +544,13 @@
       unique.set(item.id, { id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url,
         ...((update || followUp || resetCompletion) && item.replyContext ? { replyContext: item.replyContext } : {}),
-        assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: 'high', eventAt: null,
+        assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: shortCompletion?.inferred ? 'medium' : 'high', eventAt: null,
+          ...(shortCompletion ? { completionLink: shortCompletion.inferred ? 'inferred' : 'verified' } : {}),
           ...(followUp ? { grantStage: followUp } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
           reason: followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
             followUp === 'timing' ? '리셋권 지급 시간 안내 · 원문 시간 표현 기준 · 정확한 시각 미확정' :
-            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
+            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);

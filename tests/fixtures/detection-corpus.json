@@ -323,6 +323,20 @@
       "group": "negative10010",
       "targetId": "10010",
       "expected": "none"
+    },
+    {
+      "name": "Observed Done with one earlier validated reset promise",
+      "group": "oct17",
+      "targetId": "2111566005684289735",
+      "timelineContexts": [
+        {
+          "targetId": "2111492738025959922",
+          "parentId": "2111492673890824348"
+        }
+      ],
+      "useTimeline": true,
+      "expected": "report",
+      "completionLink": "inferred"
     }
   ]
 }

@@ -59,7 +59,8 @@ test('report reaches popup and Windows notification path once, without account/c
   assert.equal(news.label, 'Banked');
   assert.equal(news.kind, 'banked');
   assert.equal(news.kindLabel, 'Banked reset · 리셋권');
-  assert.match(news.timing, /지급 안내 · 한국 .* 게시/);
+  assert.equal(news.timing, '지급 안내');
+  assert.match(news.publishedText, /게시 · 한국 ·/);
   assert.match(w.notifications['report:' + item.id].title, /Banked reset 지급 공지/);
   assert.equal(w.local.signalSnapshot.signal, null);
   assert.equal(w.local.recoveryState, undefined);

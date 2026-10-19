@@ -67,7 +67,10 @@ test('standalone, adjacent, stale, truncated and forged contexts cannot establis
     'Not landing today by EOD PST', 'New model landing today by EOD PST', 'Landing today by EOD PST if we can']) {
     const item = { ...reply, text };
     assert.equal(Signals.classify(item, { now: NOW }).actionable, false, text);
-    if (text === 'Done') assert.equal(Signals.reports([item], { now: NOW }).length, 0);
+    if (text === 'Done') {
+      assert.equal(Signals.reports([item], { now: NOW })[0].assessment.completionLink, 'verified');
+      assert.equal(Signals.reports([{ ...item, replyContext: undefined }], { now: NOW }).length, 0);
+    }
   }
   const adjacent = Direct.normalize(raw, NOW)[1];
   assert.equal(Signals.classify(adjacent, { now: NOW }).actionable, false);
