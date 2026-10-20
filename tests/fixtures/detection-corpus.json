@@ -230,6 +230,67 @@
           "text": "No global reset landing by EOD PST."
         }
       ]
+    },
+    "oct20Day15": {
+      "observedAt": "2026-10-20T16:48:57Z",
+      "provenance": "Actual public Tibo profile and target permalink observed in Chrome on 2026-10-21 KST; full own body and public timestamp; quote is not claimed as a reset promise",
+      "posts": [
+        {
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T06:33:48.000Z",
+          "id": "2112432076767289678",
+          "text": "Day 15/ Nevermind, we're still cooking... and reset. Enjoy.",
+          "truncated": false,
+          "url": "https://x.com/thsottiaux/status/2112432076767289678"
+        },
+        {
+          "author": "thsottiaux",
+          "createdAt": "2026-10-19T19:45:28.000Z",
+          "id": "2112268918681485431",
+          "text": "Day 15/ We're cooked",
+          "truncated": false,
+          "url": "https://x.com/thsottiaux/status/2112268918681485431"
+        }
+      ]
+    },
+    "negative20001": {
+      "observedAt": "2026-10-20T16:48:57Z",
+      "provenance": "Synthetic independent negative control for day-series completion",
+      "posts": [
+        {
+          "id": "20001",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T06:33:48Z",
+          "url": "https://x.com/thsottiaux/status/20001",
+          "text": "Day 15/ We didn't ship and reset. Enjoy."
+        }
+      ]
+    },
+    "negative20002": {
+      "observedAt": "2026-10-20T16:48:57Z",
+      "provenance": "Synthetic independent negative control for day-series completion",
+      "posts": [
+        {
+          "id": "20002",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T06:33:48Z",
+          "url": "https://x.com/thsottiaux/status/20002",
+          "text": "Day 15/ Reset. Almost done."
+        }
+      ]
+    },
+    "negative20003": {
+      "observedAt": "2026-10-20T16:48:57Z",
+      "provenance": "Synthetic independent negative control for day-series completion",
+      "posts": [
+        {
+          "id": "20003",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T06:33:48Z",
+          "url": "https://x.com/thsottiaux/status/20003",
+          "text": "Day 15/ Password reset. Enjoy."
+        }
+      ]
     }
   },
   "cases": [
@@ -365,6 +426,36 @@
       "useTimeline": true,
       "expected": "report",
       "completionLink": "inferred"
+    },
+    {
+      "name": "Observed Day 15 short reset announcement",
+      "group": "oct20Day15",
+      "targetId": "2112432076767289678",
+      "expected": "report"
+    },
+    {
+      "name": "Observed quoted cooked post is not a reset",
+      "group": "oct20Day15",
+      "targetId": "2112268918681485431",
+      "expected": "none"
+    },
+    {
+      "name": "Day-series control: Day 15/ We didn't ship and reset. Enjoy.",
+      "group": "negative20001",
+      "targetId": "20001",
+      "expected": "none"
+    },
+    {
+      "name": "Day-series control: Day 15/ Reset. Almost done.",
+      "group": "negative20002",
+      "targetId": "20002",
+      "expected": "hint"
+    },
+    {
+      "name": "Day-series control: Day 15/ Password reset. Enjoy.",
+      "group": "negative20003",
+      "targetId": "20003",
+      "expected": "none"
     }
   ]
 }

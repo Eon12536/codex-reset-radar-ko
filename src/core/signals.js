@@ -66,6 +66,26 @@
   function resetHeadline(text) {
     return /^day\s+[1-9]\d{0,2}\s*[/:–—-]\s*(?:global\s+|(?:le\s+)?(?:(?:usage|weekly|rate)\s+)?limits?\s+)?reset[.!]*$/i.test(String(text || '').trim());
   }
+  // A trusted author's "Day N/ ... and reset. Enjoy." series post. Only a bare
+  // reset clause counts; a separate availability cue ("enjoy", "it's live")
+  // makes it a medium-confidence completion report, otherwise a low hint.
+  // Never infers reset kind, clock time or personal account reflection.
+  function dayResetAnnouncement(item) {
+    if (!isLead(item) || !publicIdentity(item) || item.truncated) return null;
+    const text = normalizedText(item).replace(/\s+/g, ' ');
+    const match = /^day ?[1-9]\d{0,2} ?[/:–—-] ?(.+)$/.exec(text);
+    if (!match || resetHeadline(text) || text.length > 280) return null;
+    const body = match[1];
+    if (/[?"“”]/.test(body) || UNRELATED.test(body) || includesAny(body, EXCLUSIONS) || BANKED_CREDIT.test(body) || isNegated(body) ||
+        hasFutureTiming(body) || SPECULATIVE.test(body) || QUALIFIED_TIME.test(body) || prospective(body) ||
+        /\b(?:not|never|no|[a-z]+n't|cancel(?:l?ed|ling)?|withdrawn|denied|rumou?rs?|fake|wish|will|going to|planned|later|hop(?:e|es|ed|ing)|intend(?:s|ed|ing)?|yesterday|ago|last|previous|recap|bank(?:s|ed|ing)?|credits?|device|router|phone|account|link|email)\b/.test(body)) return null;
+    const parts = clauses(body);
+    const resetAt = parts.findIndex(part => /(?:^|\b(?:and|plus|also|then|&) )(?:(?:a|another|the|global|full) )?(?:(?:usage|weekly|rate) )?(?:limits? )?resets?(?: (?:is |are )?(?:done|live|in))?$/.test(part));
+    if (resetAt < 0) return null;
+    // Cue must be a whole clause; the reset clause itself may end "reset (is) done/live/in".
+    const cue = /^(?:(?:so |now )?enjoy|have fun|(?:it's|it is|they're|they are|resets? (?:is|are)) (?:now )?(?:live|done|in))$/;
+    return /\bresets? (?:(?:is|are) )?(?:done|live|in)$/.test(parts[resetAt]) || parts.slice(resetAt + 1).some(part => cue.test(part)) ? 'completed' : 'mention';
+  }
   function resetDiscussion(item) {
     if (!isLead(item)) return null;
     const text = normalizedText(item);
@@ -327,6 +347,10 @@
     if (isNegated(rhetorical)) return none;
     if (classify(item, options).actionable) return none;
     if (resetUpdate(item)) return none;
+    const day = dayResetAnnouncement(item);
+    if (day === 'completed') return none;
+    if (day) return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '',
+      rule: 'reset-day', reason: '일차별 소식에 리셋 언급 · 완료 여부·리셋 종류·시각 미확정' };
     const discussion = resetDiscussion(item);
     if (discussion) return { ...discussion, candidate: true, actionable: false,
       confidence: 'low', eventAt: null, qualifier: '' };
@@ -548,17 +572,21 @@
         ((/\b(?:codex|chatgpt|limits?|quotas?|allowance|usage|tokens?)\b/.test(part) &&
           (isCompleted(part) || /\b(?:was|were|we've|i've) (?:just |now )?reset\b/.test(part))) ||
           /^(?:all )?resets? (?:have (?:now )?)?(?:(?:all )?propagated|done|complete|completed)\b/.test(part) || reflected(part)));
-      if (!grant && !completed && !update) continue;
+      // Day-series announcement: labeled, medium confidence (no quota kind).
+      const dayReset = !grant && !completed && !update && dayResetAnnouncement(item) === 'completed';
+      if (!grant && !completed && !update && !dayReset) continue;
       unique.set(item.id, { id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url,
         ...((update || followUp || resetCompletion) && item.replyContext ? { replyContext: item.replyContext } : {}),
-        assessment: { report: grant ? 'credit-grant' : completed ? 'completed-reset' : 'reset-update', actionable: false, confidence: shortCompletion?.inferred ? 'medium' : 'high', eventAt: null,
+        assessment: { report: grant ? 'credit-grant' : completed || dayReset ? 'completed-reset' : 'reset-update', actionable: false,
+          confidence: shortCompletion?.inferred || dayReset ? 'medium' : 'high', eventAt: null,
+          ...(dayReset ? { announcement: 'day-series' } : {}),
           ...(shortCompletion ? { completionLink: shortCompletion.inferred ? 'inferred' : 'verified' } : {}),
           ...(followUp ? { grantStage: followUp } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
           reason: followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
             followUp === 'timing' ? '리셋권 지급 시간 안내 · 원문 시간 표현 기준 · 정확한 시각 미확정' :
-            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
+            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : dayReset ? '일차별 소식의 리셋 공지 · 리셋 종류·시각·내 계정 반영은 별도 확인' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);
