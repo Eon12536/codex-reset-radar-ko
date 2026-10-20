@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.91";
+const NOTIFICATION_BUILD = "0.2.92";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -886,7 +886,7 @@ async function reconcileSignalNotifications(signals, settings, epoch, reviewed =
 
 async function revalidateCachedSignals(epoch) {
   const settings = await loadSettings();
-  const state = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "accountSnapshot", "scheduleSnapshot", "directXPendingPosts", "directXContextCache"]);
+  const state = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "accountSnapshot", "scheduleSnapshot", "directXPendingPosts", "directXContextCache", "publicAlertState", "notificationHistory", "pendingNotifications"]);
   if (epoch !== stateEpoch) return;
   const retained = settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX
     ? RadarDirectX.restorePosts(state.directXPendingPosts, state.directXContextCache) : [];
@@ -897,7 +897,13 @@ async function revalidateCachedSignals(epoch) {
   const signal = activeSignals[0] || null;
   const hints = settings.monitorSignals && settings.monitorLeadSource
     ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...cached], { limit: 100 }).filter(item => !suppressed.has(item.id)) : [];
-  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...cached, ...retained]) : [];
+  const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...cached, ...retained],
+    { context: state.hintSnapshot?.items || [] }) : [];
+  const previousReportIds = (state.signalSnapshot?.reports || []).map(item => item?.id).filter(Boolean);
+  const publicAlertState = RadarPublicAlerts.reclassify(state.publicAlertState, reports.map(item => item?.id).filter(Boolean), {
+    previousIds: previousReportIds,
+    grantIds: reports.filter(item => item?.assessment?.report === "completed-reset").map(item => item?.id).filter(Boolean),
+    history: state.notificationHistory || {}, pending: state.pendingNotifications || [], items: reports });
   const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...cached, ...(state.signalSnapshot?.reports || [])];
   const eventAlerts = settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline) : { entries: {} };
   if (state.signalSnapshot || state.hintSnapshot || state.scheduleSnapshot || Array.isArray(state.directXPendingPosts)) {
@@ -905,6 +911,7 @@ async function revalidateCachedSignals(epoch) {
       credits: settings.monitorAccount ? state.accountSnapshot?.credits : null, signal });
     await chrome.storage.local.set({
       signalSnapshot: { ...state.signalSnapshot, signal, activeSignals, reports },
+      ...(publicAlertState != null ? { publicAlertState } : {}),
       ...(Array.isArray(state.directXPendingPosts) ? { directXPendingPosts: RadarDirectX.archivePosts(retained) } : {}),
       hintSnapshot: { ...state.hintSnapshot, items: hints, events: settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.reconcile([], eventBaseline) : [], eventAlerts },
       scheduleSnapshot: schedule,
@@ -968,7 +975,7 @@ async function runSignalRefresh(quiet) {
       if (epoch !== stateEpoch) return { ok: true, skipped: true };
       const currentSettings = await loadSettings();
       if (!currentSettings.monitorSignals) return { ok: true, skipped: true };
-      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState"]);
+      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState", "notificationHistory", "pendingNotifications"]);
       const leadResults = successful.filter(result => ["codex-lead", "x-direct"].includes(result.source.id));
       const latestPostAt = Math.max(0, ...leadResults.flatMap(result => result.items
         .filter(item => String(item.author || "").replace(/^@/, "").toLowerCase().match(/^(thsottiaux|reach_vb|openai)$/))
@@ -993,7 +1000,7 @@ async function runSignalRefresh(quiet) {
       const seen = new Set(state.seenSignalIds || []);
       const existingSignals = state.signalSnapshot?.activeSignals ||
         (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : []);
-      const publicAlertState = RadarPublicAlerts.observe(state.publicAlertState, items, {
+      const observedAlertState = RadarPublicAlerts.observe(state.publicAlertState, items, {
         knownIds: [...seen, ...existingSignals.map(item => item.id), ...(state.hintSnapshot?.items || []).map(item => item.id),
           ...(state.signalSnapshot?.reports || []).map(item => item.id)],
         catchUpSince: catchUp ? state.publicResumeCheck?.since ?? state.signalSnapshot?.checkedAt ?? null : null,
@@ -1008,7 +1015,15 @@ async function runSignalRefresh(quiet) {
       const activeSignals = reclassifiedSignals(existingSignals, items).filter(item => !suppressed.has(item.id));
       const signal = activeSignals[0] || null;
       const hints = currentSettings.monitorLeadSource ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...items].filter(item => !suppressed.has(item.id)), { limit: 100 }) : [];
-      const reports = currentSettings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...existingSignals, ...items]) : [];
+      const reports = currentSettings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...existingSignals, ...items],
+        { context: state.hintSnapshot?.items || [] }) : [];
+      const publicAlertState = RadarPublicAlerts.reclassify(observedAlertState, reports.map(item => item.id), {
+        previousIds: (state.signalSnapshot?.reports || []).map(item => item.id),
+        grantIds: reports.filter(item => item.assessment?.report === 'completed-reset').map(item => item.id),
+        history: state.notificationHistory || {},
+        pending: state.pendingNotifications || [],
+        items: reports
+      });
       const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...existingSignals, ...(state.signalSnapshot?.reports || [])];
       const eventAlerts = currentSettings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline, items) : { entries: {} };
       const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);

@@ -442,7 +442,9 @@
         !publicIdentity(parent) || parent.id === item.id || !sameAuthor(parent, item) || parent.truncated ||
         !Number.isFinite(before) || !Number.isFinite(at) || before >= at || at - before > (inferred ? 1 : 7) * 86400000 ||
         /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(parent))) return null;
-    return classify({ ...parent, source: item.source }, { now: before }).actionable || !inferred && resetHeadline(parent.text)
+    // A bare same-author "Day N/ ... reset" headline is itself the reset
+    // claim, so it may anchor an inferred completion like a timing reply.
+    return classify({ ...parent, source: item.source }, { now: before }).actionable || resetHeadline(parent.text)
       ? { inferred } : null;
   }
 
@@ -474,6 +476,11 @@
     // verdict. Prefer a newly collected edit over the saved promise body.
     for (const item of originals) if (shortResetCompletion(item)?.inferred && !byId.has(item.replyContext.id))
       byId.set(item.replyContext.id, { ...item.replyContext, source: item.source });
+    // Cached hint posts (e.g. a headline seen on an earlier poll) are claim
+    // evidence only; they are never emitted as rows themselves.
+    const contextOnly = new Set();
+    for (const extra of Array.isArray(options.context) ? options.context : [])
+      if (extra?.id && !byId.has(extra.id)) { byId.set(extra.id, extra); contextOnly.add(extra.id); }
     const rows = [...byId.values()].sort((a, b) => (root.RadarTime.parseTimestamp(a.createdAt) || 0) - (root.RadarTime.parseTimestamp(b.createdAt) || 0));
     const consumed = new Set();
     return rows.map(item => {
@@ -494,7 +501,8 @@
         const before = root.RadarTime.parseTimestamp(claim.createdAt);
         if (!isLead(claim) || !publicIdentity(claim) || !sameAuthor(claim, item) || claim.truncated ||
             !before || before >= at || at - before > 86400000 || consumed.has(claim.id) ||
-            /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(claim)) || !classify(claim, { now: before }).actionable) continue;
+            /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(claim)) ||
+            !(classify(claim, { now: before }).actionable || resetHeadline(claim.text))) continue;
         const parent = claim.replyContext;
         const key = ['quoted-post', 'conversation-before'].includes(parent?.relation) && parent.targetId === claim.id &&
           publicIdentity(parent) && sameAuthor(parent, claim) ? parent.id : claim.id;
@@ -510,7 +518,7 @@
       })) return item;
       consumed.add(key); consumed.add(promise.id);
       return { ...item, replyContext: completionReference(promise, item.id, 'previous-announcement') };
-    });
+    }).filter(item => !contextOnly.has(item.id));
   }
 
   function reports(items, options = {}) {

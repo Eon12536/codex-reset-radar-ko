@@ -2,6 +2,26 @@
   "schema": 1,
   "note": "A bounded regression sample, not a measurement of all live X posts or Windows delivery.",
   "groups": {
+    "oct17HeadlineOnly": {
+      "observedAt": "2026-10-18T02:00:00Z",
+      "provenance": "Existing observed public-X corpus posts; headline and Done only, timing reply deliberately omitted for regression; direct Done relationship not asserted",
+      "posts": [
+        {
+          "id": "2111492673890824348",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T16:20:57Z",
+          "text": "Day 13/ Le limit reset",
+          "url": "https://x.com/thsottiaux/status/2111492673890824348"
+        },
+        {
+          "id": "2111566005684289735",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-17T21:12:21Z",
+          "text": "Done",
+          "url": "https://x.com/thsottiaux/status/2111566005684289735"
+        }
+      ]
+    },
     "oct8": {
       "observedAt": "2026-10-08T04:45:00.000Z",
       "provenance": "Existing public-X regression fixture reset-grant-oct8.json",
@@ -213,6 +233,14 @@
     }
   },
   "cases": [
+    {
+      "name": "Observed Day13 headline plus standalone Done without timing reply",
+      "group": "oct17HeadlineOnly",
+      "targetId": "2111566005684289735",
+      "useTimeline": true,
+      "expected": "report",
+      "completionLink": "inferred"
+    },
     {
       "name": "Observed Oct8 grant 1",
       "group": "oct8",

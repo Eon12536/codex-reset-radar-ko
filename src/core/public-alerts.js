@@ -84,6 +84,34 @@
     return fresh && (queued || !notificationKeys(item.id, Object.keys(history)).some(key => history[key]));
   }
 
-  root.RadarPublicAlerts = Object.freeze({ observe, allowed, receipt, validReceipt, publicId, notificationKeys });
+  // A raw observation expires after a day. When a previously read, never
+  // classified post first becomes a trusted completion report later (for
+  // example after its headline context arrives), grant exactly one renewed
+  // eligibility window, within the seven-day retention. Classified ids are
+  // marked so later passes never renew or replay them.
+  function reclassify(state, classifiedIds = [], { previousIds = [], grantIds = [], history = {}, pending = [], items = [], now = Date.now() } = {}) {
+    if (!state?.entries) return state;
+    const prior = new Set(previousIds);
+    const grant = new Set(grantIds);
+    const pendingIds = new Set(pending.map(item => item?.id).filter(Boolean));
+    const entries = { ...state.entries };
+    let changed = false;
+    for (const id of new Set(classifiedIds)) {
+      const entry = entries[id];
+      if (!entry || entry.classifiedAt) continue;
+      const item = items.find(candidate => candidate?.id === id);
+      const at = root.RadarTime.parseTimestamp(item?.createdAt);
+      const keys = notificationKeys(id, [...Object.keys(history), ...pendingIds]);
+      const eligible = grant.has(id) && !prior.has(id) && entry.expiresAt > 0 && !(entry.expiresAt > now) &&
+        Number.isFinite(entry.publishedAt) && entry.publishedAt === at &&
+        entry.publishedAt >= now - 7 * DAY && entry.publishedAt <= now + 300000 &&
+        !keys.some(key => history[key] || pendingIds.has(key));
+      entries[id] = eligible ? { ...entry, classifiedAt: now, reclassifiedAt: now, expiresAt: now + DAY } : { ...entry, classifiedAt: now };
+      changed = true;
+    }
+    return changed ? { ...state, entries } : state;
+  }
+
+  root.RadarPublicAlerts = Object.freeze({ observe, allowed, receipt, validReceipt, publicId, notificationKeys, reclassify });
   if (typeof module !== 'undefined') module.exports = root.RadarPublicAlerts;
 })(globalThis);
