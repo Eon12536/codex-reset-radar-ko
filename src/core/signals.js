@@ -114,6 +114,23 @@
       !/\b(?:last|yesterday|ago|cancelled|canceled|delivered|broke|withdrawn|cannot|can't|won't|no longer)\b/.test(normalizedText(item));
   }
 
+  function resetDayForecast(item) {
+    if (!item || !isLead(item) || !publicIdentity(item) || item.truncated) return false;
+    const raw = String(normalizedText(item) || "").replace(/[\u2018\u2019\u02BC\u0060\u00B4]/g, "'");
+    const first = raw.split(/\r?\n\s*\r?\n/)[0].trim().toLowerCase();
+    if (!first || /[?"\u201C\u201D]/.test(first)) return false;
+    // A later reset cancellation still wins; unrelated paragraphs cannot negate the reset subject.
+    const resetScan = String(raw || "").replace(/\bbut no,\s*(?=it's reset day today\b)/g, "");
+    if (resetScan.split(/(?<=[.!?])\s+|\n+/).filter((part) => /\breset\b/i.test(part)).some((part) =>
+      isNegated(part) || /\b(?:cancel(?:l)?ed|withdrawn|fake|not|never|won['\u2019]t|cannot|can['\u2019]t|no)\b/i.test(part))) return false;
+    const text = first.replace(/\bbut no,\s*(?=it's reset day today\b)/g, "but ").replace(/\s+/g, " ");
+    if (!/\b(?:it's|it is) reset day today\b|\btoday is reset day\b/.test(text)) return false;
+    if (isNegated(text)) return false;
+    if (/n't\b|\b(?:not|never|no|won't|cancell?ed|canceled|maybe|might|could|should|if|yesterday|ago|last|rumou?rs?|heard|said|router|password|device|banked|credits?)\b/.test(text)) return false;
+    if (new RegExp(UNRELATED.source, UNRELATED.flags.replace("g", "")).test(text)) return false;
+    return !includesAny(text, EXCLUSIONS);
+  }
+
   function resetTimingReply(item, text) {
     // A short delivery reply can name only its deadline. Borrow the subject
     // solely from the same author's identified, preceding reset headline on
@@ -127,8 +144,9 @@
       referenceId(parent.id) && parent.id !== item.id && author(parent.author) === author(item.author) &&
       parent.url === `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` &&
       Number.isFinite(parentAt) && Number.isFinite(itemAt) && parentAt < itemAt && itemAt - parentAt <= 7 * 86400000 &&
-      resetHeadline(parent.text);
-    return linkedHeadline && /^(?:landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst|est|edt|et))?(?: time)?$/.test(text);
+      (resetHeadline(parent.text) || resetDayForecast({ ...parent, source: item.source }));
+    return linkedHeadline && (/^(?:landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst|est|edt|et))?(?: time)?$/.test(text) ||
+      /^(?:lands|landing|arriving|coming|rolling out)(?: (?:today|tonight|tomorrow))? (?:by|before) (?:[1-9]|1[0-2])(?::[0-5]\d)? ?(?:am|pm) (?:pst|pdt|pt|utc|gmt|kst)\.?$/.test(text));
   }
 
   function leadResetAnnouncement(item, text) {
@@ -257,6 +275,21 @@
   function classify(item, options = {}) {
     const now = options.now ?? Date.now();
     const lower = normalizedText(item);
+    if (resetDayForecast(item) === true) {
+      const rawWeight = Number(item.source?.weight);
+      const weight = item.source?.weight == null || !Number.isFinite(rawWeight) ? 1 : Math.min(1, Math.max(0.1, rawWeight));
+      const weightedScore = 8 * weight;
+      return {
+        actionable: true,
+        score: 8,
+        eventAt: null,
+        untimedPromise: true,
+        sourceWeight: weight,
+        weightedScore,
+        confidence: weightedScore >= 8 ? 'high' : weightedScore >= 5 ? 'medium' : 'low',
+        reason: 'future-quota-reset-language'
+      };
+    }
     const createdAt = root.RadarTime?.parseTimestamp?.(item?.createdAt ?? item?.created_at ?? item?.published_at);
     if (!lower || isNegated(lower) || includesAny(lower, EXCLUSIONS) || UNRELATED.test(lower) || BANKED_CREDIT.test(lower)) {
       return { actionable: false, confidence: "none", score: 0, eventAt: null, reason: "negated-or-unrelated" };
@@ -361,7 +394,7 @@
     }
     // Reset clues win even when the same post also mentions an event/product.
     const fallback = () => productEventHint(item, text) ||
-      (eventContext(item) ? null : timedAnnouncement(item, text)) || none;
+      (eventContext(item) ? null : timedAnnouncement(item, text)) || resetReview(item, text, { ...options, now }) || none;
     const parts = clauses(text);
     const futureParts = parts.filter(part => prospective(part) && !isCompleted(part));
     if (!futureParts.length) return fallback();
@@ -421,6 +454,25 @@
       candidate: true, actionable: false, confidence: "low", eventAt: null, rule,
       qualifier, reason: qualifier ? `${reason} (${qualifier})` : reason
     } : fallback();
+  }
+
+  // Last-resort, review-only recall for unmatched reset posts. Never a report,
+  // forecast or completion anchor; no length cap, exclusions stay strict.
+  const REVIEW_BLOCK = /\b(?:[a-z]+n't|cancel(?:l?ed|ling|s)?|called off|withdrawn|denied|rumou?rs?|fake|yesterday|ago|last (?:week|month|year|time)|previous(?:ly)?|recap|remember when|device|router|phone|laptop|factory|settings|server|code|repo|branch|commit|function|variable|email|browser|terminal|sandbox|session|context|memory|earlier)\b/;
+  function resetReview(item, text, options) {
+    if (!publicIdentity(item) || item.truncated || resetHeadline(item.text)) return null;
+    // Keep each sentence's terminator so a reset question stays a question;
+    // an unrelated question elsewhere does not taint a separate reset sentence.
+    const sentences = text.split(/(?<=[!?;\n。！？])|(?<=(?<!\d)\.)|(?<=\.)(?!\d)/);
+    const body = sentences.filter(part => /\b(?:reset|resets|resetting)\b/.test(part)).join(' ').replace(/\s+/g, ' ').trim();
+    if (/[?"“”]/.test(body) || UNRELATED.test(body) || includesAny(body, EXCLUSIONS) || BANKED_CREDIT.test(body) || isNegated(body) ||
+        /\b(?:not|never|no)\b/.test(body) || SPECULATIVE.test(body) || QUALIFIED_TIME.test(body) || REVIEW_BLOCK.test(body)) return null;
+    const parts = clauses(body).filter(part => /\b(?:resets?|resetting)\b/.test(part));
+    const quota = parts.some(part => /\b(?:codex|limits?|quotas?|allowance|usage)\b/.test(part));
+    const explicit = parts.some(part => /^(?:(?:a|another|the|fresh|full|new|global) )*(?:(?:usage|weekly|rate) )?(?:limits? )?resets? (?:for (?:all(?: accounts| users| plans)?|everyone|everybody)\b|(?:is|are) (?:now )?(?:in|live|done|out)$)/.test(part));
+    if ((!quota && !explicit) || reports([item], options).length) return null;
+    return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '', rule: 'reset-review',
+      reason: '리셋 관련 공지로 보임 · 수동 확인 필요 · 리셋 실행·종류·시각·내 계정 반영 미확정' };
   }
 
   function hintCandidates(items, options = {}) {

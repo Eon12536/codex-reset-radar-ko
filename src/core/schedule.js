@@ -42,7 +42,7 @@
     const hint = root.RadarSignals.classifyHint(post, options);
     // Product/time clues are not reset schedules and must never acquire a
     // "reset postponed" label merely through a later reply.
-    if (hint.candidate && !hint.topic && !["product-time", "schedule-time"].includes(hint.rule)) return "hint";
+    if (hint.candidate && !hint.topic && !["product-time", "schedule-time", "reset-review"].includes(hint.rule)) return "hint";
     return null;
   }
 

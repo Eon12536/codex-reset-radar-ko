@@ -39,7 +39,7 @@
   const resetContext = text => /\b(?:banked resets?|reset credits?|codex.{0,60}(?:reset|limits?|quota)|(?:reset|limits?|quota).{0,60}codex|(?:usage|weekly|rate) limits?.{0,40}reset)\b/i.test(text || "");
   const publicContext = text => resetContext(text) ||
     (root.RadarSignals || (typeof require === 'function' ? require('./signals') : null))?.resetHeadline(text) ||
-    /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*)\b/i.test(text || "");
+    /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*|reset\s+day\s+today|today\s+is\s+reset\s+day)\b/i.test(text || "");
   const needsContext = item => /^(?:done|all done|complete(?:d)?|finished|it(?:'s| is) (?:now )?(?:done|complete(?:d)?|finished))[.!]*$/i.test(item.text.trim()) || item.truncated || item.quotedPost || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|eod|end of (?:the )?day|confirmed|landed|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
 
   function quotedPost(value, now) {

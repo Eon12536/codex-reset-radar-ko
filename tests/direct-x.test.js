@@ -32,7 +32,7 @@ test('only bounded recent Tibo posts and validated public status URLs survive no
   assert.equal(Direct.normalize([{ ...good, text: 'a'.repeat(7000) }])[0].text.length, 6000);
 });
 
-function reader({ permission = true, finalUrl = POST_PAGE, normalizeUrl = url => url, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false, build = 'fixture-build' } = {}) {
+function reader({ permission = true, finalUrl = POST_PAGE, normalizeUrl = url => url, fail = false, timeline, originalTimeline, postFail = false, replyFail = false, conversation, authors = ['thsottiaux'], vbTimeline, active = false, activateOnScript = false, build = 'fixture-build', now } = {}) {
   const calls = [];
   const session = {}, local = {}, alarms = new Map();
   let url = finalUrl;
@@ -50,7 +50,8 @@ function reader({ permission = true, finalUrl = POST_PAGE, normalizeUrl = url =>
         ? (url === POST_PAGE ? originalTimeline || timeline : timeline) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], pages: 8, stopReason: 'no-more-loaded' }
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
   const chromeUrl = () => url;
-  const context = vm.createContext({ chrome, URL, Date, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
+  const Clock = now === undefined ? Date : class extends Date { static now() { return now; } };
+  const context = vm.createContext({ chrome, URL, Date: Clock, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/signals'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/direct-x'), 'utf8'), context);
@@ -341,7 +342,7 @@ test('the real EOD reply waits for its preceding grant to hydrate before reading
 test('an EOD-only timeline reply is enriched from the real public conversation', async () => {
   const fixture = require('./fixtures/reset-grant-oct8.json');
   const [parent, target] = fixture.posts;
-  const r = reader({ timeline: { rows: [target] }, conversation: { targetId: target.id, rows: [parent, target] } });
+  const r = reader({ now: Date.parse(fixture.observedAt), timeline: { rows: [target] }, conversation: { targetId: target.id, rows: [parent, target] } });
   const scan = await r.core.read(new AbortController().signal);
   assert.equal(scan.diagnostics.conversations, 1);
   assert.equal(Signals.reports(scan.items, { now: Date.parse(fixture.observedAt) })[0].assessment.grantStage, 'timing');
@@ -351,11 +352,11 @@ test('an initially missing EOD parent is retried on the next poll instead of cac
   const fixture = require('./fixtures/reset-grant-oct8.json');
   const [parent, target] = fixture.posts;
   let hydrated = false;
-  const r = reader({ timeline: { rows: [target] }, conversation: () => ({ targetId: target.id, rows: hydrated ? [parent, target] : [target] }) });
+  const r = reader({ now: Date.parse(fixture.observedAt), timeline: { rows: [target] }, conversation: () => ({ targetId: target.id, rows: hydrated ? [parent, target] : [target] }) });
   const first = await r.core.read(new AbortController().signal);
   assert.equal(Signals.reports(first.items, { now: Date.parse(fixture.observedAt) }).length, 0);
   const cache = JSON.parse(JSON.stringify(first.contextCache));
-  cache[target.id].checkedAt = Date.now() - 15 * 60000;
+  cache[target.id].checkedAt = Date.parse(fixture.observedAt) - 15 * 60000;
   hydrated = true;
   const next = await r.core.read(new AbortController().signal, { contextCache: cache });
   assert.equal(next.diagnostics.conversations, 1);

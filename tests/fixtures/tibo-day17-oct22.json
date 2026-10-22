@@ -1,0 +1,31 @@
+{
+  "source": "Chrome public profile and reply conversation, independently observed 2026-10-22",
+  "posts": [
+    {
+      "id": "2113162277688070445",
+      "author": "thsottiaux",
+      "source": { "id": "codex-lead", "weight": 1 },
+      "url": "https://x.com/thsottiaux/status/2113162277688070445",
+      "createdAt": "2026-10-22T06:55:22.000Z",
+      "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident."
+    },
+    {
+      "id": "2113162413008884099",
+      "author": "thsottiaux",
+      "source": { "id": "codex-lead", "weight": 1 },
+      "url": "https://x.com/thsottiaux/status/2113162413008884099",
+      "createdAt": "2026-10-22T06:55:54.000Z",
+      "text": "Lands tomorrow before 10am PST.",
+      "isReply": true,
+      "replyContext": {
+        "id": "2113162277688070445",
+        "author": "thsottiaux",
+        "url": "https://x.com/thsottiaux/status/2113162277688070445",
+        "createdAt": "2026-10-22T06:55:22.000Z",
+        "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident.",
+        "relation": "conversation-before",
+        "targetId": "2113162413008884099"
+      }
+    }
+  ]
+}

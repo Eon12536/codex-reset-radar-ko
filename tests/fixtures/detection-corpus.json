@@ -291,6 +291,92 @@
           "text": "Day 15/ Password reset. Enjoy."
         }
       ]
+    },
+    "reviewRecallOct21": {
+      "observedAt": "2026-10-20T18:00:00Z",
+      "provenance": "Synthetic independent recall and precision fixtures; not observed public posts and not a measurement of live X recall",
+      "posts": [
+        {
+          "id": "50001",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:00:00Z",
+          "url": "https://x.com/thsottiaux/status/50001",
+          "text": "Fresh reset for everyone. Enjoy!"
+        },
+        {
+          "id": "50002",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:00:00Z",
+          "url": "https://x.com/thsottiaux/status/50002",
+          "text": "Codex update: we know many of you hit your weekly usage limits during a very busy week of heavy use, and we appreciate the patience while the team worked through capacity and reliability fixes across every surface. As a thank you, everyone gets a fresh usage reset across Codex plans. Thanks for building with us and keep sending feedback on what to improve."
+        },
+        {
+          "id": "50003",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:00:00Z",
+          "url": "https://x.com/thsottiaux/status/50003",
+          "text": "Codex limits reset for everyone. New code review feature is live."
+        },
+        {
+          "id": "50004",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:00:00Z",
+          "url": "https://x.com/thsottiaux/status/50004",
+          "text": "Codex now auto-resets the terminal session after each task."
+        },
+        {
+          "id": "50005",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:00:00Z",
+          "url": "https://x.com/thsottiaux/status/50005",
+          "text": "Day 13 / Limit reset?"
+        },
+        {
+          "id": "50006",
+          "author": "thsottiaux",
+          "createdAt": "2026-10-20T17:30:00Z",
+          "url": "https://x.com/thsottiaux/status/50006",
+          "text": "Done"
+        }
+      ]
+    },
+    "oct22ResetDay": {
+      "observedAt": "2026-10-22T10:00:00Z",
+      "provenance": "Chrome public profile and reply conversation, independently observed 2026-10-22",
+      "posts": [
+        {
+          "id": "2113162277688070445",
+          "author": "thsottiaux",
+          "source": {
+            "id": "codex-lead",
+            "weight": 1
+          },
+          "url": "https://x.com/thsottiaux/status/2113162277688070445",
+          "createdAt": "2026-10-22T06:55:22.000Z",
+          "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident."
+        },
+        {
+          "id": "2113162413008884099",
+          "author": "thsottiaux",
+          "source": {
+            "id": "codex-lead",
+            "weight": 1
+          },
+          "url": "https://x.com/thsottiaux/status/2113162413008884099",
+          "createdAt": "2026-10-22T06:55:54.000Z",
+          "text": "Lands tomorrow before 10am PST.",
+          "isReply": true,
+          "replyContext": {
+            "id": "2113162277688070445",
+            "author": "thsottiaux",
+            "url": "https://x.com/thsottiaux/status/2113162277688070445",
+            "createdAt": "2026-10-22T06:55:22.000Z",
+            "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident.",
+            "relation": "conversation-before",
+            "targetId": "2113162413008884099"
+          }
+        }
+      ]
     }
   },
   "cases": [
@@ -456,6 +542,63 @@
       "group": "negative20003",
       "targetId": "20003",
       "expected": "none"
+    },
+    {
+      "name": "Review fallback 50001: Fresh reset for everyone. Enjoy!",
+      "group": "reviewRecallOct21",
+      "targetId": "50001",
+      "useTimeline": true,
+      "expected": "hint"
+    },
+    {
+      "name": "Review fallback 50002: Codex update: we know many of you hit your weekly usage limits du",
+      "group": "reviewRecallOct21",
+      "targetId": "50002",
+      "useTimeline": true,
+      "expected": "hint"
+    },
+    {
+      "name": "Review fallback 50003: Codex limits reset for everyone. New code review feature is live.",
+      "group": "reviewRecallOct21",
+      "targetId": "50003",
+      "useTimeline": true,
+      "expected": "hint"
+    },
+    {
+      "name": "Review fallback 50004: Codex now auto-resets the terminal session after each task.",
+      "group": "reviewRecallOct21",
+      "targetId": "50004",
+      "useTimeline": true,
+      "expected": "none"
+    },
+    {
+      "name": "Review fallback 50005: Day 13 / Limit reset?",
+      "group": "reviewRecallOct21",
+      "targetId": "50005",
+      "useTimeline": true,
+      "expected": "none"
+    },
+    {
+      "name": "Review fallback 50006: Done",
+      "group": "reviewRecallOct21",
+      "targetId": "50006",
+      "useTimeline": true,
+      "expected": "none"
+    },
+    {
+      "name": "Observed Day17 reset day forecast",
+      "group": "oct22ResetDay",
+      "targetId": "2113162277688070445",
+      "expected": "signal",
+      "confidence": "high"
+    },
+    {
+      "name": "Observed Day17 verified clock-deadline reply",
+      "group": "oct22ResetDay",
+      "targetId": "2113162413008884099",
+      "expected": "signal",
+      "confidence": "high",
+      "parentId": "2113162277688070445"
     }
   ]
 }

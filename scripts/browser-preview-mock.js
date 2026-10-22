@@ -138,6 +138,53 @@
   };
 
   const mode = new URLSearchParams(globalThis.location?.search || "").get("mode");
+  // Synthetic review-only fixture; preview mock never creates real notifications.
+  // Observed public Day17 text; display fixture only, no actual collection or OS delivery.
+  if (mode === 'resetDay17') {
+    const posts = [
+  {
+    "id": "2113162277688070445",
+    "author": "thsottiaux",
+    "source": {
+      "id": "codex-lead",
+      "weight": 1
+    },
+    "url": "https://x.com/thsottiaux/status/2113162277688070445",
+    "createdAt": "2026-10-22T06:55:22.000Z",
+    "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident."
+  },
+  {
+    "id": "2113162413008884099",
+    "author": "thsottiaux",
+    "source": {
+      "id": "codex-lead",
+      "weight": 1
+    },
+    "url": "https://x.com/thsottiaux/status/2113162413008884099",
+    "createdAt": "2026-10-22T06:55:54.000Z",
+    "text": "Lands tomorrow before 10am PST.",
+    "isReply": true,
+    "replyContext": {
+      "id": "2113162277688070445",
+      "author": "thsottiaux",
+      "url": "https://x.com/thsottiaux/status/2113162277688070445",
+      "createdAt": "2026-10-22T06:55:22.000Z",
+      "text": "Day 17/ Bet you thought we forgot, but no, it’s reset day today.\n\nAlso good time to remind you to get Daybreak Blue access, it only takes 15 mins and you don’t want to have to do it in the middle of an incident.",
+      "relation": "conversation-before",
+      "targetId": "2113162413008884099"
+    }
+  }
+];
+    state.signalSnapshot = { checkedAt: now, activeSignals: posts.map(item => ({ ...item, assessment: { actionable: true, confidence: 'high', score: 8, weightedScore: 8, eventAt: null, untimedPromise: true } })), reports: [] };
+    state.hintSnapshot = { items: [] };
+  }
+  if (mode === 'resetReview') {
+    state.settings.notifyHints = true;
+    state.signalSnapshot = { checkedAt: now, activeSignals: [], reports: [] };
+    state.hintSnapshot = { items: [{ id: '93094', author: 'thsottiaux', text: 'Fresh reset for everyone. Enjoy!',
+      createdAt: new Date(now - 3600000).toISOString(), source: { id: 'codex-lead', weight: 1 },
+      url: 'https://x.com/thsottiaux/status/93094' }] };
+  }
   if (mode === 'resetPolls') {
     state.settings.notifyResetHints = true;
     state.signalSnapshot = { checkedAt: now, activeSignals: [], reports: [] };
@@ -574,10 +621,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.93", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.94", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.93", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.94", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

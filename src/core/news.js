@@ -166,7 +166,8 @@
     // performance explanation "after the load spike") do not qualify this
     // clock. Keep whole-post negation and competing date/time checks intact.
     const clockClause = text.split(/(?<=[.!?;])\s+|\n/).find(part => part.includes((clocks[0] || clocks24[0])[0])) || text;
-    if (/\b(?:not|never|won't|will not)\b/i.test(text) || /\b(?:until|between|from|before|after|by)\b/i.test(clockClause))
+    const clockDeadline = /^(?:Lands|Landing|Arriving|Coming|Rolling out)(?:\s+(?:today|tonight|tomorrow))?\s+(?:before|by)\s+(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*(?:am|pm)\s+(?:PST|PDT|PT|UTC|GMT|KST)\.?$/i.test(text.trim());
+    if (/\b(?:not|never|won't|will not)\b/i.test(text) || (clockDeadline ? /\b(?:until|between|from|after)\b/i : /\b(?:until|between|from|before|after|by)\b/i).test(clockClause))
       return unresolved('부정·시간 범위·마감 표현은 단일 예정 시각으로 변환하지 않습니다.');
     const zone = sourceZone(text, item);
     if (!zone) return unresolved('시간대를 확정할 수 없어 자동 변환하지 않았습니다.');
@@ -185,6 +186,17 @@
     const detail = [zone.assumed ? '시간대 미표기: Tibo의 공개 활동 지역 샌프란시스코(America/Los_Angeles)를 가정했습니다. 실제 체류지는 다를 수 있습니다.' : `원문 시간대 ${zone.label} 기준입니다.`,
       calendarDay.inferred ? '날짜·연도는 게시 시점을 기준으로 해석했습니다. 요일은 게시일 이후 가장 가까운 날(next 동일 요일은 다음 주), this는 게시 주를 가정합니다.' : '원문 날짜 기준입니다.',
       `서머타임을 반영한 ${target.label} 시간(${target.zone})이며, 출시·리셋 확정을 뜻하지 않습니다.`].join(' ');
+    if (clockDeadline) {
+      const ko = locale() === 'ko-KR';
+      const suffix = ko ? ' 이전 · 기한' : ' before · deadline';
+      return {
+        text: `${zone.label} ${dateLabel(wall, showYear)} ${clockLabel(wall)}${suffix}\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)}${suffix}${note}`,
+        detail: `${detail} ${ko ? '실행 시각이 아니라 마감 기한입니다.' : 'This is a deadline, not an execution time.'}`,
+        deadlineAt: instants[0],
+        assumedZone: Boolean(zone.assumed),
+        dateInferred: calendarDay.inferred,
+      };
+    }
     return { text: `${zone.label} ${dateLabel(wall, showYear)} ${clockLabel(wall)}\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)}${note}`,
       detail, instant: instants[0], assumedZone: Boolean(zone.assumed), dateInferred: calendarDay.inferred };
   }
@@ -205,7 +217,7 @@
       const patterns = [[/\bnot today\b/i, '오늘은 아님'], [/\bnot tonight\b/i, '오늘 밤은 아님'],
         [/\btomorrow morning\b/i, '내일 아침'], [/\btomorrow\b/i, '내일'], [/\btonight\b/i, '오늘 밤'],
         [/\blater today\b/i, '오늘 중'], [/\bthis evening\b/i, '오늘 저녁'], [/\bnext week\b/i, '다음 주'],
-        [/\bthis week\b/i, '이번 주'], [/\bnext hour\b/i, '한 시간 이내'], [/\bsoon\b/i, '곧']];
+        [/\bthis week\b/i, '이번 주'], [/\bnext hour\b/i, '한 시간 이내'], [/\bsoon\b/i, '곧'], [/\btoday\b/i, '오늘']];
       label = patterns.find(([pattern]) => pattern.test(input))?.[1] || '';
     }
     const untilDay = day && new RegExp(`\\bnot until\\s+(?:next\\s+|this\\s+)?${day[2]}\\b`, 'i').test(input);
@@ -265,7 +277,9 @@
   function describe(item, key) {
     const target = root.RadarTime.countryZone();
     const discussion = ['reset-poll', 'reset-choice', 'reset-short'].includes(item.assessment?.rule);
-    const explicit = !discussion && (/\breset(?:s|ting)?\b/i.test(item.text) ||
+    const review = item.assessment?.rule === 'reset-review';
+    const tr = (key, fallback) => root.RadarI18n?.t?.(key, undefined, fallback) || fallback;
+    const explicit = !discussion && !review && (/\breset(?:s|ting)?\b/i.test(item.text) ||
       item.assessment?.actionable === true && root.RadarSignals.classify(item, {
         now: root.RadarTime.parseTimestamp(item.createdAt) ?? Date.now()
       }).actionable);
@@ -286,12 +300,12 @@
     const publishedText = published ? root.RadarI18n?.t?.('newsPublished', [target.label, published], `게시 · ${target.label} · ${published}`) ||
       `게시 · ${target.label} · ${published}` : root.RadarI18n?.t?.('newsPublicationUnknown', undefined, '게시 시각 미확인') || '게시 시각 미확인';
     const kind = root.RadarSignals.resetKind(item);
-    const kindLabel = discussion ? '리셋 설문·암시 · 실행 미확정' : inferred ? root.RadarI18n?.t?.('newsInferredContext', undefined, '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인') || '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인' : report === 'reset-update' ? item.assessment.updateStatus === 'resolved' ? '리셋 반영 수정 안내' : '리셋 반영 조사·보완' :
+    const kindLabel = review ? tr('newsResetReviewContext', '원문 확인 필요 · 리셋 실행·종류·시각·내 계정 반영 미확정') : discussion ? '리셋 설문·암시 · 실행 미확정' : inferred ? root.RadarI18n?.t?.('newsInferredContext', undefined, '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인') || '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인' : report === 'reset-update' ? item.assessment.updateStatus === 'resolved' ? '리셋 반영 수정 안내' : '리셋 반영 조사·보완' :
       topic && !explicit ? '리셋 미확인' : { banked: 'Banked reset · 리셋권', ordinary: '일반 리셋', both: '일반 + Banked reset', unknown: '리셋 종류 미확인' }[kind];
-    return { key, item, event, publishedAt, publishedText, label: discussion ? item.assessment.rule === 'reset-poll' ? '리셋 설문' : '리셋 암시' : inferred ? root.RadarI18n?.t?.('newsInferredCompletion', undefined, '완료 표현') || '완료 표현' : report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
+    return { key, item, event, publishedAt, publishedText, label: review ? tr('newsResetReview', '검토 후보') : discussion ? item.assessment.rule === 'reset-poll' ? '리셋 설문' : '리셋 암시' : inferred ? root.RadarI18n?.t?.('newsInferredCompletion', undefined, '완료 표현') || '완료 표현' : report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
       timing: report ? reportTiming : time.text,
       timingDetail: report ? '표시 시각은 게시 시각입니다. 실제 지급·계정 반영 시각은 별도 확인이 필요합니다.' : time.detail,
-      caption: topic && !explicit ? item.assessment?.reason || '행사 일정 · 리셋 미확인' : report ? item.assessment.reason : explicit ? 'reset 직접 언급 · 실행 확정과는 다릅니다' : timed ? item.assessment.reason : '간접 표현 · 리셋 미확정' };
+      caption: review ? kindLabel : topic && !explicit ? item.assessment?.reason || '행사 일정 · 리셋 미확인' : report ? item.assessment.reason : explicit ? 'reset 직접 언급 · 실행 확정과는 다릅니다' : timed ? item.assessment.reason : '간접 표현 · 리셋 미확정' };
   }
   function select(signalSnapshot, hintSnapshot, settings) {
     return list(signalSnapshot, hintSnapshot, settings)[0] || null;

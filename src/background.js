@@ -46,7 +46,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.93";
+const NOTIFICATION_BUILD = "0.2.94";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -1312,6 +1312,15 @@ async function maybeNotifySchedule(change, epoch) {
 
 function hintNotificationOptions(hint) {
   const timed = ["product-time", "schedule-time"].includes(hint.assessment.rule);
+  if (hint.assessment.rule === "reset-review") {
+    const body = String(hint.text || "").replace(/\s+/g, " ").trim();
+    const context = msg("newsResetReviewContext", undefined, "원문 확인 필요 · 리셋 실행·종류·시각·내 계정 반영 미확정");
+    return {
+      title: msg("resetReviewNotificationTitle", RadarSignals.authorName(hint), "$1 · 리셋 검토 후보 (미확인)"),
+      message: body ? `${context} · ${body.length > 140 ? body.slice(0, 139) + "…" : body}` : context,
+      buttons: [{ title: "원문 보기" }]
+    };
+  }
   return {
     title: RadarSignals.authorName(hint) + (hint.assessment.topic ? " 출시·행사 소식 · 리셋 미확인" : timed ? " 일정 후보 · 리셋 미확인" : " 리셋 암시 후보 · 미확인"),
     message: `${RadarNews.schedule(hint).text.replace(/\n/g, ' → ') || '일정 미정'} · ${hint.assessment.reason}. 리셋 확정이 아닙니다. 원문과 실제 잔여량을 확인하세요.`,
