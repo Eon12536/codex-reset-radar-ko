@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "..");
 // Fail before producing a release ZIP if any known detection regresses.
-execFileSync(process.execPath, ['--test', 'tests/detection-corpus.test.js'], { cwd: root, stdio: 'inherit' });
+execFileSync(process.execPath, ['--test', 'tests/detection-corpus.test.js', 'tests/standalone-timing.test.js', 'tests/reset-inferred.test.js', 'tests/reset-day20-oct25.test.js', 'tests/reset-intent-oct26.test.js', 'tests/reset-today-window.test.js', 'tests/direct-x-lifecycle.test.js', 'tests/reset-propagated-oct25.test.js', 'tests/reset-completions-crosscheck-oct28.test.js', 'tests/direct-x.test.js', 'tests/collection-intermittent.test.js'], { cwd: root, stdio: 'inherit' });
 const dist = path.join(root, "dist");
 const icons = path.join(root, "assets", "icons");
 fs.mkdirSync(dist, { recursive: true });

@@ -24,9 +24,9 @@ test('notifications embed a decodable PNG without a worker-relative resource req
   assert.equal(metadata.format, 'png'); assert.equal(metadata.width, 128); assert.equal(metadata.height, 128);
 });
 
-test('the worker CSP permits its own image fetch without allowing additional network origins', () => {
+test('the worker CSP permits only declared network origins and its own image fetch', () => {
   const directive = manifest.content_security_policy.extension_pages.split(';').map(s => s.trim()).find(s => s.startsWith('connect-src '));
-  assert.deepEqual(directive.split(/\s+/).slice(1).sort(), ["'self'", 'data:', 'https://chatgpt.com', 'https://api.dayclaw.com', 'https://status.openai.com', 'https://codex-resets.com', 'https://api.github.com'].sort());
+  assert.deepEqual(directive.split(/\s+/).slice(1).sort(), ["'self'", 'data:', 'https://chatgpt.com', 'https://api.dayclaw.com', 'https://status.openai.com', 'https://codex-resets.com', 'https://api.github.com', 'https://t.me'].sort());
 });
 
 test('queued notifications from previous versions replace their stale icon URL at delivery', async () => {

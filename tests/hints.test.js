@@ -58,7 +58,7 @@ test('hints remain visible when their default-on notifications are explicitly di
 test('opted-in hint notifications are Korean, deduplicated and removed when disabled', async()=>{
   const w=workerForHints(true);await w.context.refreshSignals();await w.context.refreshSignals();
   assert.deepEqual(Object.keys(w.notifications),['hint:123456']);
-  assert.match(w.notifications['hint:123456'].title,/암시 후보.*미확인/);
+  assert.match(w.notifications['hint:123456'].title,/리셋 추정/);
   assert.match(w.notifications['hint:123456'].message,/리셋 확정이 아닙니다/);
   await w.context.saveSettings({...w.local.settings,notifyHints:false});
   assert.equal(Object.keys(w.notifications).length,0);assert.equal(w.local.hintSnapshot.items.length,1);
@@ -161,7 +161,7 @@ test('queued hints use the latest edited reason and retractions remove only thei
   await w.context.refreshSignals();
   const firstMessage = w.local.pendingNotifications[0].options.message;
   w.local.pendingNotifications.push({ id: 'signal:unrelated', options: { title: 'Keep unrelated queue' } });
-  state.text = 'Time to refuel Codex soon.';
+  state.text = 'Maybe we should reset Codex usage limits tomorrow.';
   await w.context.refreshSignals();
   assert.equal(w.local.pendingNotifications.length, 2);
   const pending = w.local.pendingNotifications.find(item => item.id === 'hint:123456');

@@ -1,6 +1,6 @@
 // This module intentionally has no dependency on the rest of the settings UI.
 (() => {
-  const BUILD = "0.2.94";
+  const BUILD = "0.2.132";
   const button = document.getElementById("testNotification");
   const status = document.getElementById("notificationTestStatus");
   const worker = document.getElementById("notificationWorkerStatus");
@@ -33,6 +33,13 @@
       const alerts = result.publicAlerts;
       worker.textContent += ` · 소식 분류: 대기 ${alerts.pending} / 처리 기록 ${alerts.handled} / 기존·기한 지난 글 ${alerts.expired} / 설정 제외 ${alerts.disabled} / 발송 대상 ${alerts.eligible}`;
     }
+    const publicDelivery = result.publicDelivery;
+    const publicAt = publicDelivery?.at ? new Intl.DateTimeFormat(globalThis.RadarI18n?.uiLanguage?.() || 'ko-KR', {
+      timeZone: globalThis.RadarTime?.countryZone?.().zone, month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: '2-digit' }).format(new Date(publicDelivery.at)) : '';
+    worker.textContent += publicDelivery ? ` · 공개 탐지 알림: ${publicAt} ${publicDelivery.status === 'accepted' ? 'Chrome 접수' : '전송 실패'}` : ' · 공개 탐지 알림: 별도 전송 기록 없음';
+    if (result.dailySummary?.enabled) worker.textContent += result.dailySummary.handled ?
+      ` · ${result.dailySummary.day} 하루 알림 처리됨 (추가 소식은 팝업 반영)` : ` · ${result.dailySummary.day} 하루 알림 발송 전`;
   }
 
   async function refreshWorker() {

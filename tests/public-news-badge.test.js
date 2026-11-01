@@ -30,9 +30,9 @@ test('completed reset and public Banked grant posts mark the weekly badge indepe
 });
 
 test('an indirect reset clue marks the badge even when its desktop notification is off', async () => {
-  const w = worker('Burn those tokens', { settings: { notifyHints: false } });
+  const w = worker('Maybe we should reset Codex usage limits tomorrow.', { settings: { notifyHints: false } });
   await w.context.refreshSignals();
-  assert.equal(w.local.hintSnapshot.items[0]?.assessment.rule, 'token-burn');
+  assert.equal(w.local.hintSnapshot.items[0]?.assessment.rule, 'tentative-reset');
   assert.equal(Object.keys(w.notifications).length, 0);
   assert.equal(w.labels.at(-1), '80%!');
 });
@@ -81,7 +81,7 @@ test('product and timed event chatter do not create a reset badge marker', async
     'Our new product launches tomorrow at 10am PT.']) {
     const w = worker(text);
     await w.context.refreshSignals();
-    assert.ok(w.local.hintSnapshot.items.length);
+    assert.equal(w.local.hintSnapshot.items.length, 0);
     assert.equal(w.labels.at(-1), '80%', text);
   }
 });

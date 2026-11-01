@@ -6,10 +6,14 @@ const FAKE_TOKEN = "AUDIT_ONLY_NOT_A_REAL_TOKEN";
 const RAW_USAGE = { rate_limit: { primary_window: { used_percent: 40, limit_window_seconds: 18000, reset_after_seconds: 1800 }, secondary_window: { used_percent: 25, limit_window_seconds: 604800, reset_after_seconds: 86400 } } };
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
-function makeWorker({ stored = {}, fetcher, storageHook } = {}) {
+function makeWorker({ stored = {}, fetcher, storageHook, individualPublicAlerts = true } = {}) {
   // Most scenarios exercise an initialized install; migration tests explicitly
   // omit the marker to simulate an upgrade or first installation.
-  const local = structuredClone({ settings: { monitorAccount: true, quietHoursEnabled: false }, securitySchema: 1, preferenceDefaultsSchema: 1, ...stored });
+  const local = structuredClone({ settings: { monitorAccount: true, quietHoursEnabled: false }, securitySchema: 1, preferenceDefaultsSchema: 1, resetFocusDefaultsSchema: 1, ...stored });
+  // Existing delivery-mechanism suites exercise explicit per-post mode. Daily
+  // aggregation integration tests use individualPublicAlerts:false, including
+  // first-install defaults, retries and restart/acknowledgement recovery.
+  if (individualPublicAlerts) local.settings = { dailyResetDigest: false, ...local.settings };
   const session = { sessionAccessToken: "OLD_TOKEN", sessionAccessTokenExpiresAt: 99 };
   const requests = [], tabs = [], notifications = {}, access = {}, events = {};
   const alarms = new Map();

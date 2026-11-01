@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 test("worker emits Korean signal notifications, preserves deduplication and queues Korean quiet-hour messages", async () => {
   const src = path.resolve(__dirname, "../src");
-  const state = { settings: { quietHoursEnabled: false, timezoneMode: "manual", timezoneOverride: "Asia/Seoul" } };
+  const state = { settings: { dailyResetDigest: false, quietHoursEnabled: false, timezoneMode: "manual", timezoneOverride: "Asia/Seoul" } };
   const delivered = [];
   const event = { addListener() {} };
   const context = vm.createContext({

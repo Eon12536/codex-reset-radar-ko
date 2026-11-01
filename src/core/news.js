@@ -105,6 +105,41 @@
   const clockLabel = p => root.RadarTime.formatTime(wallEpoch(p), 'UTC', locale());
   const dateLabel = (p, year) => locale() !== 'ko-KR' ? new Intl.DateTimeFormat(locale(), { timeZone: 'UTC', month: 'short', day: 'numeric', weekday: 'short', ...(year ? {year: 'numeric'} : {}) }).format(new Date(wallEpoch(p))) : `${year ? p.year + '년 ' : ''}${p.month}/${p.day}(${KOREAN_DAYS[new Date(wallEpoch(p)).getUTCDay()]})`;
 
+  // "By midnight PST": the next midnight closing the source-zone calendar date
+  // of the actual post createdAt ("tomorrow" shifts that date first). This is
+  // a deadline boundary, never an execution instant. Requires exactly one
+  // explicit zone; negation, extra clocks/dates/zones or questions reject.
+  function midnightDeadline(text, item, target) {
+    const value = String(text || '').trim();
+    const match = /^(?:(?:lands|landing|arriving|coming|rolling out)(?:\s+(?:sometime|later))?\s+)?(?:(today|tonight|tomorrow)\s+)?(?:by|before)\s+midnight(?:\s+(tonight|tomorrow))?\s+(PST|PDT|PT|UTC|GMT|KST)[.!]*$/i.exec(value);
+    if (!match || (match[1] && match[2])) return null;
+    const label = match[3].toUpperCase();
+    // Reuse the shared zone resolver (literal PST = UTC−8, PT = IANA with DST).
+    const resolved = sourceZone(value, item);
+    if (!resolved || resolved.assumed || String(resolved.label).toUpperCase() !== label) return null;
+    const useZone = resolved;
+    const publication = root.RadarTime.parseTimestamp(item.createdAt);
+    if (publication === null || publication === undefined || !Number.isFinite(publication)) return null;
+    const anchor = parts(publication, useZone);
+    if (!anchor) return null;
+    const shift = /tomorrow/i.test(match[1] || match[2] || '') ? 1 : 0;
+    const day = parts(wallEpoch({ ...anchor, hour: 0, minute: 0 }) + shift * DAY_MS, { offset: 0 });
+    const next = parts(wallEpoch({ ...day, hour: 0, minute: 0 }) + DAY_MS, { offset: 0 });
+    const instants = wallInstants(next, useZone);
+    if (instants.length !== 1) return null;
+    const local = parts(instants[0], target);
+    const showYear = day.year !== local.year || day.year !== anchor.year;
+    const ko = locale() === 'ko-KR';
+    return {
+      text: ko ? `${label} ${dateLabel(day, showYear)} 자정까지\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)} 전 · 기한` :
+        `${label} ${dateLabel(day, showYear)} · By midnight\n${target.label} ${dateLabel(local, showYear)} · Before ${clockLabel(local)} · Deadline`,
+      detail: (ko ? '자정은 게시 시각 기준 원문 시간대 달력일이 끝나는 경계로 환산한 기한이며 정확한 실행 시각이 아닙니다. ' :
+        'Midnight is shown as the source-zone calendar-day boundary after publication, not an exact execution time. ') +
+        (label === 'PST' ? (ko ? '원문 PST(UTC−8)를 그대로 적용했습니다.' : 'Literal PST (UTC−8) is preserved.') : `${label} → ${target.label} (${target.zone}).`),
+      deadlineAt: instants[0], assumedZone: false, dateInferred: true
+    };
+  }
+
   function endOfDayDeadline(text, item, target) {
     const matches = [...text.matchAll(/\b(?:by|before)\s+(?:EOD|(?:the\s+)?end\s+of\s+(?:the\s+)?day)\b/ig)];
     if (matches.length !== 1) return null;
@@ -143,7 +178,77 @@
     };
   }
 
-  function schedule(item) {
+  function todayResetWindow(text, item, target) {
+    try {
+      const Signals = root.RadarSignals;
+      const Time = root.RadarTime;
+      if (!item || !target || !Signals || !Time) return null;
+      if (typeof Signals.isResetForecast !== 'function' || typeof Signals.classify !== 'function') return null;
+      if (item.source?.id !== 'codex-lead') return null;
+      const author = String(item.author || item.handle || item.username || '').trim().replace(/^@/, '');
+      if (author.toLowerCase() !== 'thsottiaux') return null;
+      if (item.truncated || item.isTruncated) return null;
+      if (item.assessment?.report) return null;
+      const url = String(item.url || '').trim();
+      const m = /^https:\/\/x\.com\/thsottiaux\/status\/(\d+)$/.exec(url);
+      if (!m) return null;
+      const ownId = typeof item.id === 'string' ? item.id : '';
+      if (!/^[1-9]\d{0,24}$/.test(ownId) || ownId !== m[1]) return null;
+      const publication = Time.parseTimestamp(item.createdAt);
+      if (typeof publication !== 'number' || !Number.isFinite(publication)) return null;
+      const body = String(item.text != null ? item.text : (text || ''));
+      if (!body.trim() || body.includes('?')) return null;
+      if (Signals.isResetForecast(item) !== true) return null;
+      const clauses = body.split(/[.!;\n]+/).map(s => s.trim()).filter(Boolean);
+      const hit = clauses.some(clause => {
+        if (!/\btoday\b/i.test(clause) || !/\breset/i.test(clause)) return false;
+        const c = Signals.classify({ ...item, text: clause }, { now: publication });
+        return !!(c && c.actionable === true);
+      });
+      if (!hit) return null;
+      const zone = sourceZone(text, item);
+      if (!zone || (zone.zone == null && !Number.isFinite(zone.offset))) return null;
+      const p = parts(publication, zone);
+      if (!p) return null;
+      const midnight = wallEpoch({ year: p.year, month: p.month, day: p.day, hour: 0, minute: 0 }) + DAY_MS;
+      const next = parts(midnight, { offset: 0 });
+      const cands = wallInstants({ year: next.year, month: next.month, day: next.day, hour: 0, minute: 0 }, zone);
+      if (!Array.isArray(cands) || cands.length !== 1) return null;
+      const at = cands[0];
+      if (!Number.isFinite(at) || at <= publication) return null;
+      const tp = parts(at, target);
+      const pp = parts(publication, target);
+      const showYear = tp.year !== pp.year;
+      const ko = /^ko/i.test(String(locale() || ''));
+      const when = `${target.label} ${dateLabel(tp, showYear)} ${clockLabel(tp)}`;
+      const assumed = !!zone.assumed;
+      let line2;
+      let source;
+      let detail;
+      if (ko) {
+        source = `원문 기준: ${zone.label} 오늘 자정`;
+        line2 = `${when}까지 · 오늘 중 추정 · ${assumed ? '미 서부 시간 가정' : `${zone.label} 기준`}`;
+        detail = `'오늘' 언급을 게시 시점의 ${zone.label}${assumed ? '(가정)' : ''} 날짜 기준으로 해석한 추정 마감입니다. 정확한 시각이나 보장이 아니며, 작성자의 현재 위치를 뜻하지도 않습니다.`;
+      } else {
+        source = `Source: end of today, ${zone.label}`;
+        line2 = `by ${when} · est. sometime today · ${assumed ? 'US West time assumed' : `${zone.label} basis`}`;
+        detail = `Estimated from "today" using the posting date in ${zone.label}${assumed ? ' (assumed)' : ''}. Not an exact time or a guarantee, and not the author's current location.`;
+      }
+      return {
+        deadlineAt: at,
+        deadlineType: 'today-window',
+        estimatedWindow: true,
+        assumedZone: assumed,
+        dateInferred: true,
+        text: `${source}\n${line2}`,
+        detail
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function rawSchedule(item) {
     const target = root.RadarTime.countryZone();
     const text = String(item.text || '').replace(/[’‘]/g, "'");
     const raw = timing(text);
@@ -151,8 +256,12 @@
     const clocks24 = clocks.length ? [] : [...text.replace(/\b(?:UTC|GMT)\s*[+-]\d{1,2}(?::?\d{2})?\b/ig, '')
       .matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?![\w:])/g)];
     if (!clocks.length && !clocks24.length) {
+      const midnight = midnightDeadline(text, item, target);
+      if (midnight) return midnight;
       const deadline = endOfDayDeadline(text, item, target);
       if (deadline) return deadline;
+      const resetWindow = todayResetWindow(text, item, target);
+      if (resetWindow) return resetWindow;
       const zone = sourceZone(text, item);
       const dayOnly = raw && !raw.includes('아님') && /\b(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday|today|tonight|tomorrow)\b/i.test(text);
       return { text: dayOnly && zone ? `${raw} · ${zone.label}${zone.assumed ? ' 추정' : ''}\n${target.label} ${locale() === 'ko-KR' ? '시각 미정' : 'Time unconfirmed'}` : raw,
@@ -166,7 +275,8 @@
     // performance explanation "after the load spike") do not qualify this
     // clock. Keep whole-post negation and competing date/time checks intact.
     const clockClause = text.split(/(?<=[.!?;])\s+|\n/).find(part => part.includes((clocks[0] || clocks24[0])[0])) || text;
-    const clockDeadline = /^(?:Lands|Landing|Arriving|Coming|Rolling out)(?:\s+(?:today|tonight|tomorrow))?\s+(?:before|by)\s+(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*(?:am|pm)\s+(?:PST|PDT|PT|UTC|GMT|KST)\.?$/i.test(text.trim());
+    const signals = root.RadarSignals || (typeof require === 'function' ? require('./signals') : null);
+    const clockDeadline = signals?.clockDeadline(text) === true;
     if (/\b(?:not|never|won't|will not)\b/i.test(text) || (clockDeadline ? /\b(?:until|between|from|after)\b/i : /\b(?:until|between|from|before|after|by)\b/i).test(clockClause))
       return unresolved('부정·시간 범위·마감 표현은 단일 예정 시각으로 변환하지 않습니다.');
     const zone = sourceZone(text, item);
@@ -188,17 +298,32 @@
       `서머타임을 반영한 ${target.label} 시간(${target.zone})이며, 출시·리셋 확정을 뜻하지 않습니다.`].join(' ');
     if (clockDeadline) {
       const ko = locale() === 'ko-KR';
-      const suffix = ko ? ' 이전 · 기한' : ' before · deadline';
+      const inclusive = /\bby\b/i.test(signals.timingStatement(text));
+      const suffix = ko ? inclusive ? '까지 · 기한' : ' 이전 · 기한' : inclusive ? ' by · deadline' : ' before · deadline';
+      const deadlineNote = calendarDay.inferred && !zone.assumed && /\b(?:today|tonight|tomorrow)\b/i.test(text)
+        ? (ko ? ' · 게시일 기준' : ' · Based on publication') : note;
       return {
-        text: `${zone.label} ${dateLabel(wall, showYear)} ${clockLabel(wall)}${suffix}\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)}${suffix}${note}`,
+        text: `${zone.label} ${dateLabel(wall, showYear)} ${clockLabel(wall)}${suffix}\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)}${suffix}${deadlineNote}`,
         detail: `${detail} ${ko ? '실행 시각이 아니라 마감 기한입니다.' : 'This is a deadline, not an execution time.'}`,
         deadlineAt: instants[0],
+        deadlineType: inclusive ? 'by' : 'before',
         assumedZone: Boolean(zone.assumed),
         dateInferred: calendarDay.inferred,
       };
     }
     return { text: `${zone.label} ${dateLabel(wall, showYear)} ${clockLabel(wall)}\n${target.label} ${dateLabel(local, showYear)} ${clockLabel(local)}${note}`,
       detail, instant: instants[0], assumedZone: Boolean(zone.assumed), dateInferred: calendarDay.inferred };
+  }
+
+  function schedule(item) {
+    if (root.RadarSignals?.resetMetaphor(item) && !root.RadarSignals.classify(item, { now: Date.parse(item.createdAt) }).actionable)
+      return { text: english() ? 'Reset time unverified' : '리셋 시각 미확인', detail: english() ? 'An ambiguous metaphor does not confirm a reset schedule.' : '모호한 은유만으로 리셋 일정을 확정하지 않습니다.' };
+    const value = rawSchedule(item);
+    if (!root.RadarSignals?.inferredTimingContext(item)) return value;
+    const suffix = english() ? ' · Follow-up context' : ' · 후속 글 기준';
+    return { ...value, text: value.text + suffix, association: 'inferred',
+      detail: value.detail + (english() ? ' Subject inferred from a unique reset announcement by the same author within 15 minutes; direct reply relationship unconfirmed.' :
+        ' 같은 작성자가 15분 이내 올린 유일한 리셋 공지와 문맥을 연결했습니다. 직접 답글 관계는 미확인입니다.') };
   }
 
   function timing(text) {
@@ -260,6 +385,31 @@
       explicitDate: Boolean(explicitDates.length || shortRange) };
   }
 
+  function timingReplies(items, now = Date.now()) {
+    const canonical = item => item && /^https:\/\/x\.com\/(?:thsottiaux|reach_vb|openai)\/status\/[1-9]\d{0,24}$/i.test(item.url || '') &&
+      item.url === `https://x.com/${item.author}/status/${item.id}`;
+    const current = new Map((items || []).filter(item => item?.id).map(item => [item.id, item]));
+    const evidence = [...current.values()];
+    for (const item of current.values()) if (root.RadarSignals.inferredTimingContext(item) && !current.has(item.replyContext.id))
+      evidence.push({ ...item.replyContext, source: item.source });
+    return root.RadarSignals.linkTimingFollowUps(evidence).filter(item => current.has(item.id)).flatMap(item => {
+      const at = root.RadarTime.parseTimestamp(item.createdAt), parent = item.replyContext;
+      const inferred = root.RadarSignals.inferredTimingContext(item);
+      const before = root.RadarTime.parseTimestamp(parent?.createdAt);
+      const knownParent = current.get(parent?.id);
+      if (knownParent && (knownParent.text !== parent.text || knownParent.url !== parent.url ||
+        root.RadarTime.parseTimestamp(knownParent.createdAt) !== before)) return [];
+      if (!canonical(item) || !canonical(parent) || item.id === parent.id || !Number.isFinite(before) || before >= at || at - before > 7 * DAY_MS ||
+          !Number.isFinite(at) || at > now + 300000 || now - at > 7 * DAY_MS || item.truncated || parent.truncated ||
+          (!inferred && parent.relation !== 'conversation-before') || parent.targetId !== item.id || parent.author?.toLowerCase() !== item.author?.toLowerCase() ||
+          !root.RadarSignals.resetAnchor({ ...parent, source: item.source })) return [];
+      const assessment = root.RadarSignals.classify(item, { now: at });
+      const time = schedule(item);
+      return (assessment.actionable || inferred) && (Number.isFinite(time.deadlineAt) || Number.isFinite(time.instant)) ? [{ ...item,
+        assessment: inferred ? { actionable: false, candidate: true, confidence: 'medium', rule: 'reset-timing-follow-up', timingLink: 'inferred',
+          eventAt: null, reason: '직전 리셋 공지의 후속 일정 문맥 · 직접 답글 관계 미확인' } : assessment }] : [];
+    }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 100);
+  }
   function list(signalSnapshot, hintSnapshot, settings) {
     if (!settings.monitorSignals) return [];
     const active = (signalSnapshot?.activeSignals || [signalSnapshot?.signal].filter(Boolean)).filter(item =>
@@ -269,17 +419,86 @@
     const events = settings.monitorLeadSource ? root.RadarEvents?.groups(hintSnapshot?.events || [], [...(hintSnapshot?.items || []), ...active, ...reports]) || [] : [];
     const tibo = [...events.filter(event => event.status !== 'cancelled').flatMap(event => event.related), ...active.filter(item => settings.monitorLeadSource && item.source?.id === 'codex-lead'), ...hints, ...reports];
     const unique = new Map([...active, ...tibo].map(item => [String(item.source?.id || '') + ':' + item.id, item]));
+    const archived = new Set();
+    // Display rows may carry a prefixed id or shared URL (?s=20). Match them to a reply's
+    // canonical parent by public X status identity only; never rewrite id/key/url.
+    const xStatus = value => {
+      try {
+        const url = new URL(String(value || ''));
+        const path = /^\/(thsottiaux|reach_vb|openai)\/status\/([1-9]\d{0,24})\/?$/i.exec(url.pathname);
+        return url.protocol === 'https:' && url.hostname === 'x.com' && !url.port && !url.username && !url.password && path ?
+          { author: path[1].toLowerCase(), id: path[2] } : null;
+      } catch (_) { return null; }
+    };
+    // Explicit monitored handle/alias normalization; unknown authors yield '' and never match.
+    const authorAliases = new Map([['tibo', 'thsottiaux'], ['thsottiaux', 'thsottiaux'], ['vb', 'reach_vb'],
+      ['reach_vb', 'reach_vb'], ['openai', 'openai']]);
+    const authorKey = value => typeof value === 'string' ?
+      authorAliases.get(value.trim().replace(/^@/, '').toLowerCase()) || '' : '';
+    // Visible feed ids may carry arbitrary prefixes, so they are not identity. The trusted
+    // canonical URL plus a matching candidate author is the status identity.
+    const sameStatus = (item, id) => {
+      const own = xStatus(item?.url);
+      return !!own && own.id === id.id && own.author === id.author;
+    };
+    const canonicalParent = (candidates, ctx, sourceId, parent) => {
+      const id = xStatus(ctx?.url), at = root.RadarTime.parseTimestamp(ctx?.createdAt);
+      if (!id || sourceId !== 'codex-lead' || String(ctx.id) !== id.id || authorKey(ctx.author) !== id.author ||
+          !Number.isFinite(at)) return false;
+      const group = candidates.filter(item => item?.source?.id === 'codex-lead' && sameStatus(item, id));
+      if (!group.length || (parent && !group.includes(parent))) return false;
+      const first = group[0], time = root.RadarTime.parseTimestamp(first.createdAt);
+      // Disagreeing visible variants (e.g. stale pre-edit copy) make the association ambiguous.
+      if (!group.every(item => item.text === first.text && root.RadarTime.parseTimestamp(item.createdAt) === time &&
+          authorKey(item.author) === id.author)) return false;
+      return typeof first.text === 'string' && first.text === ctx.text && time === at && authorKey(first.author) === authorKey(ctx.author);
+    };
+    // Visible candidates only, captured before archived replies are inserted.
+    const visibleItems = [...unique.values()];
+    if (settings.monitorLeadSource) for (const item of timingReplies(signalSnapshot?.timingReplies)) {
+      const key = item.source.id + ':' + item.id, parent = unique.get(item.source.id + ':' + item.replyContext.id);
+      // codex-lead always goes through the ambiguity-guarded canonical match (no raw id fast path).
+      if (!unique.has(key) && (item.source.id === 'codex-lead' ? canonicalParent(visibleItems, item.replyContext, item.source.id) :
+          parent?.text === item.replyContext.text && parent.url === item.replyContext.url &&
+          root.RadarTime.parseTimestamp(parent.createdAt) === root.RadarTime.parseTimestamp(item.replyContext.createdAt))) {
+        unique.set(key, item); archived.add(key);
+      }
+    }
     const priority = news => news.topic === 'event' ? 2 : news.topic === 'launch' ? 1 : 0;
-    return [...unique.entries()].map(([key, item]) => describe(item, key)).sort((a, b) => priority(a) - priority(b) ||
+    const scope = root.RadarResetScope || (typeof require === 'function' ? require('./reset-scope') : null);
+    const rows = [...unique.entries()].filter(([,item]) => scope?.allows(item, settings) === true).map(([key, item]) => ({ ...describe(item, key), archivedTiming: archived.has(key) })).sort((a, b) => priority(a) - priority(b) ||
       root.RadarTime.parseTimestamp(b.item.createdAt) - root.RadarTime.parseTimestamp(a.item.createdAt));
+    const schedules = new Map(rows.map(row => [row.key, schedule(row.item)]));
+    return rows.map(row => {
+      const own = schedules.get(row.key);
+      const current = { ...row, timingSchedule: own };
+      if (row.item.assessment?.report || (own.deadlineAt && !own.estimatedWindow) || own.instant) return current;
+      let times = rows.filter(child => (child.item.source?.id === 'codex-lead' ?
+        child.item !== row.item && canonicalParent(visibleItems, child.item.replyContext, child.item.source.id, row.item) :
+        child.item.replyContext?.id === row.item.id && child.item.replyContext.text === row.item.text &&
+        child.item.replyContext.url === row.item.url && root.RadarTime.parseTimestamp(child.item.replyContext.createdAt) === row.publishedAt) &&
+        (root.RadarSignals.classify(child.item, { now: root.RadarTime.parseTimestamp(child.item.createdAt) }).actionable || root.RadarSignals.inferredTimingContext(child.item)))
+        .map(child => ({ child, time: schedules.get(child.key) })).filter(({ time }) => time.deadlineAt || time.instant);
+      const exact = times.filter(({ time }) => !time.estimatedWindow);
+      if (exact.length) times = exact;
+      else if (own.deadlineAt) return current;
+      const distinct = new Set(times.map(({ time }) => `${time.deadlineAt ? time.deadlineType || 'deadline' : 'instant'}:${time.deadlineAt || time.instant}`));
+      if (distinct.size !== 1) return current;
+      const { child, time } = times[0];
+      return { ...current, timing: time.text, timingSchedule: time, timingDetail: time.detail + (time.association === 'inferred' ? '' : ' · 확인된 같은 작성자의 일정 답글 기준'), timingSourceKey: child.key };
+    });
   }
 
   function describe(item, key) {
     const target = root.RadarTime.countryZone();
+    const inferredReset = root.RadarSignals.isInferredReset(item);
     const discussion = ['reset-poll', 'reset-choice', 'reset-short'].includes(item.assessment?.rule);
-    const review = item.assessment?.rule === 'reset-review';
+    const semantic = item.assessment?.rule === 'semantic-reset';
+    const review = semantic || item.assessment?.rule === 'reset-review';
+    const semanticLabel = english() ? ({ forecast: 'AI forecast', completed: 'AI completion clue', uncertain: 'AI review' })[item.assessment?.semanticCategory] :
+      ({ forecast: 'AI 예고', completed: 'AI 완료 암시', uncertain: 'AI 검토' })[item.assessment?.semanticCategory];
     const tr = (key, fallback) => root.RadarI18n?.t?.(key, undefined, fallback) || fallback;
-    const explicit = !discussion && !review && (/\breset(?:s|ting)?\b/i.test(item.text) ||
+    const explicit = !inferredReset && !discussion && !review && (/\breset(?:s|ting)?\b/i.test(item.text) ||
       item.assessment?.actionable === true && root.RadarSignals.classify(item, {
         now: root.RadarTime.parseTimestamp(item.createdAt) ?? Date.now()
       }).actionable);
@@ -302,14 +521,14 @@
     const kind = root.RadarSignals.resetKind(item);
     const kindLabel = review ? tr('newsResetReviewContext', '원문 확인 필요 · 리셋 실행·종류·시각·내 계정 반영 미확정') : discussion ? '리셋 설문·암시 · 실행 미확정' : inferred ? root.RadarI18n?.t?.('newsInferredContext', undefined, '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인') || '앞선 예고와 연결 추정 · 5시간·주간 대상 미확인' : report === 'reset-update' ? item.assessment.updateStatus === 'resolved' ? '리셋 반영 수정 안내' : '리셋 반영 조사·보완' :
       topic && !explicit ? '리셋 미확인' : { banked: 'Banked reset · 리셋권', ordinary: '일반 리셋', both: '일반 + Banked reset', unknown: '리셋 종류 미확인' }[kind];
-    return { key, item, event, publishedAt, publishedText, label: review ? tr('newsResetReview', '검토 후보') : discussion ? item.assessment.rule === 'reset-poll' ? '리셋 설문' : '리셋 암시' : inferred ? root.RadarI18n?.t?.('newsInferredCompletion', undefined, '완료 표현') || '완료 표현' : report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
+    return { key, item, event, publishedAt, publishedText, label: inferredReset ? (english() ? 'Reset inferred' : '리셋 추정') : root.RadarSignals.isResetForecast(item) && !explicit ? (english() ? 'Reset forecast' : '리셋 예고') : semantic ? semanticLabel || 'AI 검토' : review ? tr('newsResetReview', '검토 후보') : discussion ? item.assessment.rule === 'reset-poll' ? '리셋 설문' : '리셋 암시' : inferred ? root.RadarI18n?.t?.('newsInferredCompletion', undefined, '완료 표현') || '완료 표현' : report === 'credit-grant' ? 'Banked' : report === 'reset-update' ? '리셋 후속' : report ? 'reset 완료' : explicit ? 'reset' : topic === 'event' || event ? '행사' : topic === 'launch' ? '출시' : '후보', explicit, kind, kindLabel, topic,
       timing: report ? reportTiming : time.text,
       timingDetail: report ? '표시 시각은 게시 시각입니다. 실제 지급·계정 반영 시각은 별도 확인이 필요합니다.' : time.detail,
-      caption: review ? kindLabel : topic && !explicit ? item.assessment?.reason || '행사 일정 · 리셋 미확인' : report ? item.assessment.reason : explicit ? 'reset 직접 언급 · 실행 확정과는 다릅니다' : timed ? item.assessment.reason : '간접 표현 · 리셋 미확정' };
+      caption: semantic ? `${kindLabel} · ${item.assessment.evidence}` : review ? kindLabel : topic && !explicit ? item.assessment?.reason || '행사 일정 · 리셋 미확인' : report ? item.assessment.reason : explicit ? 'reset 직접 언급 · 실행 확정과는 다릅니다' : timed ? item.assessment.reason : '간접 표현 · 리셋 미확정' };
   }
   function select(signalSnapshot, hintSnapshot, settings) {
     return list(signalSnapshot, hintSnapshot, settings)[0] || null;
   }
-  root.RadarNews = Object.freeze({ timing, schedule, eventWindow, list, select });
+  root.RadarNews = Object.freeze({ timing, schedule, eventWindow, timingReplies, list, select, describe });
   if (typeof module !== 'undefined') module.exports = root.RadarNews;
 })(globalThis);

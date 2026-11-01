@@ -1,10 +1,24 @@
 # Codex Reset Radar · 리셋 레이더
 
+Version 0.2.132 preserves detected reset news as display-only local history and can recover older posts verified on X through opt-in Telegram leads.
+
+Version 0.2.126 prevents another reader tab from opening after a browser restart when an unmarked tab could be the previous reader. Ambiguous tabs are not closed automatically; collection resumes after the ambiguity is resolved.
+
+Version 0.2.125 recognizes the October 28 completion with its verified quoted reset-timing context, while retaining strict negation and unrelated-post safeguards.
+
+Version 0.2.124 preserves verified reply and quote evidence across incomplete or failed rechecks, retries unresolved completions sooner, restores missing retry alarms, and processes saved public posts after partial collection failures. Edited posts still invalidate stale relationships. No new permissions or external services are required.
+
+Version 0.2.123 recognizes additional publicly verified reset completion language, including processed resets and bounded quoted follow-ups. The reader rechecks late-loading quote cards, and relative two-hour promises use verified or explicitly inferred reset context without inventing an execution time. Historical retention and daily alert limits remain unchanged.
+
+Public news is grouped into one card per detection day, with summaries, explicit deadlines and every retained source link. Windows public-news alerts are limited to one accepted toast per selected-country calendar day; later findings update the popup silently. Account recovery, Banked credit and expiry alerts remain separate. Verified timing replies support bounded release asides; literal PST and publication-based relative dates are preserved. A ready on-device model no longer needs a popup setup shortcut.
+
+The default check interval is 15 minutes. Official public news, reset-only filtering, reset candidates, startup/wake recovery and credit expiry alerts are enabled; quiet hours are off. Community reports and history-based estimates default off. On upgrade, these two community sources are switched off once and the old 30-minute interval becomes 15 minutes; custom 60/120-minute intervals and later saved choices survive. Account/Chat access stays opt-in.
+
 OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권을 확인하는 Chrome/Edge 확장프로그램입니다. **OpenAI 공식 제품이 아닌 커뮤니티 파생판**입니다.
 
 ## 설치와 업데이트
 
-1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.94.zip`을 내려받아 압축을 풉니다.
+1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 배포된 ZIP을 내려받아 압축을 풉니다. 이 소스의 패키지 이름은 `CodexReset-Radar-KO-0.2.132.zip`이며 공개 배포 버전과 다를 수 있습니다.
 2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
 4. 확장을 고정합니다. X 직접 확인은 항상 켜짐이며, 설정의 **X 접근 허용·확인**에서 처음 한 번 접근을 허용합니다. 개인 계정 조회는 별도로 켜고 연결합니다.
@@ -18,8 +32,9 @@ OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권
 - Codex 5시간·주간 잔여량, 리셋 시각, 리셋권 보유·만료 상태
 - X 공지가 없어도 계정의 Banked reset 증가를 별도로 감지
 - 주간 `%` 배지와 미확인 `!`: 리셋권 영역에서 확인하거나 24시간이 지나면 해제
-- 리셋 소식 우선 표시, 일정이 있는 행사 묶기와 종료까지 고정
-- 출시 후보, 작성자 사진, 원문 링크, 긴 글 말줄임
+- 리셋 관련 글만 기본 표시·알림, 검증된 답글 문맥·설문·완료 연결 지원
+- 작성자 사진, 게시 날짜·시각, 원문 링크, 긴 글 말줄임
+- 일반 출시·행사 후보는 설정에서 리셋 전용 필터를 끈 경우에만 표시
 - 8개국·7개 언어, 대표 지역 시간대 자동 변환, 라이트·다크 테마
 - 일반 Chat 모델별 기록과 추정 잔여량
 - Free·Go·Plus부터 Pro·Business·Enterprise·Edu까지 전체 요금제 표시, 현재 계정의 요금제 선택 상태 표시
@@ -66,3 +81,9 @@ npm run verify
 ## 출처 및 라이선스
 
 [whmc76/codex-reset-radar](https://github.com/whmc76/codex-reset-radar) v0.2.2 기반 파생판이며 원본과 기존 기여자의 MIT 고지를 유지합니다. [LICENSE](LICENSE)와 [제3자 자산 고지](THIRD_PARTY_NOTICES.md)를 확인하세요.
+
+0.2.97 decouples inference retries from X collection. Retrying cached public posts never changes collection timestamps or creates X tabs. Inference is bounded at 45 seconds per post / 90 seconds per pass; repeat failures back off for 1–30 minutes without becoming negative classifications. The UI exposes the failing phase and error details; model availability is distinct from successful classification.
+
+0.2.97 removes the artificial six/eight-post AI batch cap and three-conversation cap. Work drains within the existing 90-second AI / 270-second X limits. Deterministic alerts precede AI startup, and new positive AI results are delivered at checkpoints. Remaining work is scheduled from its earliest retry time with a 30-second minimum. Processing and failure recovery can still leave pending items; they are never labelled completed.
+
+0.2.98 fixes a reproduced race found in Claude review: a second AI-only retry could swallow a pending fresh-post request while the mutation lock was released. Fresh requests now wait through AI-only jobs and still perform collection.

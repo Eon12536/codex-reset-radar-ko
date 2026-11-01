@@ -16,6 +16,18 @@ function page(reply, dependencies = {}) {
 }
 const status = { ok: true, version, permission: 'granted', hintAlerts: false, pending: 0, quiet: false };
 
+test('public delivery evidence and same-day suppression are distinguished from account acceptance', async () => {
+  const p = page(async () => ({ ...status,
+    realDelivery: { status: 'accepted', at: Date.parse('2026-10-26T05:29:00Z') },
+    publicDelivery: { status: 'failed', at: Date.parse('2026-10-26T04:00:00Z') },
+    dailySummary: { enabled: true, day: '2026-10-26', handled: true }
+  }));
+  await settle();
+  assert.match(p.elements.notificationWorkerStatus.textContent, /실제 알림:.*Chrome 접수/);
+  assert.match(p.elements.notificationWorkerStatus.textContent, /공개 탐지 알림:.*전송 실패/);
+  assert.match(p.elements.notificationWorkerStatus.textContent, /2026-10-26 하루 알림 처리됨/);
+});
+
 test('the reset survey/hint alert category is shown independently of general candidate alerts', async () => {
   const p = page(async () => ({ ...status, resetHintAlerts: true })); await settle();
   assert.match(p.elements.notificationWorkerStatus.textContent, /후보 알림 꺼짐/);

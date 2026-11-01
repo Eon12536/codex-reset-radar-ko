@@ -14,6 +14,13 @@
   const mediaOnly = new Map();
   let latestOrder = [];
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const publicStatus = href => /^(?:https:\/\/x\.com)?\/([a-zA-Z0-9_]{1,15})\/status\/([1-9]\d{0,24})\/?(?:[?#].*)?$/i.exec(href || '');
+  const ownElement = (article, element) => {
+    if (element?.closest('article[data-testid="tweet"]') !== article) return false;
+    const card = element.closest('[role="link"]:not(a)');
+    // An outer clickable wrapper is not a quoted post inside this article.
+    return !card || card.contains?.(article) === true;
+  };
 
   function originalText(node) {
     if (!node) return "";
@@ -31,11 +38,10 @@
     let previousId = '';
     for (const article of document.querySelectorAll('article[data-testid="tweet"]')) {
       // Exclude identity/body inside a quoted post's role=link container.
-      const own = element => element?.closest('article[data-testid="tweet"]') === article &&
-        !element.closest('[role="link"]:not(a)');
+      const own = element => ownElement(article, element);
       const time = Array.from(article.querySelectorAll("time")).find(own);
       const href = time?.closest("a")?.getAttribute("href") || "";
-      const match = /^\/([a-zA-Z0-9_]{1,15})\/status\/([1-9]\d{0,24})\/?$/.exec(href);
+      const match = publicStatus(href);
       const body = Array.from(article.querySelectorAll('[data-testid="tweetText"]')).find(own);
       if (!match || !time.getAttribute("datetime")) continue;
       const adjacentId = previousId;
@@ -89,9 +95,10 @@
   async function expandOwnPosts() {
     if (!allowed()) return;
     for (const article of document.querySelectorAll('article[data-testid="tweet"]')) {
-      const own = element => element?.closest('article[data-testid="tweet"]') === article && !element.closest('[role="link"]:not(a)');
+      const own = element => ownElement(article, element);
       const time = Array.from(article.querySelectorAll('time')).find(own);
-      const id = new RegExp('^/' + author + '/status/([1-9]\\d{0,24})/?$', 'i').exec(time?.closest('a')?.getAttribute('href') || '')?.[1];
+      const status = publicStatus(time?.closest('a')?.getAttribute('href'));
+      const id = status?.[1].toLowerCase() === author ? status[2] : null;
       if (!id || expanded.has(id) || expanded.size >= 12 || Date.now() >= deadline) continue;
       const button = Array.from(article.querySelectorAll('[data-testid="tweet-text-show-more-link"]')).find(own);
       // This exact inline body control expands text; never click menus, links,
@@ -126,30 +133,76 @@
       mediaOnlyCount: media.length };
   }
 
+  // Detail viewports virtualize: keep same-author rows from every snapshot as
+  // discovery leads only. They are filtered against the target later and never
+  // become parent context.
+  const leads = new Map();
+  const lead = rows => {
+    if (targetId) for (const row of rows)
+      if (row.id !== targetId && row.author.toLowerCase() === author) {
+        const prev = leads.get(row.id);
+        // Upgrade a truncated lead to a complete body; never downgrade.
+        if (prev ? prev.truncated && !row.truncated : leads.size < 64) leads.set(row.id, row);
+      }
+    return rows;
+  };
   // Page completion does not imply hydrated posts. Wait for the requested row.
   for (let attempt = 0; attempt < 16 && Date.now() < deadline - 5000; attempt++) {
     if (!allowed()) return { rows: [], stopReason: "navigated", pages: 0 };
-    const rows = collect();
+    const rows = lead(collect());
     if (rows.some(row => targetId ? row.id === targetId && row.author.toLowerCase() === author : row.author.toLowerCase() === author)) break;
     await sleep(500);
   }
-  remember(collect());
+  remember(lead(collect()));
   await expandOwnPosts();
   await sleep(1000);
   if (targetId) {
-    let rows = collect();
+    const clockLead = /\b(?:eod|end of (?:the )?day|before|by)\b|\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\b|\b\d{1,2}:\d{2}\b/i;
+    let rows = lead(collect());
     let index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
+    let frame = index < 0 ? null : { rows: rows.slice(0, index + 1), quality: bodyStatus(true) };
+    const needsParent = () => index <= 0 || (clockLead.test(rows[index].text) && !/\bresets?\b/i.test(rows[index].text) &&
+      !rows.slice(0, index).some(row => row.author.toLowerCase() === author && !row.truncated && /\bresets?\b/i.test(row.text)));
     // X hydrates the short reply before its parent. Do not cache "no parent"
-    // merely because the target itself appeared first.
-    for (let attempt = 0; index === 0 && attempt < 6 && Date.now() < deadline - 1000; attempt++) {
+    // merely because the target itself or an unrelated preceding post appeared first.
+    for (let attempt = 0; needsParent() && attempt < 6 && Date.now() < deadline - 1000; attempt++) {
       if (!allowed()) return { rows: [], stopReason: "navigated", pages: 0 };
+      // X can anchor the reply below its virtualized parent. Inspect upward;
+      // if that hides the target, move back rather than joining separate views.
+      window.scrollBy(0, (index >= 0 ? -1 : 1) * Math.max(300, window.innerHeight * 0.6));
       await sleep(1000);
-      rows = collect();
+      if (!allowed()) return { rows: [], stopReason: "navigated", pages: 0 };
+      await expandOwnPosts();
+      rows = lead(collect());
       index = rows.findIndex(row => row.id === targetId && row.author.toLowerCase() === author);
+      if (index >= 0) frame = { rows: rows.slice(0, index + 1), quality: bodyStatus(true) };
     }
-    // Comments after the target cannot explain what it was replying to.
-    return { rows: index < 0 ? [] : rows.slice(0, index + 1), targetId, pages: 1, ...bodyStatus(true),
-      stopReason: index < 0 ? "target-missing" : "conversation" };
+    // Later posts are discovery leads only. They must be checked on their own
+    // conversation pages; they never become this target's parent context.
+    const contextRows = frame?.rows || [];
+    const quality = frame?.quality || bodyStatus(true), followUps = new Map();
+    const target = contextRows.at(-1);
+    const at = target ? Date.parse(target.createdAt) : NaN;
+    const pick = () => {
+      for (const row of [...leads.values()].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))) {
+        const after = Date.parse(row.createdAt);
+        if (after > at && after - at <= 2 * 86400000 && followUps.size < 12) followUps.set(row.id, row);
+      }
+    };
+    // Late replies may hydrate after the target: recheck within the deadline
+    // instead of returning an early empty result.
+    if (target && Number.isFinite(at) && /\bresets?\b/i.test(target.text)) for (let pass = 0; pass < 12; pass++) {
+      pick();
+      // Only an actual clock/deadline lead (same pattern as the caller) ends early.
+      if (followUps.size >= 12 || ([...followUps.values()].some(row => clockLead.test(row.text || '')) && pass >= 1) || Date.now() >= deadline - 1500) break;
+      if (!allowed()) return { rows: [], stopReason: 'navigated', pages: 0 };
+      window.scrollBy(0, Math.max(600, window.innerHeight * 0.8));
+      await sleep(pass < 2 ? 500 : 1000);
+      await expandOwnPosts();
+      lead(collect());
+    }
+    return { rows: contextRows, followUps: [...followUps.values()], targetId, pages: 1, ...quality,
+      stopReason: !contextRows.length ? "target-missing" : "conversation" };
   }
 
   let pages = 0, unchanged = 0, stopReason = "scan-limit";

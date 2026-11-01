@@ -102,6 +102,7 @@ test('notification diagnostics use the selected country time and translate deliv
   a.context.setTimeout=setTimeout;a.context.clearTimeout=clearTimeout;
   a.context.chrome.runtime={sendMessage:async()=>({ok:true,version:require('../manifest.json').version,
    permission:'granted',hintAlerts:false,pending:0,quiet:false,resumeReadyAt:Date.now()+60000,realDelivery:{status:'accepted',at},
+   publicDelivery:{status:'accepted',at},dailySummary:{enabled:true,day:'2026-10-04',handled:true},
    publicAlerts:{pending:0,handled:3,expired:7,disabled:2,eligible:0}})};
   vm.runInContext(source,a.context);
   await new Promise(resolve=>setImmediate(resolve));

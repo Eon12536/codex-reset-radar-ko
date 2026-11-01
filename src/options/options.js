@@ -31,7 +31,7 @@ async function load() {
   for (const key of [
     "monitorSignals", "monitorAccount", "monitorChat", "syncChatHistory", "syncChatResetWithCodex", "notifyOfficialReset", "notifyCreditExpiry",
     "notifyAdvice", "notifyHints", "notifyResetHints", "notifyScheduleChanges", "notifyAccountReset", "notifyBankedReset", "notifyRecoveryOnResume", "quietHoursEnabled", "monitorLeadSource", "monitorStatusSource",
-    "monitorHistorySource", "monitorCommunitySource", "monitorDirectX", "notifyPublicOnResume"
+    "monitorHistorySource", "monitorCommunitySource", "monitorDirectX", "notifyPublicOnResume", "semanticEnabled", "resetOnly", "dailyResetDigest"
   ]) control(key).checked = Boolean(value[key]);
   await RadarTheme.ready;
   setRadio("theme", RadarTheme.current());
@@ -55,6 +55,9 @@ function readSettings() {
     syncChatResetWithCodex: control("syncChatResetWithCodex").checked,
     monitorLeadSource: control("monitorLeadSource").checked,
     monitorDirectX: true,
+    semanticEnabled: control("semanticEnabled").checked,
+    resetOnly: control("resetOnly").checked,
+    dailyResetDigest: control("dailyResetDigest").checked,
     monitorStatusSource: control("monitorStatusSource").checked,
     monitorHistorySource: control("monitorHistorySource").checked,
     monitorCommunitySource: control("monitorCommunitySource").checked,
@@ -277,6 +280,7 @@ async function renderPublicConnection() {
       ? `최근 확인: ${timelineStatus || '이전 수집 방식 · 다시 확인해 주세요'} · 중복 제외 ${scan.posts}개 · 대화 ${scan.conversations}개${scan.conversationFailures ? " · 일부 대화 확인 실패" : ""}${scan.truncated ? ' · 본문 일부 생략 ' + scan.truncated + '개' : ''}. 최근 읽은 글: ${lead.latestPostAt ? RadarTime.formatDateTime(lead.latestPostAt, RadarTime.resolveTimeZone(settings)) : '미확인'}. 전체 글 수집을 보장하지 않으며 리셋 관련 소식만 팝업에 표시합니다.`
       : "이전 수집 기록입니다. 공개 소식 확인을 눌러 새 답글 수집 결과를 확인하세요.";
     if (scan?.contextPending) status.textContent += ` 답글 문맥 ${scan.contextPending}개는 다음 조회에서 이어서 확인합니다.`;
+    if (scan?.deferredResetChecks) status.textContent += ` 목록 확인 시간을 확보하기 위해 리셋 일정 ${scan.deferredResetChecks}건의 답글 확인을 다음 조회로 미뤘습니다.`;
     if (lead.classification) {
       const c = lead.classification;
       status.textContent += ' ' + msg('publicCollectionProgress', [c.signals, c.hints, c.reports, c.other]);
@@ -289,6 +293,19 @@ async function renderPublicConnection() {
     const reason = { "tab-blocked": msg("checkTabsRecoveryHelp"), permission: "X 접근 권한을 다시 확인하려면 ‘공개 소식 확인’을 눌러 주세요.", login: "X 로그인이 필요합니다. 같은 Chrome에서 X에 로그인한 뒤 다시 확인해 주세요.", timeout: "X 글 로딩 시간이 초과됐습니다. 잠시 후 다시 확인해 주세요.", "no-posts": "X에서 Tibo의 글을 읽지 못했습니다. X 로그인·접속 상태를 확인해 주세요.", "page-unavailable": "X 페이지에 접근하지 못했습니다. X 로그인·접속 상태를 확인해 주세요." };
     status.textContent = currentError === 'body-unavailable' ? msg('collectorReason_body-unavailable') : currentError === 'partial' ? msg('publicCollectionPartialHelp') :
       reason[currentError] || "아직 답글 직접 수집을 확인하지 못했습니다. 공개 소식 확인을 눌러 주세요.";
+  }
+  if (allowed && settings.monitorSignals && settings.monitorLeadSource && lead?.directScan?.resetFollowUps?.length) {
+    const reasons = { timeout: '시간 초과', 'no-posts': '본문 미검출', 'body-unavailable': '본문 미로딩', login: '로그인 필요', 'page-unavailable': '페이지 접근 실패' };
+    const count = value => Math.min(999, Math.max(0, Math.floor(Number(value)) || 0));
+    const childDetails = check => (Array.isArray(check.children) ? check.children : []).slice(0, 3)
+      .filter(child => /^[1-9]\d{0,24}$/.test(child?.id || ''))
+      .map(child => `답글 ${child.id}: ${child.state === 'verified' ? '연결 확인' : child.state === 'inferred' ? '후속 문맥 연결 · 직접 답글 관계 미확인' : child.state === 'parent-missing' ? '상단 원글 미표시' :
+        child.state === 'different-parent' ? '다른 원글' + (/^[1-9]\d{0,24}$/.test(child.parentId || '') ? ' ' + child.parentId : '') : '원문·시각 불일치'}`)
+      .join(' / ');
+    const readerBuild = /^\d+\.\d+\.\d+$/.test(lead.directScan.readerBuild || '') ? ` [조회 코드 v${lead.directScan.readerBuild}]` : ' [이전 조회 기록]';
+    status.textContent += readerBuild + ' 리셋 일정 확인: ' + lead.directScan.resetFollowUps.map(check =>
+      `${RadarSignals.authorName(check)} ${check.id} · 후보 ${count(check.discovered)}개 · 연결 ${count(check.verified)}개 · ${check.state === 'verified' ? '답글 연결 ' + count(check.verified) + '개' :
+        check.state === 'inferred' ? '후속 문맥 ' + count(check.inferred) + '개' : check.state === 'failed' ? (reasons[check.error] || '확인 실패') : check.state === 'changed' ? '원글 변경' : '일정 답글 미확인'}${childDetails(check) ? ' [' + childDetails(check) + ']' : ''}`).join(' / ') + '.';
   }
 }
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -327,6 +344,30 @@ async function checkPublicConnection() {
   finally { button.disabled = false; }
 }
 control("checkPublic").addEventListener("click", checkPublicConnection);
+
+async function renderTelegramConnection() {
+  const connected = await chrome.permissions.contains({ origins: ['https://t.me/*'] });
+  const { signalSnapshot } = await chrome.storage.local.get('signalSnapshot');
+  const scan = signalSnapshot?.leadStatus?.directScan?.telegram;
+  control('telegramPermission').textContent = connected ? '연결 해제' : '텔레그램 연결';
+  control('telegramConnectionState').textContent = !connected ? '연결 꺼짐 · 권한 허용 후 자동으로 보조 확인합니다.' :
+    scan?.state === 'ok' ? `연결됨 · 후보 ${scan.leads}개 · 빠진 글 ${scan.missing}개 · 원문 확인 ${scan.recovered}개` :
+    scan?.state === 'unavailable' ? '채널을 읽지 못했습니다. 다음 확인 때 다시 시도합니다.' : '연결됨 · 다음 공개 소식 확인 때 확인합니다.';
+}
+control('telegramPermission').addEventListener('click', async () => {
+  const button = control('telegramPermission'); button.disabled = true;
+  try {
+    const permission = { origins: ['https://t.me/*'] };
+    if (await chrome.permissions.contains(permission)) await chrome.permissions.remove(permission);
+    else await chrome.permissions.request(permission);
+    await renderTelegramConnection();
+  } catch { control('telegramConnectionState').textContent = '권한 상태를 바꾸지 못했습니다. 다시 시도해 주세요.'; }
+  finally { button.disabled = false; }
+});
+renderTelegramConnection();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.signalSnapshot) void renderTelegramConnection();
+});
 
 async function changeChatCounter() {
   const checkbox = control("monitorChat"), status = control("chatCounterSettingStatus");

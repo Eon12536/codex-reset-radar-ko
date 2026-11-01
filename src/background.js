@@ -9,24 +9,31 @@ importScripts(
   "core/usage.js",
   "core/recovery.js",
   "core/credit-grants.js",
+  "core/reset-scope.js",
+  "core/semantic.js",
+  "core/semantic-queue.js",
   "core/signals.js",
   "core/news.js",
   "core/events.js",
   "core/schedule.js",
+  "core/daily-news.js",
   "core/sources.js",
+  "core/telegram-leads.js",
   "core/tab-owner.js",
   "core/direct-x.js",
   "core/public-alerts.js",
   "core/badge.js",
   "core/forecast.js",
   "core/advice.js",
-  "core/security.js"
+  "core/security.js",
+  "core/reset-history.js"
 );
 
 const ALARM_NAME = "codex-reset-radar-poll";
 const RESUME_ALARM = "codex-reset-radar-resume";
 const PUBLIC_RESUME_ALARM = "codex-reset-radar-public-resume";
 const PUBLIC_RETRY_ALARM = "codex-reset-radar-public-retry";
+const SEMANTIC_RETRY_ALARM = 'codex-reset-radar-semantic-retry';
 const PUBLIC_DELIVERY_ALARM = "codex-reset-radar-public-delivery";
 const BADGE_EXPIRY_ALARM = "codex-reset-radar-badge-expiry";
 const CREDIT_EXPIRY_ALARM = "codex-reset-radar-credit-expiry";
@@ -46,12 +53,13 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.94";
+const NOTIFICATION_BUILD = "0.2.132";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
 let accountJob;
 let signalJob;
+let semanticOnlyJob = false;
 const activeRequests = new Set();
 
 async function visibleNotificationsForCleanup() {
@@ -113,14 +121,22 @@ function ensureSecurity() {
     // cleanup retains its retry alarm and blocks only that reader's new tabs.
     await RadarDirectX.cleanup({ recover: true }).catch(() => {});
     await chatPlanOwner.cleanup({ recover: true }).catch(() => {});
-    const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "preferenceDefaultsSchema"]);
+    const stored = await chrome.storage.local.get(["settings", "securitySchema", "chatCounterSchema", "preferenceDefaultsSchema", "resetFocusDefaultsSchema", "expiryStagesSchema"]);
     const settings = RadarSettings.sanitize(stored.settings);
+    if (stored.expiryStagesSchema !== 1 && settings.expiryWarningHours === 24) settings.expiryWarningHours = 72;
     // Apply the requested defaults once to existing installs too. Persist the
     // marker with settings so later user choices survive worker restarts.
     if (stored.preferenceDefaultsSchema !== 1) {
       settings.quietHoursEnabled = false;
       settings.notifyHints = true;
       settings.syncChatResetWithCodex = true;
+    }
+    // Apply the requested reset-focused defaults once. Preserve a deliberately
+    // slower interval, account consent and all notification/monitoring choices.
+    if (stored.resetFocusDefaultsSchema !== 1) {
+      if (settings.pollMinutes === 30) settings.pollMinutes = 15;
+      settings.monitorHistorySource = false;
+      settings.monitorCommunitySource = false;
     }
     if (stored.securitySchema !== SECURITY_SCHEMA) {
       settings.monitorAccount = false;
@@ -133,7 +149,7 @@ function ensureSecurity() {
       await chrome.storage.local.remove(["chatCounter", "chatCounters", "chatAccount", "chatCounterSalt"]);
     }
     await chrome.storage.session.remove([TOKEN_KEY, TOKEN_EXPIRY_KEY]);
-    await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA, chatCounterSchema: 2, chatPolicySchema: 1, preferenceDefaultsSchema: 1 });
+    await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA, chatCounterSchema: 2, chatPolicySchema: 1, preferenceDefaultsSchema: 1, resetFocusDefaultsSchema: 1, expiryStagesSchema: 1 });
     await cleanChatHistory(settings);
     if (!settings.monitorAccount) await purgeAccountState();
     if (!settings.monitorChat) await chrome.storage.local.remove(["chatCounter", "chatCounters", "chatAccount", "chatCounterSalt", "chatCounterError"]);
@@ -146,9 +162,22 @@ function ensureSecurity() {
       for (const [id, request] of Object.entries(session.chatPlanTabsV2 || {})) if (request?.expiresAt > Date.now()) chatPlanTabs.set(Number(id), request);
     }
     await restorePublicQueueReceipts();
+    // Capture still-visible evidence before startup reclassification can
+    // remove an old active item. Historical records never trigger alerts.
+    if (settings.monitorSignals && settings.monitorLeadSource) {
+      try {
+        const state = await chrome.storage.local.get(['signalSnapshot', 'hintSnapshot', 'scheduleSnapshot', 'resetHistory', 'directXPendingPosts', 'directXContextCache']);
+        const retained = RadarDirectX.restorePosts(state.directXPendingPosts, state.directXContextCache);
+        const archive = RadarResetHistory.merge(state.resetHistory, [...RadarDailyNews.entries(state, settings), ...RadarResetHistory.classifyRows(retained, settings)]);
+        if (archive.items.length && JSON.stringify(archive) !== JSON.stringify(state.resetHistory))
+          await chrome.storage.local.set({ resetHistory: archive });
+      } catch { try { await chrome.storage.local.set({ resetHistoryStorageError: true }); } catch {} }
+    }
     await revalidateCachedSignals(stateEpoch);
     if (!settings.monitorSignals || !settings.monitorLeadSource || !collectorAlertsEnabled(settings)) await recordCollectionHealth(null, settings, stateEpoch);
     await ensureAlarm(settings, { reset: false });
+    if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX)
+      await schedulePublicRetry({ restoreOnly: true });
     await scheduleCreditExpiryCheck(settings);
     try { await configureChatCounter(settings.monitorChat); }
     catch { await chrome.storage.local.set({ chatCounterError: true }); }
@@ -186,6 +215,13 @@ async function saveSettings(settings, { connectChat = false } = {}) {
     startChat = !wasCounting && sanitized.monitorChat;
     await configureChatCounter(sanitized.monitorChat);
     await chrome.storage.local.set({ settings: sanitized });
+    if (!sanitized.semanticEnabled || !sanitized.monitorSignals || !sanitized.monitorLeadSource) {
+      await chrome.storage.local.remove(['semanticState', 'semanticStatus']);
+      await chrome.alarms.clear(SEMANTIC_RETRY_ALARM);
+      const { hintSnapshot } = await chrome.storage.local.get('hintSnapshot');
+      if (hintSnapshot) await chrome.storage.local.set({ hintSnapshot: { ...hintSnapshot,
+        items: (hintSnapshot.items || []).filter(item => item.assessment?.rule !== 'semantic-reset') } });
+    }
     await cleanChatHistory(sanitized);
     if (!sanitized.monitorChat) {
       await chrome.storage.local.remove(["chatCounter", "chatCounters", "chatAccount", "chatCounterSalt", "chatCounterError"]);
@@ -591,14 +627,15 @@ async function ensureAlarm(settings, { reset = true } = {}) {
 }
 
 async function scheduleCreditExpiryCheck(settings, snapshot = null, { retry = false } = {}) {
-  const stored = await chrome.storage.local.get(['accountSnapshot', 'notificationHistory', 'creditExpiryWatch', 'accountState']);
+  const stored = await chrome.storage.local.get(['accountSnapshot', 'notificationHistory', 'pendingNotifications', 'creditExpiryWatch', 'accountState']);
   snapshot ||= stored.accountSnapshot;
   const history = stored.notificationHistory || {};
   const enabled = settings.monitorAccount && settings.notifyCreditExpiry;
-  let next = enabled && snapshot?.accountKey &&
-    snapshot.credits?.availableCount > 0 ? snapshot.credits.credits?.filter(credit => credit.expiresAt > Date.now() &&
-      !history[expiryNotificationId(snapshot.accountKey, credit.expiresAt)])
-      .sort((a, b) => a.expiresAt - b.expiresAt)[0]?.expiresAt : null;
+  const pendingIds = new Set((stored.pendingNotifications || []).map(item => item.id));
+  const dueFor = (key, at) => nextExpiryDue(key, at, settings, history, pendingIds);
+  let next = enabled && snapshot?.accountKey && snapshot.credits?.availableCount > 0 ?
+    snapshot.credits.credits?.map(credit => ({ expiresAt: credit.expiresAt, due: dueFor(snapshot.accountKey, credit.expiresAt) }))
+      .filter(credit => Number.isFinite(credit.due)).sort((a, b) => a.due - b.due)[0]?.expiresAt : null;
   let accountKey = snapshot?.accountKey;
   const watch = stored.creditExpiryWatch;
   // A partial credits failure hides the inventory in the popup, but must not
@@ -606,7 +643,7 @@ async function scheduleCreditExpiryCheck(settings, snapshot = null, { retry = fa
   // fresh query; it can never authorize a private notification itself.
   if (!next && enabled && !snapshot?.credits && stored.accountState?.status !== 'signedOut' &&
     Number.isFinite(watch?.expiresAt) && watch.expiresAt > Date.now() &&
-    !history[expiryNotificationId(watch.accountKey, watch.expiresAt)] &&
+    Number.isFinite(dueFor(watch.accountKey, watch.expiresAt)) &&
     (!accountKey || accountKey === watch.accountKey)) {
     next = watch.expiresAt; accountKey = watch.accountKey;
   }
@@ -615,7 +652,7 @@ async function scheduleCreditExpiryCheck(settings, snapshot = null, { retry = fa
     await chrome.storage.local.remove('creditExpiryWatch');
     return;
   }
-  const warningAt = next - settings.expiryWarningHours * 3600000;
+  const warningAt = dueFor(accountKey, next);
   const when = warningAt > Date.now() ? warningAt : Date.now() + (retry ? 5 : 1) * 60000;
   const current = await chrome.alarms.get?.(CREDIT_EXPIRY_ALARM);
   const scheduledAt = current?.scheduledTime ?? current?.when;
@@ -823,6 +860,8 @@ async function clearSignalState() {
   await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
   await chrome.storage.local.remove(["publicRetryCheck", "directXContextCache", "directXPendingPosts"]);
   await chrome.alarms.clear(PUBLIC_RETRY_ALARM);
+  await chrome.alarms.clear(SEMANTIC_RETRY_ALARM);
+  await chrome.storage.local.remove(['semanticState', 'semanticStatus']);
   const settings = await loadSettings();
   const { accountSnapshot } = await chrome.storage.local.get("accountSnapshot");
   const snapshot = { signal: null, activeSignals: [], checkedAt: Date.now(), sources: [], itemCount: 0 };
@@ -884,36 +923,38 @@ async function reconcileSignalNotifications(signals, settings, epoch, reviewed =
   }
 }
 
-async function revalidateCachedSignals(epoch) {
+async function revalidateCachedSignals(epoch, semanticItems = []) {
   const settings = await loadSettings();
   const state = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "accountSnapshot", "scheduleSnapshot", "directXPendingPosts", "directXContextCache", "publicAlertState", "notificationHistory", "pendingNotifications"]);
   if (epoch !== stateEpoch) return;
   const retained = settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX
     ? RadarDirectX.restorePosts(state.directXPendingPosts, state.directXContextCache) : [];
-  const cached = [...(state.signalSnapshot?.activeSignals || (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : [])), ...retained];
-  const schedule = settings.monitorSignals && settings.monitorLeadSource ? RadarSchedule.reconcile(state.scheduleSnapshot) : { events: [] };
+  const cached = [...(state.signalSnapshot?.activeSignals || (state.signalSnapshot?.signal ? [state.signalSnapshot.signal] : [])), ...(state.signalSnapshot?.timingReplies || []), ...retained, ...semanticItems];
+  const schedule = settings.monitorSignals && settings.monitorLeadSource ? RadarResetScope.schedule(RadarSchedule.reconcile(state.scheduleSnapshot), settings) : { events: [] };
   const suppressed = RadarSchedule.supersededIds(schedule);
-  const activeSignals = settings.monitorSignals ? reclassifiedSignals(cached).filter(item => !suppressed.has(item.id)) : [];
+  const activeSignals = settings.monitorSignals ? reclassifiedSignals(cached).filter(item => !suppressed.has(item.id) && RadarResetScope.allows(item, settings)) : [];
   const signal = activeSignals[0] || null;
   const hints = settings.monitorSignals && settings.monitorLeadSource
-    ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...cached], { limit: 100 }).filter(item => !suppressed.has(item.id)) : [];
+    ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...cached], { limit: 100 }).filter(item => !suppressed.has(item.id) && RadarResetScope.allows(item, settings)) : [];
   const reports = settings.monitorSignals && settings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...cached, ...retained],
-    { context: state.hintSnapshot?.items || [] }) : [];
-  const previousReportIds = (state.signalSnapshot?.reports || []).map(item => item?.id).filter(Boolean);
-  const publicAlertState = RadarPublicAlerts.reclassify(state.publicAlertState, reports.map(item => item?.id).filter(Boolean), {
+    { context: state.hintSnapshot?.items || [] }).filter(item => RadarResetScope.allows(item, settings)) : [];
+  const semanticHints = hints.filter(item => item.assessment?.rule === 'semantic-reset');
+  const previousReportIds = [...(state.signalSnapshot?.reports || []), ...(state.hintSnapshot?.items || []).filter(item => item.assessment?.rule === 'semantic-reset')].map(item => item?.id).filter(Boolean);
+  const publicAlertState = RadarPublicAlerts.reclassify(state.publicAlertState, [...reports, ...semanticHints].map(item => item?.id).filter(Boolean), {
     previousIds: previousReportIds,
-    grantIds: reports.filter(item => item?.assessment?.report === "completed-reset").map(item => item?.id).filter(Boolean),
-    history: state.notificationHistory || {}, pending: state.pendingNotifications || [], items: reports });
+    grantIds: [...reports.filter(item => item?.assessment?.report === "completed-reset"), ...semanticHints].map(item => item?.id).filter(Boolean),
+    history: state.notificationHistory || {}, pending: state.pendingNotifications || [], items: [...reports, ...semanticHints] });
   const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...cached, ...(state.signalSnapshot?.reports || [])];
-  const eventAlerts = settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline) : { entries: {} };
+  const eventAlerts = settings.monitorSignals && settings.monitorLeadSource && !settings.resetOnly ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline) : { entries: {} };
   if (state.signalSnapshot || state.hintSnapshot || state.scheduleSnapshot || Array.isArray(state.directXPendingPosts)) {
     const advice = RadarAdvice.make({ usage: settings.monitorAccount ? state.accountSnapshot?.usage : null,
       credits: settings.monitorAccount ? state.accountSnapshot?.credits : null, signal });
     await chrome.storage.local.set({
-      signalSnapshot: { ...state.signalSnapshot, signal, activeSignals, reports },
+      signalSnapshot: { ...state.signalSnapshot, signal, activeSignals, reports,
+        timingReplies: settings.monitorSignals && settings.monitorLeadSource ? RadarNews.timingReplies(cached).filter(item => !suppressed.has(item.id) && RadarResetScope.allows(item, settings)) : [] },
       ...(publicAlertState != null ? { publicAlertState } : {}),
       ...(Array.isArray(state.directXPendingPosts) ? { directXPendingPosts: RadarDirectX.archivePosts(retained) } : {}),
-      hintSnapshot: { ...state.hintSnapshot, items: hints, events: settings.monitorSignals && settings.monitorLeadSource ? RadarEvents.reconcile([], eventBaseline) : [], eventAlerts },
+      hintSnapshot: { ...state.hintSnapshot, items: hints, events: settings.monitorSignals && settings.monitorLeadSource && !settings.resetOnly ? RadarEvents.reconcile([], eventBaseline) : [], eventAlerts },
       scheduleSnapshot: schedule,
       adviceSnapshot: advice
     });
@@ -924,17 +965,95 @@ async function revalidateCachedSignals(epoch) {
   await reconcileReportNotifications(reports, settings, epoch, schedule);
   await reconcileScheduleNotifications(schedule, settings, epoch);
   await reconcileEventNotifications(eventAlerts, settings, epoch);
+  await reconcileDailyNews(settings, epoch);
 }
 
-async function refreshSignals({ quiet = false } = {}) {
-  await ensureSecurity();
-  await mutations;
+// AI work already has public collection evidence. Retry it without creating X tabs or
+// changing collection timestamps/health. Startup/resume delivery fences remain in force.
+async function interpretPublicItems(items, epoch, controller, options = {}) {
+  const { semanticState = {} } = await chrome.storage.local.get('semanticState');
+  const delivered = new Set(Object.values(semanticState.entries || {}).filter(e => e.result && !['unrelated','cancelled'].includes(e.result.category)).map(e => e.result.key));
+  const semantic = await RadarSemanticQueue.run({ items, state: semanticState, signal: controller.signal, ...options,
+    onCheckpoint: value => mutate(async () => {
+      if (epoch !== stateEpoch || controller.signal.aborted) return;
+      const current = await loadSettings();
+      if (epoch !== stateEpoch || controller.signal.aborted || !current.monitorSignals || !current.monitorLeadSource || !current.semanticEnabled) return;
+      const { semanticStatus = {} } = await chrome.storage.local.get('semanticStatus');
+      const entries = Object.values(value.entries);
+      const failed = entries.filter(e => !e.result && e.lastError).sort((a,b)=>b.lastTriedAt-a.lastTriedAt)[0];
+      await chrome.storage.local.set({ semanticState: value, semanticStatus: { ...semanticStatus, running: true,
+        pending: entries.filter(e=>!e.result).length, classified: entries.filter(e=>e.result).length,
+        lastError: failed?.lastError || null, errorPhase: failed?.errorPhase || null, errorDetail: failed?.errorDetail || null, checkedAt: Date.now() } });
+      // Deliver a newly interpreted candidate without waiting for the old backlog.
+      const fresh = entries.filter(e => e.result && !['unrelated','cancelled'].includes(e.result.category) && !delivered.has(e.result.key));
+      if (options.maxItems !== 0 && fresh.length) {
+        for (const entry of fresh) delivered.add(entry.result.key);
+        await applySemanticItems(entries.map(e => e.result ? { ...e.item, semantic: e.result } : e.item), epoch, controller);
+      }
+    }) });
+  await mutate(async () => {
+    if (epoch !== stateEpoch || controller.signal.aborted) return;
+    const current = await loadSettings();
+    if (epoch !== stateEpoch || !current.monitorSignals || !current.monitorLeadSource || !current.semanticEnabled) return;
+    await chrome.storage.local.set({ semanticStatus: { ...semantic.status, running: false } });
+    if (semantic.status.pending && semantic.status.state === 'available')
+      await chrome.alarms.create(SEMANTIC_RETRY_ALARM, { when: Math.max(Date.now() + 30000, semantic.status.nextAttemptAt || 0) });
+    else await chrome.alarms.clear(SEMANTIC_RETRY_ALARM);
+  });
+  return semantic;
+}
+
+async function applySemanticItems(items, epoch, controller) {
+  if (epoch !== stateEpoch || controller.signal.aborted) return;
+  await revalidateCachedSignals(epoch, items);
+  if (epoch !== stateEpoch || controller.signal.aborted) return;
+  const { hintSnapshot } = await chrome.storage.local.get('hintSnapshot');
+  for (const hint of hintSnapshot?.items || []) {
+    if (epoch !== stateEpoch || controller.signal.aborted) break;
+    if (hint.assessment?.rule === 'semantic-reset') await maybeNotifyHint(hint, epoch);
+  }
+}
+
+async function refreshSemanticPending() {
+  await ensureSecurity(); await mutations;
   if (signalJob) return signalJob;
-  signalJob = runSignalRefresh(quiet).finally(() => { signalJob = null; });
+  semanticOnlyJob = true;
+  signalJob = (async () => {
+    const epoch = stateEpoch, settings = await loadSettings();
+    if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.semanticEnabled) return { ok: true, skipped: true, epoch };
+    const controller = new AbortController(); activeRequests.add(controller);
+    try {
+      const semantic = await interpretPublicItems([], epoch, controller);
+      await mutate(() => applySemanticItems(semantic.items, epoch, controller));
+    } catch (error) {
+      await mutate(async () => {
+        if (epoch !== stateEpoch || controller.signal.aborted) return;
+        const { semanticStatus = {} } = await chrome.storage.local.get('semanticStatus');
+        await chrome.storage.local.set({ semanticStatus: { ...semanticStatus, running: false,
+          lastError: 'queue-error', errorDetail: String(error?.message || error).slice(0,180) } });
+        await chrome.alarms.create(SEMANTIC_RETRY_ALARM, { delayInMinutes: 1 });
+      });
+    } finally { activeRequests.delete(controller); }
+    return { ok: true, semanticOnly: true, epoch };
+  })().finally(() => { signalJob = null; semanticOnlyJob = false; });
   return signalJob;
 }
 
-async function runSignalRefresh(quiet) {
+async function refreshSignals({ quiet = false, collectionRetry = false } = {}) {
+  await ensureSecurity();
+  await mutations;
+  // A request for fresh posts must not be mistaken for a cached AI-only retry.
+  while (signalJob && semanticOnlyJob) {
+    await signalJob;
+    await mutations;
+  }
+  if (signalJob) return signalJob;
+  signalJob = runSignalRefresh(quiet, collectionRetry).finally(() => { signalJob = null; });
+  return signalJob;
+}
+
+async function runSignalRefresh(quiet, collectionRetry = false) {
+  const startedAt = Date.now();
   const epoch = stateEpoch;
   const settings = await loadSettings();
   if (epoch !== stateEpoch) return { ok: true, skipped: true };
@@ -946,22 +1065,62 @@ async function runSignalRefresh(quiet) {
   const controller = new AbortController();
   activeRequests.add(controller);
   let directFailure = null;
+  let directDiagnostics = null;
   try {
+    if (settings.monitorLeadSource && settings.semanticEnabled) {
+      const availability = await RadarSemantic.available();
+      await mutate(async () => {
+        if (epoch !== stateEpoch || controller.signal.aborted) return;
+        const { semanticStatus = {} } = await chrome.storage.local.get('semanticStatus');
+        await chrome.storage.local.set({ semanticStatus: { ...semanticStatus, ...availability, checkedAt: Date.now() } });
+      });
+    }
     const sources = [...RadarSources.enabled(settings)];
     if (settings.monitorLeadSource && settings.monitorDirectX) sources.push({ id: "x-direct", label: "OpenAI · Tibo · VB · X 직접 확인", kind: "x-page", weight: 1 });
     if (!sources.length) return mutate(clearSignalState);
     const results = await Promise.allSettled(sources.map(async (source) => {
       if (source.kind === "x-page") {
-        const { directXContextCache = {}, directXPendingPosts = [] } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts"]);
+        const { directXContextCache = {}, directXPendingPosts = [], hintSnapshot, signalSnapshot, telegramLeadAttempts = {}, resetHistory } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts", "hintSnapshot", "signalSnapshot", "telegramLeadAttempts", "resetHistory"]);
+        const telegramLeads = RadarTelegramLeads.load(controller.signal).catch(() => ({ state: 'unavailable', ids: [] }));
         let direct;
         try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache, retainedPosts: directXPendingPosts,
+          telegramLeads, telegramAttempts: telegramLeadAttempts && typeof telegramLeadAttempts === "object" ? telegramLeadAttempts : {},
+          knownHistoryIds: (Array.isArray(resetHistory?.items) ? resetHistory.items : []).filter(item => item && !item.retracted).map(item => item.id),
+          onTelegramAttempt: id => mutate(async () => {
+            if (epoch !== stateEpoch || controller.signal.aborted) throw new Error('X_ABORTED');
+            const { telegramLeadAttempts = {} } = await chrome.storage.local.get('telegramLeadAttempts');
+            const recent = Object.fromEntries(Object.entries(telegramLeadAttempts && typeof telegramLeadAttempts === "object" ? telegramLeadAttempts : {}).filter(([key, at]) => /^[1-9]\d{0,24}$/.test(key) && Number.isFinite(at) && at > Date.now() - 7 * 86400000).sort((a, b) => b[1] - a[1]).slice(0, 199));
+            await chrome.storage.local.set({ telegramLeadAttempts: { ...recent, [id]: Date.now() } });
+          }),
+          onTelegramHistory: item => mutate(async () => {
+            if (epoch !== stateEpoch || controller.signal.aborted) return false;
+            const current = await loadSettings();
+            if (!current.monitorSignals || !current.monitorLeadSource || !current.monitorDirectX) return false;
+            const at = RadarTime.parseTimestamp(item.createdAt);
+            if (!at || at > Date.now() + 300000 || Date.now() - at > 365 * 86400000) return false;
+            const rows = RadarResetHistory.classifyRows([item], current);
+            if (!rows.length) return false;
+            const { resetHistory } = await chrome.storage.local.get('resetHistory');
+            const archive = RadarResetHistory.merge(resetHistory, rows);
+            await chrome.storage.local.set({ resetHistory: archive });
+            return archive.items.some(entry => entry.id === item.id);
+          }),
+          resetTargets: [...(hintSnapshot?.items || []), ...(signalSnapshot?.activeSignals || []), ...(signalSnapshot?.timingReplies || [])],
           onCheckpoint: value => mutate(async () => {
             if (epoch !== stateEpoch || controller.signal.aborted) return;
             const current = await loadSettings();
             if (epoch !== stateEpoch || !current.monitorSignals || !current.monitorLeadSource || !current.monitorDirectX) return;
             await chrome.storage.local.set({ directXPendingPosts: value.posts, directXContextCache: value.contextCache });
+            if (Array.isArray(value.timingReplies)) {
+              const { signalSnapshot = {} } = await chrome.storage.local.get('signalSnapshot');
+              const timingReplies = RadarNews.timingReplies([...(signalSnapshot.timingReplies || []), ...value.posts, ...value.timingReplies])
+                .filter(item => RadarResetScope.allows(item, current));
+              // Publish verified timing immediately without making an active
+              // signal/receipt baseline that could swallow its later alert.
+              await chrome.storage.local.set({ signalSnapshot: { ...signalSnapshot, timingReplies } });
+            }
           }) }); }
-        catch (error) { directFailure = RadarDirectX.failureReason(error); throw error; }
+        catch (error) { directFailure = RadarDirectX.failureReason(error); directDiagnostics = error.diagnostics || null; throw error; }
         return { source, items: Array.isArray(direct) ? direct : direct.items, diagnostics: direct.diagnostics || null, contextCache: direct.contextCache };
       }
       const expectsHtml = source.kind === "reset-tracker-html";
@@ -970,12 +1129,36 @@ async function runSignalRefresh(quiet) {
     }));
     const successful = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
     if (!successful.length) throw new Error("All public signal sources are unavailable");
-    const items = successful.flatMap((result) => result.items);
-    return mutate(async () => {
+    let items = successful.flatMap((result) => result.items);
+    // A reader can save real public posts before a later navigation fails.
+    // Include those durable checkpoints even when a different feed succeeded;
+    // keep directFailure/leadVerified based on live results, not this fallback.
+    if (directFailure && settings.monitorLeadSource && settings.monitorDirectX) {
+      const saved = await chrome.storage.local.get(['directXPendingPosts', 'directXContextCache']);
+      const incomingIds = new Set(items.map(item => item.id));
+      items = [...items, ...RadarDirectX.restorePosts(saved.directXPendingPosts, saved.directXContextCache)
+        .filter(item => !incomingIds.has(item.id))];
+    }
+    if (settings.monitorLeadSource && settings.semanticEnabled) {
+      try {
+        const semantic = await interpretPublicItems(items, epoch, controller, { maxItems: 0 });
+        if (epoch !== stateEpoch || controller.signal.aborted) return { ok: true, skipped: true };
+        const leadById = new Map(semantic.items.map(item => [item.id, item]));
+        const currentLeadIds = new Set(items.filter(item => item.source?.id === 'codex-lead').map(item => item.id));
+        items = [...items.map(item => item.source?.id === 'codex-lead' ? leadById.get(item.id) || item : item),
+          ...semantic.items.filter(item => !currentLeadIds.has(item.id))];
+      } catch (error) {
+        await mutate(async () => {
+          if (epoch === stateEpoch && !controller.signal.aborted) await chrome.storage.local.set({
+            semanticStatus: { state: 'error', checkedAt: Date.now(), pending: null, lastError: 'queue-error', errorDetail: String(error?.message || error).slice(0,180) } });
+        });
+      }
+    }
+    const result = await mutate(async () => {
       if (epoch !== stateEpoch) return { ok: true, skipped: true };
       const currentSettings = await loadSettings();
       if (!currentSettings.monitorSignals) return { ok: true, skipped: true };
-      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState", "notificationHistory", "pendingNotifications"]);
+      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState", "notificationHistory", "pendingNotifications", "resetHistory"]);
       const leadResults = successful.filter(result => ["codex-lead", "x-direct"].includes(result.source.id));
       const latestPostAt = Math.max(0, ...leadResults.flatMap(result => result.items
         .filter(item => String(item.author || "").replace(/^@/, "").toLowerCase().match(/^(thsottiaux|reach_vb|openai)$/))
@@ -984,7 +1167,7 @@ async function runSignalRefresh(quiet) {
       const directOk = leadResults.some(result => result.source.id === "x-direct");
       const directIndex = sources.findIndex(source => source.id === "x-direct");
       const directResult = results[directIndex];
-      const directScan = leadResults.find(result => result.source.id === "x-direct")?.diagnostics || null;
+      const directScan = leadResults.find(result => result.source.id === "x-direct")?.diagnostics || directDiagnostics;
       // Usable posts do not prove that the other author/timeline reads worked.
       // Keep partial results flowing while retaining their collection failure.
       const directError = directResult?.status === "rejected" ? RadarDirectX.failureReason(directResult.reason) :
@@ -1009,23 +1192,24 @@ async function runSignalRefresh(quiet) {
       });
       // Seed old installations from their still-cached evidence, then process
       // the fetched posts in publication order before choosing active signals.
-      const schedule = currentSettings.monitorLeadSource ? RadarSchedule.reconcile(state.scheduleSnapshot,
-        [...existingSignals, ...(state.hintSnapshot?.items || []), ...items]) : { events: [] };
+      const schedule = currentSettings.monitorLeadSource ? RadarResetScope.schedule(RadarSchedule.reconcile(state.scheduleSnapshot,
+        [...existingSignals, ...(state.hintSnapshot?.items || []), ...items]), currentSettings) : { events: [] };
       const suppressed = RadarSchedule.supersededIds(schedule);
-      const activeSignals = reclassifiedSignals(existingSignals, items).filter(item => !suppressed.has(item.id));
+      const activeSignals = reclassifiedSignals(existingSignals, items).filter(item => !suppressed.has(item.id) && RadarResetScope.allows(item, currentSettings));
       const signal = activeSignals[0] || null;
-      const hints = currentSettings.monitorLeadSource ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...items].filter(item => !suppressed.has(item.id)), { limit: 100 }) : [];
+      const hints = currentSettings.monitorLeadSource ? RadarSignals.hintCandidates([...(state.hintSnapshot?.items || []), ...items].filter(item => !suppressed.has(item.id)), { limit: 100 }).filter(item => RadarResetScope.allows(item, currentSettings)) : [];
       const reports = currentSettings.monitorLeadSource ? RadarSignals.reports([...(state.signalSnapshot?.reports || []), ...existingSignals, ...items],
-        { context: state.hintSnapshot?.items || [] }) : [];
-      const publicAlertState = RadarPublicAlerts.reclassify(observedAlertState, reports.map(item => item.id), {
-        previousIds: (state.signalSnapshot?.reports || []).map(item => item.id),
-        grantIds: reports.filter(item => item.assessment?.report === 'completed-reset').map(item => item.id),
+        { context: state.hintSnapshot?.items || [] }).filter(item => RadarResetScope.allows(item, currentSettings)) : [];
+      const semanticHints = hints.filter(item => item.assessment?.rule === 'semantic-reset');
+      const publicAlertState = RadarPublicAlerts.reclassify(observedAlertState, [...reports, ...semanticHints].map(item => item.id), {
+        previousIds: [...(state.signalSnapshot?.reports || []), ...(state.hintSnapshot?.items || []).filter(item => item.assessment?.rule === 'semantic-reset')].map(item => item.id),
+        grantIds: [...reports.filter(item => item.assessment?.report === 'completed-reset'), ...semanticHints].map(item => item.id),
         history: state.notificationHistory || {},
         pending: state.pendingNotifications || [],
-        items: reports
+        items: [...reports, ...semanticHints]
       });
       const eventBaseline = [...(state.hintSnapshot?.events || []), ...(state.hintSnapshot?.items || []), ...existingSignals, ...(state.signalSnapshot?.reports || [])];
-      const eventAlerts = currentSettings.monitorLeadSource ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline, items) : { entries: {} };
+      const eventAlerts = currentSettings.monitorLeadSource && !currentSettings.resetOnly ? RadarEvents.alerts(state.hintSnapshot?.eventAlerts, eventBaseline, items) : { entries: {} };
       const nextSeen = [...new Set([...seen, ...items.map((item) => item.id)])].slice(-300);
       const publicItems = [...new Map(items.filter(item => RadarSignals.isLead(item)).map(item => [item.id, item])).values()];
       const classifiedIds = new Set([...activeSignals, ...hints, ...reports].map(item => item.id));
@@ -1038,6 +1222,8 @@ async function runSignalRefresh(quiet) {
         signal,
         activeSignals,
         reports,
+        timingReplies: currentSettings.monitorLeadSource ? RadarNews.timingReplies([...(state.signalSnapshot?.timingReplies || []), ...existingSignals, ...items])
+          .filter(item => !suppressed.has(item.id) && RadarResetScope.allows(item, currentSettings)) : [],
         checkedAt: Date.now(),
         leadStatus: { state: !settings.monitorLeadSource ? "off" : leadVerified ? "ok" : latestPostAt ? "stale" : "unavailable",
           latestPostAt: latestPostAt || null, directEnabled: settings.monitorDirectX, directOk,
@@ -1069,23 +1255,38 @@ async function runSignalRefresh(quiet) {
         ...(directOk && currentSettings.monitorDirectX && currentSettings.monitorLeadSource ? {
           directXPendingPosts: RadarDirectX.archivePosts(leadResults.find(result => result.source.id === 'x-direct').items)
         } : {}),
-        hintSnapshot: { items: hints, events: currentSettings.monitorLeadSource ? RadarEvents.reconcile(eventBaseline, items) : [], eventAlerts, checkedAt: Date.now() },
+        hintSnapshot: { items: hints, events: currentSettings.monitorLeadSource && !currentSettings.resetOnly ? RadarEvents.reconcile(eventBaseline, items) : [], eventAlerts, checkedAt: Date.now() },
         scheduleSnapshot: schedule,
         seenSignalIds: nextSeen,
         adviceSnapshot: advice,
         signalError: null
       });
+      // Preserve previously displayed evidence separately from active alerts.
+      // A full local store must never prevent the live scan or its alerts.
+      if (currentSettings.monitorLeadSource) {
+        try {
+          const before = RadarDailyNews.entries(state, currentSettings);
+          const current = RadarDailyNews.entries({ signalSnapshot: snapshot, hintSnapshot: { items: hints }, scheduleSnapshot: schedule }, currentSettings);
+          const directItems = leadResults.find(result => result.source.id === 'x-direct')?.items || [];
+          const archive = RadarResetHistory.merge(state.resetHistory, [...before, ...current], directItems);
+          if (JSON.stringify(archive) !== JSON.stringify(state.resetHistory)) await chrome.storage.local.set({ resetHistory: archive });
+          await chrome.storage.local.remove('resetHistoryStorageError');
+        } catch {
+          try { await chrome.storage.local.set({ resetHistoryStorageError: true }); } catch { /* Live collection remains usable. */ }
+        }
+      }
       await recordCollectionHealth(snapshot, currentSettings, epoch);
       if (collectionVerified) {
         await chrome.storage.local.remove("publicResumeCheck");
         await chrome.alarms.clear(PUBLIC_RESUME_ALARM);
         await chrome.storage.local.remove("publicRetryCheck");
         await chrome.alarms.clear(PUBLIC_RETRY_ALARM);
-      } else if (settings.monitorDirectX && !state.publicResumeCheck && !['login', 'permission', 'tab-blocked'].includes(directError)) {
+      } else if (!collectionRetry && settings.monitorDirectX && !state.publicResumeCheck && !['login', 'permission', 'tab-blocked'].includes(directError)) {
         await schedulePublicRetry();
       }
       await reconcileSignalNotifications(activeSignals, currentSettings, epoch, [...existingSignals, ...items]);
       await reconcileScheduleNotifications(schedule, currentSettings, epoch);
+      await reconcileDailyNews(currentSettings, epoch);
       for (const change of RadarSchedule.changes(schedule)) await maybeNotifySchedule(change, epoch);
       for (const candidate of activeSignals) {
         if (epoch !== stateEpoch) break;
@@ -1106,6 +1307,23 @@ async function runSignalRefresh(quiet) {
       await updateBadge(currentSettings.monitorAccount ? state.accountSnapshot : null, signal, advice);
       return { ok: true, signal: Boolean(signal), leadVerified, collectionVerified, directOk, directError, directScan, catchUp, epoch };
     });
+    // Deterministic alerts above must not wait for model startup or the backlog.
+    // Leave margin under the worker's five-minute event limit after a slow X scan.
+    const remaining = 280000 - (Date.now() - startedAt);
+    if (result.ok && epoch === stateEpoch && !controller.signal.aborted && settings.monitorLeadSource && settings.semanticEnabled && remaining >= 45000) {
+      try {
+        const semantic = await interpretPublicItems([], epoch, controller, { budgetMs: Math.min(90000, remaining) });
+        await mutate(() => applySemanticItems(semantic.items, epoch, controller));
+      } catch (error) {
+        await mutate(async () => {
+          if (epoch !== stateEpoch || controller.signal.aborted) return;
+          const { semanticStatus = {} } = await chrome.storage.local.get('semanticStatus');
+          await chrome.storage.local.set({ semanticStatus: { ...semanticStatus, running: false, lastError: 'queue-error', errorDetail: String(error?.message || error).slice(0,180) } });
+          await chrome.alarms.create(SEMANTIC_RETRY_ALARM, { delayInMinutes: .5 });
+        });
+      }
+    }
+    return result;
   } catch (error) {
     if (epoch !== stateEpoch || controller.signal.aborted) return { ok: true, skipped: true };
     await mutate(async () => {
@@ -1115,7 +1333,12 @@ async function runSignalRefresh(quiet) {
       await revalidateCachedSignals(epoch);
       if (epoch === stateEpoch) await chrome.storage.local.set({ signalError: { message: "Public sources unavailable", at: Date.now() } });
       if (epoch === stateEpoch && directFailure) await recordCollectionHealth({ leadStatus: { directError: directFailure } }, settings, epoch);
-      if (epoch === stateEpoch && settings.monitorDirectX && settings.monitorLeadSource) await schedulePublicRetry();
+      if (!collectionRetry && epoch === stateEpoch && settings.monitorDirectX && settings.monitorLeadSource) await schedulePublicRetry();
+      if (epoch === stateEpoch && settings.monitorLeadSource && settings.semanticEnabled) {
+        const { semanticState } = await chrome.storage.local.get('semanticState');
+        if (epoch === stateEpoch && Object.values(semanticState?.entries || {}).some(entry => !entry.result))
+          await chrome.alarms.create(SEMANTIC_RETRY_ALARM, { delayInMinutes: 1 });
+      }
     });
     return { ok: false, error: "Public sources unavailable" };
   } finally { activeRequests.delete(controller); }
@@ -1174,7 +1397,7 @@ function confidenceAllowed(confidence, threshold) {
 }
 
 function signalNotificationEnabled(signal, settings) {
-  return Boolean(signal && settings.monitorSignals && settings.notifyOfficialReset &&
+  return Boolean(signal && RadarResetScope.allows(signal, settings) && settings.monitorSignals && settings.notifyOfficialReset &&
     confidenceAllowed(signal.assessment?.confidence, settings.confidenceThreshold));
 }
 
@@ -1185,7 +1408,7 @@ function reportNotificationOptions(report) {
 }
 
 function reportNotificationEnabled(report, settings, schedule, pending = []) {
-  if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return false;
+  if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset || !RadarResetScope.allows(report, settings)) return false;
   // Prefer the linked schedule notice, which also explains the old forecast.
   // Keep the follow-up route when schedule alerts are disabled or too old.
   return !RadarSchedule.changes(schedule).some(change => change.post.id === report.id &&
@@ -1250,6 +1473,9 @@ async function maybeNotifyReport(report, settings, epoch, schedule) {
 }
 
 function scheduleNotificationEnabled(change, settings) {
+  // Schedule already validated the association. A follow-up may say only
+  // "Delayed again"; retain its reset subject from that original evidence.
+  if (!RadarResetScope.allows(change?.post, settings) && !RadarResetScope.allows(change?.original, settings)) return false;
   return settings.monitorSignals && settings.monitorLeadSource && settings.notifyScheduleChanges &&
     (change.kind === "hint" ? settings.notifyHints : settings.notifyOfficialReset);
 }
@@ -1311,6 +1537,16 @@ async function maybeNotifySchedule(change, epoch) {
 }
 
 function hintNotificationOptions(hint) {
+  if (!hint.assessment?.topic && !['product-time', 'schedule-time'].includes(hint.assessment?.rule) &&
+      RadarDailyNews.statusKind({ item: hint }) === 'inferred') return {
+    title: RadarSignals.authorName(hint) + ' · 리셋 추정',
+    message: `${hint.assessment.reason} · 리셋 확정이 아닙니다.\n${String(hint.text || '').slice(0, 140)}`,
+    buttons: [{ title: '원문 보기' }]
+  };
+  if (hint.assessment?.rule === 'semantic-reset') return {
+    title: `${RadarSignals.authorName(hint)} · 기기 AI 리셋 후보 (${({ forecast: '예고', completed: '완료 암시', uncertain: '불확실' })[hint.assessment.semanticCategory] || '검토'})`,
+    message: `${hint.assessment.reason}\n${String(hint.text || '').slice(0, 140)}`
+  };
   const timed = ["product-time", "schedule-time"].includes(hint.assessment.rule);
   if (hint.assessment.rule === "reset-review") {
     const body = String(hint.text || "").replace(/\s+/g, " ").trim();
@@ -1330,7 +1566,7 @@ function hintNotificationOptions(hint) {
 
 function hintNotificationEnabled(hint, settings) {
   const discussion = ['reset-poll', 'reset-choice', 'reset-short'].includes(hint?.assessment?.rule);
-  return Boolean(settings.monitorSignals && settings.monitorLeadSource && hint?.assessment?.candidate &&
+  return Boolean(settings.monitorSignals && settings.monitorLeadSource && hint?.assessment?.candidate && RadarResetScope.allows(hint, settings) &&
     hint.assessment.topic !== 'event' && (discussion ? settings.notifyResetHints : settings.notifyHints));
 }
 
@@ -1372,7 +1608,7 @@ function eventNotificationOptions(notice) {
 }
 
 async function reconcileEventNotifications(state, settings, epoch) {
-  const notices = new Map((settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints ? RadarEvents.notices(state) : []).map(notice => [notice.id, notice]));
+  const notices = new Map((settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints && !settings.resetOnly ? RadarEvents.notices(state) : []).map(notice => [notice.id, notice]));
   const { pendingNotifications = [] } = await chrome.storage.local.get('pendingNotifications');
   if (epoch !== stateEpoch) return;
   await chrome.storage.local.set({ pendingNotifications: pendingNotifications.flatMap(pending => {
@@ -1387,7 +1623,7 @@ async function reconcileEventNotifications(state, settings, epoch) {
 }
 
 async function maybeNotifyEvent(notice, settings, epoch) {
-  if (epoch !== stateEpoch || !settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints) return;
+  if (epoch !== stateEpoch || !settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints || settings.resetOnly) return;
   const { notificationHistory = {}, publicAlertState } = await chrome.storage.local.get(['notificationHistory', 'publicAlertState']);
   if (epoch !== stateEpoch || !RadarPublicAlerts.allowed(notice.event.item, publicAlertState, notificationHistory)) return;
   await createNotification(notice.id, eventNotificationOptions(notice), settings,
@@ -1520,11 +1756,12 @@ async function recordNotificationDelivery(status, id, reason) {
       test: id === "radar-test"
     };
     await chrome.storage.local.set({ notificationDelivery: delivery,
-      ...(delivery.test ? {} : { notificationRealDelivery: delivery }) });
+      ...(delivery.test ? {} : { notificationRealDelivery: delivery }),
+      ...(id.startsWith('daily-reset:') || RadarPublicAlerts.publicId(id) ? { notificationPublicDelivery: delivery } : {}) });
   } catch { /* Diagnostics must never prevent delivery. */ }
 }
 
-async function deliverNotification(id, options) {
+async function sendNativeNotification(id, options) {
   try {
     await chrome.notifications.create(id, notificationOptions(options));
     await recordNotificationDelivery("accepted", id);
@@ -1534,11 +1771,103 @@ async function deliverNotification(id, options) {
   }
 }
 
+let dailyNewsDelivery = Promise.resolve();
+async function deliverNotification(id, options) {
+  const settings = await loadSettings();
+  if (!settings.dailyResetDigest || !RadarDailyNews.publicId(id)) return sendNativeNotification(id, options);
+  const job = dailyNewsDelivery.then(() => deliverDailyNews(id, settings));
+  dailyNewsDelivery = job.catch(() => {});
+  return job;
+}
+
+const DAILY_NEWS_KEYS = ['signalSnapshot', 'hintSnapshot', 'scheduleSnapshot', 'publicAlertState',
+  'pendingNotifications', 'notificationHistory', 'dailyNewsDelivery'];
+function dailyNewsEnabled(row, settings, state) {
+  if (row.archivedTiming) return false; // Historical evidence is displayed, not a new active forecast alert.
+  if (row.topic === 'event' || row.event) return settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints && !settings.resetOnly;
+  if (row.change) return scheduleNotificationEnabled(row.change, settings);
+  if (row.item.assessment?.report) return reportNotificationEnabled(row.item, settings, state.scheduleSnapshot, state.pendingNotifications);
+  if (row.item.assessment?.candidate) return hintNotificationEnabled(row.item, settings);
+  return signalNotificationEnabled(row.item, settings);
+}
+async function deliverDailyNews(id, settings) {
+  const state = await chrome.storage.local.get(DAILY_NEWS_KEYS);
+  const day = RadarDailyNews.dayKey(), toastId = 'daily-reset:' + day;
+  const records = RadarDailyNews.prune(state.dailyNewsDelivery);
+  if (records[day]) return; // Already accepted today; only the popup is updated.
+  const visible = await chrome.notifications.getAll();
+  const pendingIds = new Set((state.pendingNotifications || []).map(pending => pending.id));
+  // A queued old-version receipt can have a premature history entry. Pending
+  // validation upstream authorizes its retry; history alone must not cancel it.
+  const acceptedHistory = Object.fromEntries(Object.entries(state.notificationHistory || {}).filter(([key]) => !pendingIds.has(key)));
+  const previous = Object.entries(acceptedHistory).filter(([key, at]) =>
+    RadarDailyNews.publicId(key) && Number.isFinite(at) && RadarDailyNews.dayKey(at) === day);
+  if (Object.hasOwn(visible, toastId) || previous.length) {
+    // Recover an interrupted acknowledgement, or an upgrade after today's
+    // individually accepted public alerts. Neither should ring a second time.
+    records[day] = { sentAt: Date.now(), ids: [] };
+    await chrome.storage.local.set({ dailyNewsDelivery: records });
+    return;
+  }
+  // A durable queued entry keeps its original eligibility receipt after the
+  // one-day observation badge expires (quiet hours, resume grace, retries).
+  // The flush path accepts it; the summary must accept the same evidence,
+  // otherwise it throws forever without ever calling the Windows API.
+  const queuedAllowed = item => (state.pendingNotifications || []).some(pending =>
+    RadarPublicAlerts.notificationKeys(item.id, [...pendingIds]).includes(pending.id) &&
+    queuedPublicAllowed(item, state.publicAlertState, pending));
+  const rows = RadarDailyNews.entries(state, settings).filter(row => dailyNewsEnabled(row, settings, state) &&
+    (RadarPublicAlerts.allowed(row.item, state.publicAlertState, acceptedHistory) || queuedAllowed(row.item)));
+  if (!rows.length) throw new Error('No current public reset evidence');
+  const summary = RadarDailyNews.summary(rows);
+  const en = RadarI18n.uiLanguage().startsWith('en');
+  const message = [...summary.times.slice(1, 3).map(time => RadarDailyNews.compactTime(time)),
+    ...rows.slice(0, 3).map(row => `${RadarDailyNews.author(row)} · ${RadarDailyNews.status(row)} · ${RadarTime.formatDateTime(row.item.createdAt, RadarTime.countryZone().zone)}\n${RadarDailyNews.brief(row)}`)].join('\n');
+  await sendNativeNotification(toastId, { title: RadarDailyNews.headline(summary, settings.resetOnly),
+    message, buttons: [{ title: en ? 'Open daily summary' : '하루 요약 보기' }] });
+  records[day] = { sentAt: Date.now(), ids: rows.map(row => row.key).slice(0, 1000),
+    signatures: Object.fromEntries(rows.slice(0, 1000).map(row => [row.key, RadarDailyNews.signature(row)])),
+    sourceSignatures: Object.fromEntries(rows.slice(0, 1000).map(row => [row.key, RadarDailyNews.sourceSignature(row)])) };
+  await chrome.storage.local.set({ dailyNewsDelivery: records });
+}
+async function reconcileDailyNews(settings, epoch) {
+  const visible = await visibleNotificationsForCleanup();
+  const state = await chrome.storage.local.get(DAILY_NEWS_KEYS);
+  const rows = settings.dailyResetDigest ? RadarDailyNews.entries(state, settings).filter(row => dailyNewsEnabled(row, settings, state)) : [];
+  const keys = new Set(rows.map(row => row.key));
+  const signatures = new Map(rows.map(row => [row.key, RadarDailyNews.signature(row)]));
+  const sources = new Map(rows.map(row => [row.key, RadarDailyNews.sourceSignature(row)]));
+  const records = RadarDailyNews.prune(state.dailyNewsDelivery), day = RadarDailyNews.dayKey();
+  if (settings.dailyResetDigest && !records[day] && Object.keys(visible).some(id => {
+    const at = state.notificationHistory?.[id] || state.pendingNotifications?.find(pending => pending.id === id)?.queuedAt;
+    return RadarDailyNews.publicId(id) && Number.isFinite(at) && RadarDailyNews.dayKey(at) === day;
+  })) {
+    records[day] = { sentAt: Date.now(), ids: [] };
+    await chrome.storage.local.set({ dailyNewsDelivery: records });
+  }
+  else if (state.dailyNewsDelivery && JSON.stringify(records) !== JSON.stringify(state.dailyNewsDelivery))
+    await chrome.storage.local.set({ dailyNewsDelivery: records });
+  for (const id of Object.keys(visible)) {
+    if (epoch !== stateEpoch) return;
+    const record = state.dailyNewsDelivery?.[id.slice(12)];
+    if (id.startsWith('daily-reset:') && (!settings.dailyResetDigest || !rows.length || record?.ids?.some(key => !keys.has(key) ||
+        (record.sourceSignatures?.[key] ? record.sourceSignatures[key] !== sources.get(key) :
+          record.signatures?.[key] && record.signatures[key] !== signatures.get(key)))) ||
+        settings.dailyResetDigest && RadarDailyNews.publicId(id)) await clearNotificationForCleanup(id);
+  }
+}
+async function openDailyNews() {
+  // A native toast cannot contain several independent hyperlinks. Open the
+  // existing extension summary, never several X tabs or caller-provided URLs.
+  try { if (chrome.action.openPopup) { await chrome.action.openPopup(); return; } } catch { /* Older Chrome fallback. */ }
+  await chrome.tabs.create({ url: chrome.runtime.getURL('src/popup/popup.html') });
+}
+
 async function notificationStatus() {
   const [permission, data] = await Promise.all([
     chrome.notifications.getPermissionLevel(),
-    chrome.storage.local.get(["settings", "notificationDelivery", "notificationRealDelivery", "pendingNotifications",
-      "notificationHistory", "publicAlertState", "signalSnapshot", "hintSnapshot", "publicDeliveryReadyAt"])
+    chrome.storage.local.get(["settings", "notificationDelivery", "notificationRealDelivery", "notificationPublicDelivery", "pendingNotifications",
+      "notificationHistory", "publicAlertState", "signalSnapshot", "hintSnapshot", "publicDeliveryReadyAt", "dailyNewsDelivery"])
   ]);
   const settings = RadarSettings.sanitize(data.settings);
   const pending = data.pendingNotifications || [];
@@ -1558,6 +1887,9 @@ async function notificationStatus() {
   }
   return { ok: true, version: NOTIFICATION_BUILD, permission, delivery: data.notificationDelivery || null,
     realDelivery: data.notificationRealDelivery || (data.notificationDelivery?.test === false ? data.notificationDelivery : null),
+    publicDelivery: data.notificationPublicDelivery || null,
+    dailySummary: { enabled: settings.dailyResetDigest, day: RadarDailyNews.dayKey(),
+      handled: Boolean(RadarDailyNews.prune(data.dailyNewsDelivery)[RadarDailyNews.dayKey()]) },
     publicAlerts, publicCheckedAt: data.signalSnapshot?.checkedAt || null,
     hintAlerts: Boolean(settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints),
     resetHintAlerts: Boolean(settings.monitorSignals && settings.monitorLeadSource && settings.notifyResetHints),
@@ -1669,8 +2001,31 @@ async function maybeNotifySignal(signal) {
   }, settings, { bypassQuiet: publicResumeBypassesQuiet(signal, publicAlertState, settings), publicItem: signal });
 }
 
-function expiryNotificationId(accountKey, nearest) {
-  return `expiry:${accountKey.slice(0, 16)}:${Math.floor(nearest / 3600000)}`;
+function expiryNotificationId(accountKey, nearest, stage = null) {
+  return `expiry:${accountKey.slice(0, 16)}:${Math.floor(nearest / 3600000)}${stage === null ? '' : ':' + stage}`;
+}
+
+function expiryStages(settings) {
+  const max = settings.expiryWarningHours;
+  const stages = [72, 48, 24].filter(stage => stage <= max);
+  if (!stages.length || max > 72) stages.unshift(max);
+  return stages;
+}
+
+function currentExpiryStage(nearest, settings, now = Date.now()) {
+  const remaining = nearest - now;
+  if (!(remaining > 0)) return null;
+  return [...expiryStages(settings)].reverse().find(stage => remaining <= stage * 3600000) ?? null;
+}
+
+function nextExpiryDue(accountKey, nearest, settings, history = {}, pendingIds = new Set(), now = Date.now()) {
+  if (!accountKey || !(nearest > now) || history[expiryNotificationId(accountKey, nearest)] || pendingIds.has(expiryNotificationId(accountKey, nearest))) return null;
+  const stages = expiryStages(settings), current = currentExpiryStage(nearest, settings, now);
+  const handled = stage => history[expiryNotificationId(accountKey, nearest, stage)] || pendingIds.has(expiryNotificationId(accountKey, nearest, stage));
+  if (current !== null && !handled(current)) return now;
+  const upcoming = stages.filter(stage => nearest - stage * 3600000 > now && !handled(stage))
+    .map(stage => nearest - stage * 3600000);
+  return upcoming.length ? Math.min(...upcoming) : null;
 }
 
 function adviceNotificationId(accountKey, tier) {
@@ -1696,13 +2051,16 @@ function adviceNotificationOptions(advice) {
 async function maybeNotifyAdvice(advice, snapshot, { resumed = false } = {}) {
   const settings = await loadSettings();
   if (!settings.monitorAccount || !snapshot.accountKey) return;
-  const { notificationHistory = {} } = await chrome.storage.local.get('notificationHistory');
-  const nearest = snapshot.credits?.credits?.find(credit => credit.expiresAt > Date.now() &&
-    !notificationHistory[expiryNotificationId(snapshot.accountKey, credit.expiresAt)])?.expiresAt;
-  const hours = nearest ? (nearest - Date.now()) / 3600000 : Infinity;
-  if (settings.notifyCreditExpiry && snapshot.credits?.availableCount > 0 && hours > 0 && hours <= settings.expiryWarningHours) {
-    const key = expiryNotificationId(snapshot.accountKey, nearest);
-    if (!notificationHistory[key]) {
+  const { notificationHistory = {}, pendingNotifications = [] } = await chrome.storage.local.get(['notificationHistory', 'pendingNotifications']);
+  if (settings.notifyCreditExpiry && snapshot.credits?.availableCount > 0) {
+    const nearest = snapshot.credits.credits?.filter(credit => currentExpiryStage(credit.expiresAt, settings) !== null &&
+      !notificationHistory[expiryNotificationId(snapshot.accountKey, credit.expiresAt)] &&
+      !pendingNotifications.some(pending => pending.id === expiryNotificationId(snapshot.accountKey, credit.expiresAt)) &&
+      !pendingNotifications.some(pending => pending.id === expiryNotificationId(snapshot.accountKey, credit.expiresAt, currentExpiryStage(credit.expiresAt, settings))) &&
+      !notificationHistory[expiryNotificationId(snapshot.accountKey, credit.expiresAt, currentExpiryStage(credit.expiresAt, settings))])
+      .sort((a, b) => a.expiresAt - b.expiresAt)[0]?.expiresAt;
+    if (nearest) {
+      const key = expiryNotificationId(snapshot.accountKey, nearest, currentExpiryStage(nearest, settings));
       await createNotification(key, expiryNotificationOptions(snapshot, nearest), settings,
         { accountKey: snapshot.accountKey, accountResumed: resumed,
           bypassQuiet: Boolean(resumed && settings.notifyRecoveryOnResume) });
@@ -1737,11 +2095,15 @@ async function updateBadge(accountSnapshot, signal, advice) {
   const unread = RadarBadge.view({ ...state, accountSnapshot }, settings, { signal, now });
   const freshSignal = unread.publicItems.length > 0;
   const grant = unread.bankedItems.at(-1);
+  const nearestCreditExpiry = settings.monitorAccount && settings.notifyCreditExpiry && accountSnapshot?.accountKey &&
+    accountSnapshot.credits?.availableCount > 0 ? RadarUsage.nearestExpiry(accountSnapshot.credits, now) : null;
+  const creditExpiring = Number.isFinite(nearestCreditExpiry) && nearestCreditExpiry > now &&
+    nearestCreditExpiry - now <= settings.expiryWarningHours * 3600000;
   let text = weekly ? `${weekly.remainingPercent}%` : "";
   let color = "#5fb9ad";
-  if (freshSignal || grant) {
-    text = weekly ? `${text}!` : grant ? "!" : "신호";
-    color = grant ? "#14633e" : "#e7a93b";
+  if (freshSignal || grant || creditExpiring) {
+    text = weekly ? (creditExpiring && weekly.remainingPercent >= 100 ? "!" : `${text}!`) : grant || creditExpiring ? "!" : "신호";
+    color = creditExpiring ? "#e05f52" : grant ? "#14633e" : "#e7a93b";
   } else if (["blocked", "expiring"].includes(advice?.tier)) {
     color = "#e05f52";
   } else if (weekly && weekly.remainingPercent < 25) {
@@ -1752,8 +2114,9 @@ async function updateBadge(accountSnapshot, signal, advice) {
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color });
   await chrome.action.setTitle({ title: "Codex 리셋 레이더" + (weekly ? ` · ${weekly.remainingPercent}%` : "") +
-    (grant ? " · " + msg("bankedArrivalTitle", String(grant.added), "Banked reset +$1") : "") });
-  const deadlines = unread.deadlines;
+    (grant ? " · " + msg("bankedArrivalTitle", String(grant.added), "Banked reset +$1") : "") +
+    (creditExpiring ? " · " + msg("notificationCreditExpiresTitle", RadarTime.relativeDuration(nearestCreditExpiry), "A reset credit expires $1") : "") });
+  const deadlines = [...unread.deadlines, ...(creditExpiring ? [nearestCreditExpiry] : [])];
   if (deadlines.length) await chrome.alarms.create(BADGE_EXPIRY_ALARM, { when: Math.min(...deadlines) });
   else await chrome.alarms.clear(BADGE_EXPIRY_ALARM);
 }
@@ -1845,7 +2208,9 @@ async function clearLocalData() {
     // Preserve appearance without a read-clear-restore race with the popup.
     const stored = await chrome.storage.local.get(null);
     await chrome.storage.local.remove(Object.keys(stored).filter(key =>
-      !["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema", "preferenceDefaultsSchema", "appearanceTheme", "uiLocale"].includes(key)));
+      !["settings", "securitySchema", "chatCounterSchema", "chatPolicySchema", "preferenceDefaultsSchema", "resetFocusDefaultsSchema", "expiryStagesSchema", "dailyNewsDelivery", "appearanceTheme", "uiLocale"].includes(key)));
+    if (stored.dailyNewsDelivery) await chrome.storage.local.set({ dailyNewsDelivery: Object.fromEntries(
+      Object.entries(RadarDailyNews.prune(stored.dailyNewsDelivery)).map(([day, record]) => [day, { sentAt: record.sentAt, ids: [] }])) });
     chatBindings.clear(); chatPlanTabs.clear();
     await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
     await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
@@ -1905,14 +2270,29 @@ async function preparePublicResume({ onlyIfDelayed = false, scheduledTime = null
   });
 }
 
-async function schedulePublicRetry() {
+async function schedulePublicRetry({ restoreOnly = false } = {}) {
   const { publicRetryCheck, publicResumeCheck } = await chrome.storage.local.get(['publicRetryCheck', 'publicResumeCheck']);
-  if (publicResumeCheck || (publicRetryCheck && (publicRetryCheck.attempts < 3 || Date.now() - publicRetryCheck.startedAt < 30 * 60000))) return;
+  if (publicResumeCheck) return;
+  if (publicRetryCheck?.attempts < 3) {
+    // A worker/browser restart can lose the one-shot alarm. Restore it without
+    // replenishing the retry budget or postponing an alarm that still exists.
+    if (!await chrome.alarms.get(PUBLIC_RETRY_ALARM))
+      await chrome.alarms.create(PUBLIC_RETRY_ALARM, { delayInMinutes: [2, 5, 10][publicRetryCheck.attempts] || 2 });
+    return;
+  }
+  if (restoreOnly || (publicRetryCheck && Date.now() - publicRetryCheck.startedAt < 30 * 60000)) return;
   await chrome.storage.local.set({ publicRetryCheck: { attempts: 0, startedAt: Date.now() } });
   await chrome.alarms.create(PUBLIC_RETRY_ALARM, { delayInMinutes: 2 });
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === SEMANTIC_RETRY_ALARM) {
+    await ensureSecurity();
+    const settings = await loadSettings();
+    if (settings.monitorSignals && settings.monitorLeadSource && settings.semanticEnabled) await refreshSemanticPending();
+    else await chrome.alarms.clear(SEMANTIC_RETRY_ALARM);
+    return;
+  }
   // Initialization may resolve and remove this fence. Capture its state first
   // so a recovery timer can restart collection without waiting for the next poll.
   const recoveringDirectX = alarm.name === RadarDirectX.CLEANUP_ALARM &&
@@ -1981,7 +2361,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const { publicRetryCheck } = await chrome.storage.local.get('publicRetryCheck');
     const settings = await loadSettings();
     if (!publicRetryCheck || publicRetryCheck.attempts >= 3 || !settings.monitorSignals || !settings.monitorLeadSource || !settings.monitorDirectX) return;
-    await refreshSignals({ quiet: true });
+    // This handler owns the next reservation. The inner scan must not restore
+    // the just-fired one-shot alarm while its attempt is still in progress.
+    await refreshSignals({ quiet: true, collectionRetry: true });
     await mutate(async () => {
       const { publicRetryCheck: pending } = await chrome.storage.local.get('publicRetryCheck');
       if (!pending) return;
@@ -2062,10 +2444,12 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       if (pending.accountKey !== accountSnapshot?.accountKey) return false;
       if (expiry) {
         const nearest = accountSnapshot.credits?.credits?.find(credit => credit.expiresAt > Date.now() &&
-          pending.id === expiryNotificationId(accountSnapshot.accountKey, credit.expiresAt))?.expiresAt;
+          (pending.id === expiryNotificationId(accountSnapshot.accountKey, credit.expiresAt) ||
+           pending.id === expiryNotificationId(accountSnapshot.accountKey, credit.expiresAt, currentExpiryStage(credit.expiresAt, settings))))?.expiresAt;
         const hours = nearest ? (nearest - Date.now()) / 3600000 : Infinity;
         if (!nearest || !(accountSnapshot.credits?.availableCount > 0) || hours <= 0 || hours > settings.expiryWarningHours ||
-          pending.id !== expiryNotificationId(accountSnapshot.accountKey, nearest)) return false;
+          (pending.id !== expiryNotificationId(accountSnapshot.accountKey, nearest) &&
+           pending.id !== expiryNotificationId(accountSnapshot.accountKey, nearest, currentExpiryStage(nearest, settings)))) return false;
         pending.options = { ...pending.options, ...expiryNotificationOptions(accountSnapshot, nearest) };
         bypassQuiet = Boolean(pending.accountResumed && settings.notifyRecoveryOnResume);
       } else {
@@ -2124,7 +2508,7 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       bypassQuiet = publicResumeBypassesQuiet(hint, publicAlertState, settings, pending);
     }
     if (pending.id.startsWith('event:')) {
-      if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints) return false;
+      if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyHints || settings.resetOnly) return false;
       const { hintSnapshot } = await chrome.storage.local.get('hintSnapshot');
       const notice = RadarEvents.notices(hintSnapshot?.eventAlerts).find(notice => notice.id === pending.id);
       if (!notice || !queuedPublicAllowed(notice.event.item, publicAlertState, pending)) return false;
@@ -2159,8 +2543,9 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
   }
 }
 
-chrome.notifications.onClicked.addListener(id => id.startsWith('event:') ? openEvent(id) : id.startsWith('report:') ? openReport(id.slice(7)) : id.startsWith("schedule:") ? openSchedule(id) : id.startsWith("hint:") ? openHint(id.slice(5)) : id.startsWith("signal:") ? openEvidence(id.slice(7)) : chrome.runtime.openOptionsPage());
+chrome.notifications.onClicked.addListener(id => id.startsWith('daily-reset:') ? openDailyNews() : id.startsWith('event:') ? openEvent(id) : id.startsWith('report:') ? openReport(id.slice(7)) : id.startsWith("schedule:") ? openSchedule(id) : id.startsWith("hint:") ? openHint(id.slice(5)) : id.startsWith("signal:") ? openEvidence(id.slice(7)) : chrome.runtime.openOptionsPage());
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  if (notificationId.startsWith('daily-reset:') && buttonIndex === 0) return openDailyNews();
   if (notificationId.startsWith('event:') && buttonIndex === 0) return openEvent(notificationId);
   if (notificationId.startsWith('report:') && buttonIndex === 0) return openReport(notificationId.slice(7));
   if (notificationId.startsWith("schedule:") && [0, 1].includes(buttonIndex)) return openSchedule(notificationId, buttonIndex === 1);
@@ -2230,8 +2615,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "OPEN_EVIDENCE") return openEvidence();
     if (message.type === "OPEN_HINT") return openHint();
     if (message.type === "OPEN_NEWS") {
-      const data = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot"]);
-      const entries = RadarNews.list(data.signalSnapshot, data.hintSnapshot, await loadSettings());
+      const data = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "scheduleSnapshot", "resetHistory"]);
+      const entries = RadarDailyNews.displayEntries(data, await loadSettings());
       const news = message.id === undefined ? entries[0] : entries.find(entry => entry.key === message.id);
       const url = RadarSecurity.evidenceUrl(news?.item);
       if (!url) return { ok: false };

@@ -8,10 +8,13 @@
     syncChatResetWithCodex: true,
     monitorLeadSource: true,
     monitorDirectX: true,
+    semanticEnabled: true,
+    resetOnly: true,
+    dailyResetDigest: true,
     monitorStatusSource: true,
-    monitorHistorySource: true,
-    monitorCommunitySource: true,
-    pollMinutes: 30,
+    monitorHistorySource: false,
+    monitorCommunitySource: false,
+    pollMinutes: 15,
     confidenceThreshold: "high",
     notifyOfficialReset: true,
     notifyHints: true,
@@ -29,7 +32,7 @@
     timezoneMode: "system",
     timezoneOverride: "",
     sourceUrl: "",
-    expiryWarningHours: 24
+    expiryWarningHours: 72
   });
 
   function sanitizePollMinutes(value) {
@@ -59,7 +62,7 @@
     for (const key of ["quietStart", "quietEnd"]) {
       if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(next[key])) next[key] = DEFAULTS[key];
     }
-    next.expiryWarningHours = Math.min(168, Math.max(1, Number(next.expiryWarningHours) || 24));
+    next.expiryWarningHours = Math.min(168, Math.max(1, Number(next.expiryWarningHours) || 72));
     return next;
   }
 

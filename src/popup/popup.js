@@ -67,7 +67,7 @@ function renderPinnedEvents(data, settings, entries) {
   const focused = document.activeElement;
   const focusedEvent = focused?.closest('details')?.dataset.eventId;
   const focusedKey = focused?.dataset.newsId;
-  const events = RadarEvents.pinned(data.signalSnapshot, data.hintSnapshot, settings);
+  const events = settings.resetOnly || settings.dailyResetDigest ? [] : RadarEvents.pinned(data.signalSnapshot, data.hintSnapshot, settings);
   container.hidden = !events.length;
   container.replaceChildren(...events.map(event => {
     const card = document.createElement('article'); card.className = 'pinned-event';
@@ -146,14 +146,17 @@ function collectionFailures(scan) {
 }
 
 function renderNews(data, settings) {
-  const allEntries = RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings);
+  const grouped = settings.resetOnly || settings.dailyResetDigest;
+  const allEntries = grouped ? RadarDailyNews.displayEntries(data, settings) :
+    [...new Map([...RadarResetHistory.rows(data, settings), ...RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings)].map(row => [row.key, row])).values()]
+      .sort((a, b) => b.publishedAt - a.publishedAt);
   const pinnedCount = renderPinnedEvents(data, settings, allEntries);
   // Dated events live in one calendar card below the reset feed. Expired event
   // cards disappear; their recent tweets must not reappear as ordinary rows.
   const entries = allEntries.filter(news => news.topic !== 'event' || !news.event);
   const lead = data.signalSnapshot?.leadStatus;
   const timeZone = RadarTime.countryZone().zone;
-  $("signalTitle").textContent = entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
+  $("signalTitle").textContent = settings.resetOnly ? "리셋 소식" : entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
   $("newsCount").textContent = entries.length || pinnedCount.news ? (entries.length + pinnedCount.news) + "건" : !settings.monitorSignals ? "꺼짐" : "";
   const scan = lead?.directScan;
   const collection = collectionCheck(data, settings);
@@ -171,23 +174,66 @@ function renderNews(data, settings) {
     $("newsFreshness").textContent = scan.contextPending ? `답글 문맥 ${scan.contextPending}개 확인 대기 · 일부 수집` : '일부 수집 · 재확인 필요';
   }
   $("newsFreshness").title = (lead?.latestPostAt ? '최근 수집 글: ' + RadarTime.formatDateTime(lead.latestPostAt, timeZone) : '최근 수집 글 없음') +
-    (data.signalSnapshot?.checkedAt ? ' / 조회: ' + RadarTime.formatDateTime(data.signalSnapshot.checkedAt, timeZone) : '') + ' · OpenAI · Tibo · VB의 리셋·출시·행사 관련 글을 표시합니다.';
+    (data.signalSnapshot?.checkedAt ? ' / 조회: ' + RadarTime.formatDateTime(data.signalSnapshot.checkedAt, timeZone) : '') + ' · ' + (settings.resetOnly ? 'OpenAI · Tibo · VB의 리셋 관련 글만 표시합니다.' : 'OpenAI · Tibo · VB의 리셋·출시·행사 관련 글을 표시합니다.');
   if (lead?.classification) {
     const c = lead.classification;
     $("newsFreshness").title += ' · ' + msg('publicCollectionProgress', [c.signals, c.hints, c.reports, c.other]);
   }
   if (scan?.checkpointError) $("newsFreshness").textContent = msg('publicCollectionCheckpointHelp');
+  if (data.resetHistory?.full || data.resetHistoryStorageError) $("newsFreshness").textContent += ' · 기록 저장 공간 확인 필요';
+  if (scan?.resetFollowUps?.length) $("newsFreshness").title += ' · 리셋 일정 확인: ' + scan.resetFollowUps.map(check =>
+    `${RadarSignals.authorName(check)} ${check.id} ${check.state === 'verified' ? '답글 연결 ' + check.verified + '개' : check.state + (check.error ? ' / ' + check.error : '')}`).join(' · ');
   $("newsEmpty").hidden = Boolean(entries.length || pinnedCount.cards);
   $("newsEmpty").textContent = !settings.monitorSignals ? "소식 확인 꺼짐" :
-    data.signalError ? "소식을 불러오지 못했어요" : lead && ["stale", "unavailable"].includes(lead.state) ? "최신 글 수집을 확인해 주세요" : "새 리셋·출시·행사 소식이 없어요";
+    data.signalError ? "소식을 불러오지 못했어요" : lead && ["stale", "unavailable"].includes(lead.state) ? "최신 글 수집을 확인해 주세요" : settings.resetOnly ? "새 리셋 소식이 없어요" : "새 리셋·출시·행사 소식이 없어요";
   const list = $("newsList"), scrollTop = list.scrollTop;
   const focusedKey = document.activeElement?.dataset.newsId;
   list.hidden = !entries.length;
-  list.replaceChildren(...entries.map(news => createNewsRow(news, allEntries)));
+  list.replaceChildren(...(grouped ? RadarDailyNews.groups(data, settings).map(group => createDailyNewsCard(group, settings)) : entries.map(news => createNewsRow(news, allEntries))));
   list.scrollTop = scrollTop;
   if (focusedKey) [...list.querySelectorAll("button")].find(button => button.dataset.newsId === focusedKey)?.focus({ preventScroll: true });
   const status = freshness;
   $("newsCollection").textContent = status + (data.signalSnapshot?.checkedAt ? " · " + RadarTime.formatTime(data.signalSnapshot.checkedAt, timeZone) : " 대기 중");
+}
+
+function createDailyNewsCard(group, settings) {
+  const card = document.createElement('article'); card.className = 'daily-news-card'; card.setAttribute('role', 'listitem');
+  const en = (globalThis.RadarI18n?.uiLanguage?.() || 'ko').startsWith('en');
+  const title = document.createElement('h3'); title.className = 'daily-news-date';
+  title.textContent = RadarTime.formatLocalized(new Date(group.day + 'T12:00Z'), { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  if (group.items.some(row => row.historical)) title.textContent += en ? ' · Past records' : ' · 이전 기록 포함';
+  const summaryLine = document.createElement('p'); summaryLine.className = 'daily-news-summary'; summaryLine.setAttribute('data-no-translate', '');
+  summaryLine.textContent = RadarDailyNews.digestText(group.items);
+  const counts = RadarDailyNews.resetCounts(group.items), chips = document.createElement('div'); chips.className = 'news-status-chips daily-news-counts';
+  for (const [kind, label] of [['forecast', en ? 'Forecast' : '리셋 예고'], ['completed', en ? 'Completed' : '리셋 완료'], ['inferred', en ? 'Inferred' : '리셋 추정']]) {
+    const chip = createNewsStatusChip(null, { kind, text: `${label} ${counts[kind]}` });
+    if (!counts[kind]) chip.classList.add('is-muted'); chips.append(chip);
+  }
+  const schedule = document.createElement('div'), times = RadarDailyNews.dayTimes(group.items);
+  schedule.className = 'news-schedule-box daily-news-schedule' + (times.length ? '' : ' is-unverified');
+  const scheduleLabel = document.createElement('span'); scheduleLabel.className = 'news-schedule-label';
+  scheduleLabel.textContent = en ? 'Reset time' : '리셋 시각'; schedule.append(scheduleLabel);
+  for (const time of times) {
+    const node = document.createElement('time'); node.textContent = time.text; node.title = time.detail;
+    node.dateTime = new Date(time.at).toISOString(); schedule.append(node);
+  }
+  if (!times.length) { const none = document.createElement('span'); none.textContent = en ? 'Reset time unverified' : '리셋 시각 미확인'; schedule.append(none); }
+  const sources = document.createElement('ul'); sources.className = 'daily-news-sources daily-news-links';
+  sources.setAttribute('aria-label', en ? 'Original posts' : '원문 링크');
+  const labels = RadarDailyNews.sourceLabels(group.items);
+  group.items.forEach((news, index) => {
+    const row = document.createElement('li'), link = document.createElement('button');
+    link.type = 'button'; link.className = 'text-action news-link'; link.dataset.newsId = news.key;
+    link.textContent = labels[index] + ' ↗'; link.dataset.sourceLabel = link.textContent;
+    const association = news.item.assessment?.completionContext === 'inferred' ?
+      (en ? 'Original reset association inferred' : '리셋 원글 연결 추정') : '';
+    const full = [news.historical ? (en ? 'Past record' : '이전 탐지 기록') : '', `${RadarDailyNews.author(news)} · ${RadarDailyNews.status(news)}`, association, news.publishedText, news.item.text].filter(Boolean).join('\n');
+    link.title = full; link.setAttribute('aria-label', `${labels[index]}: ${full}`);
+    link.disabled = !RadarSecurity.evidenceUrl(news.item);
+    link.addEventListener('click', () => openNews(news.key, link));
+    row.append(link); sources.append(row);
+  });
+  card.append(title, summaryLine, chips, schedule, sources); return card;
 }
 
 function createNewsRow(news, entries, compact = false) {
@@ -215,17 +261,34 @@ function createNewsRow(news, entries, compact = false) {
     const content = document.createElement('div'); content.className = 'news-content';
     if (compact) { kind.textContent = RadarSignals.authorName(news.item); content.append(kind, published, quote, link); }
     else content.append(heading, kind, published, quote, link);
+    content.insertBefore(createNewsStatusChip(news), published);
+    content.insertBefore(createNewsScheduleBox(news), link);
     row.append(avatar, content); return row;
 }
 
+function createNewsStatusChip(news, chip = { kind: RadarDailyNews.statusKind(news), text: RadarDailyNews.status(news) }) {
+  const node = document.createElement('span'); node.className = 'news-status-chip is-' + chip.kind;
+  node.textContent = chip.text; return node;
+}
+
+function createNewsScheduleBox(news) {
+  const info = RadarDailyNews.verifiedTime(news), en = (globalThis.RadarI18n?.uiLanguage?.() || 'ko').startsWith('en');
+  const box = document.createElement('div'); box.className = 'news-schedule-box' + (info.verified ? '' : ' is-unverified');
+  const label = document.createElement('span'); label.className = 'news-schedule-label'; label.textContent = en ? 'Reset time' : '리셋 시각';
+  const value = document.createElement(info.verified ? 'time' : 'span'); value.textContent = info.text;
+  if (info.verified) { value.dateTime = new Date(info.at).toISOString(); box.title = info.detail; }
+  box.append(label, value); return box;
+}
+
 async function openNews(id, button) {
-  button.disabled = true; button.dataset.state = "loading"; button.textContent = "여는 중…";
+  const label = button.dataset.sourceLabel;
+  button.disabled = true; button.dataset.state = "loading"; button.textContent = label ? label + ' …' : "여는 중…";
   try {
     const result = await chrome.runtime.sendMessage({ type: "OPEN_NEWS", id });
     if (!result?.ok) throw new Error("Link unavailable");
-    button.dataset.state = "success"; button.textContent = "원문 열림 ↗";
+    button.dataset.state = "success"; button.textContent = label ? label + ' ✓' : "원문 열림 ↗";
   } catch {
-    button.dataset.state = "error"; button.textContent = "다시 열기 ↗";
+    button.dataset.state = "error"; button.textContent = label ? label + ' · 재시도' : "다시 열기 ↗";
     $("refreshStatus").textContent = "원문을 열지 못했어요. 다시 시도해 주세요.";
   } finally { button.disabled = false; }
 }
@@ -385,8 +448,8 @@ function renderCredits(credits, settings, accountState) {
   });
 }
 
-function renderBankedArrival(unread) {
-  const notice = unread.notice;
+function renderBankedArrival(unread, settings) {
+  const notice = settings.dailyResetDigest && unread.notice?.kind === 'public' ? null : unread.notice;
   $("bankedArrival").hidden = !notice;
   if (!notice) return;
   $("bankedArrival").dataset.kind = notice.kind;
@@ -437,7 +500,7 @@ function renderAdvice(advice) {
 }
 
 function renderSchedule(snapshot, settings) {
-  const change = settings.monitorSignals && settings.monitorLeadSource ? RadarSchedule.changes(snapshot)[0] : null;
+  const change = !settings.dailyResetDigest && settings.monitorSignals && settings.monitorLeadSource ? RadarSchedule.changes(RadarResetScope.schedule(snapshot, settings))[0] : null;
   $("schedulePanel").hidden = !change;
   if (!change) return;
   $("scheduleTitle").textContent = change.label;
@@ -461,6 +524,7 @@ async function render() {
     "publicAlertState",
     "signalSnapshot",
     "hintSnapshot",
+    "resetHistory", "resetHistoryStorageError",
     "scheduleSnapshot",
     "adviceSnapshot",
     "lastCheckedAt",
@@ -485,7 +549,7 @@ async function render() {
   renderWindow("weekly", settings.monitorAccount ? data.accountSnapshot?.usage : null, settings, data.accountState);
   renderCredits(settings.monitorAccount ? data.accountSnapshot?.credits : null, settings, data.accountState);
   const unread = RadarBadge.view(data, settings);
-  renderBankedArrival(unread);
+  renderBankedArrival(unread, settings);
   renderUnreadBadges(unread);
   renderAdvice(RadarAdvice.make({
     usage: settings.monitorAccount ? data.accountSnapshot?.usage : null,

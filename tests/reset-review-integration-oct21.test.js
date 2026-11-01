@@ -68,7 +68,7 @@ test('startup reads direct-X, then one review toast; no repeats in same/new work
   assert.ok(n, 'review toast created');
   const read = w.log.findIndex(e => e[0] === 'read');
   assert.ok(read >= 0 && read < w.log.findIndex(e => e[1] === KEY), 'read precedes toast');
-  assert.match(n.title, /검토|미확인|review|unconfirmed/i);
+  assert.match(n.title, /리셋 추정|Reset inferred/i);
   assert.ok(!JSON.stringify(n).includes('$1'), 'no placeholder leak');
   assert.ok(!/resetReviewNotificationTitle/.test(n.title), 'no raw key');
   await run(w); await run(w);

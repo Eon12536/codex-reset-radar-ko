@@ -83,7 +83,7 @@ test('publication dates are distinct from reset deadlines and follow the selecte
     if (country.locale === 'ko-KR') {
       const completed = list.find(news => news.item.id === raw[3].id);
       assert.match(completed.publishedText, /오전 6:12/);
-      assert.equal(completed.label, '완료 표현');
+      assert.equal(completed.label, '리셋 추정');
       assert.match(completed.kindLabel, /추정/);
     }
   }

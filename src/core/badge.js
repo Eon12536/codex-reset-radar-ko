@@ -4,6 +4,9 @@
     entry.badgeReadAt >= detectedAt && entry.badgeReadAt <= now;
 
   function view(state, settings, { signal, now = Date.now() } = {}) {
+    const scope = root.RadarResetScope || (typeof require === 'function' ? require('./reset-scope') : null);
+    const changes = root.RadarSchedule.changes(scope.schedule(state.scheduleSnapshot, settings), { now });
+    const changedIds = new Set(changes.map(change => change.post.id));
     const snapshot = state.signalSnapshot;
     const posts = settings.monitorSignals ? [
       ...(snapshot?.activeSignals || [snapshot?.signal].filter(Boolean)).filter(item => root.RadarSignals.isActive(item, { now })),
@@ -13,9 +16,10 @@
       ...root.RadarSignals.reports(snapshot?.reports || [], { now }),
       ...root.RadarSignals.hintCandidates(state.hintSnapshot?.items || [], { now, limit: 100 }).filter(item =>
         !item.assessment.topic && !['product-time', 'schedule-time'].includes(item.assessment.rule)),
-      ...root.RadarSchedule.changes(state.scheduleSnapshot, { now }).map(change => change.post));
+      ...changes.map(change => change.post));
     const unique = new Map();
     for (const item of posts) {
+      if (!scope.allows(item, settings) && !changedIds.has(item.id)) continue;
       if (!settings.monitorLeadSource && item.source?.id === 'codex-lead') continue;
       const observed = state.publicAlertState?.entries?.[item.id];
       const detectedAt = observed ? observed.observedAt :

@@ -22,7 +22,7 @@ const server = http.createServer((request, response) => {
   const filePath = path.resolve(root, relative || "src/welcome/welcome.html");
   const inside = path.relative(root, filePath);
   const allowed = /^(src|assets)[/\\]/.test(inside)
-    || ["browser-preview-mock.js", "chat-meter-preview.html", "popup-size-check.html", "theme-picker-preview.html", "country-picker-preview.html", "notification-image-check.html", "notification-image-check.js", "notification-image-worker.js"].some(name => inside === path.join("scripts", name));
+    || ["browser-preview-mock.js", "daily-news-preview.html", "chat-meter-preview.html", "popup-size-check.html", "theme-picker-preview.html", "country-picker-preview.html", "notification-image-check.html", "notification-image-check.js", "notification-image-worker.js"].some(name => inside === path.join("scripts", name));
   if (!allowed || inside.startsWith("..") || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     response.writeHead(404);
     response.end("Not found");

@@ -97,6 +97,7 @@ test('feed normalization retains validated string references without rounding la
   assert.equal(normalize({ in_reply_to_status_id: 'https://evil.invalid' }).inReplyToId, null);
 });
 
+// Celebration schedules are tested only in explicit legacy mode.
 function worker({ hint = false, notifyHints = true } = {}) {
   const base = Date.now();
   const raw = (id, content, minutes, reply) => ({ external_id: id, content,
@@ -107,7 +108,7 @@ function worker({ hint = false, notifyHints = true } = {}) {
   const data = { items: [first], fail: false };
   const w = makeWorker({ stored: { settings: { monitorAccount: false, monitorSignals: true,
     monitorLeadSource: true, monitorStatusSource: false, monitorHistorySource: false,
-    monitorCommunitySource: false, quietHoursEnabled: false, notifyHints } },
+    monitorCommunitySource: false, quietHoursEnabled: false, notifyHints, resetOnly: !hint } },
     fetcher: async () => { if (data.fail) throw Error('Feed unavailable'); return json({ items: data.items }); } });
   let count = 0;
   const original = w.context.chrome.notifications.create;

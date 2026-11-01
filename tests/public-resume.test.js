@@ -42,7 +42,7 @@ test('always-on direct X still obeys lead and public monitoring switches', async
   }
 });
 
-test('fresh direct X results recover the missed reply when the feed lacks it; no reset forecast is invented', async () => {
+test('timeline adjacency alone cannot produce reset news or notifications in reset-only mode', async () => {
   const { w, source } = publicWorker({ monitorDirectX: true });
   source.items = [post('Old product news.', '100', 14 * 24)];
   source.direct = w.context.RadarDirectX.normalize([
@@ -53,13 +53,11 @@ test('fresh direct X results recover the missed reply when the feed lacks it; no
   await w.events.startup();
   assert.equal(w.local.signalSnapshot.leadStatus.mode, 'x-page');
   assert.equal(w.local.signalSnapshot.signal, null);
-  assert.equal(w.local.hintSnapshot.items[0].assessment.rule, 'reply-reset-context');
-  assert.equal(w.local.hintSnapshot.items[0].assessment.eventAt, null);
+  assert.equal(w.local.hintSnapshot.items.length, 0);
   await finishPublicResume(w);
-  assert.ok(w.notifications['hint:102']);
-  assert.match(w.notifications['hint:102'].message, /문맥 연결과 일정 대상 미확인/);
+  assert.equal(w.notifications['hint:102'], undefined);
   await w.events.startup();
-  assert.equal(Object.keys(w.notifications).length, 1);
+  assert.equal(Object.keys(w.notifications).length, 0);
   assert.equal(w.local.publicResumeCheck, undefined);
 });
 
@@ -268,7 +266,8 @@ test('a prolonged partial recovery does not override quiet hours for subsequent 
   await finishPublicResume(w);
   assert.ok(w.notifications['report:407']);
   assert.equal(w.local.publicResumeCheck.collectedAt, at.value);
-  at.value += 50 * 60000;
+  // Stay below two 15-minute intervals so this is not a new missed-poll gap.
+  at.value += 25 * 60000;
   source.items.push({ ...post('We have now reset all Codex usage limits.', '408'),
     createdAt: new Date(at.value - 5 * 60000).toISOString() });
   await w.events.alarm({ name: 'codex-reset-radar-public-resume' });
@@ -373,7 +372,8 @@ test('a delayed feed item retains its offline eligibility after an earlier feed 
   }] }) });
   clock(restarted, at);
   restarted.context.RadarTime = { ...restarted.context.RadarTime, isQuietHours: () => true };
-  at.value += HOUR;
+  // An on-time ordinary poll, not another sleep/wake recovery.
+  at.value += restarted.local.settings.pollMinutes * 60000;
   await restarted.events.alarm({ name: 'codex-reset-radar-poll', scheduledTime: at.value });
   assert.ok(restarted.notifications['report:502']);
   await restarted.events.alarm({ name: 'codex-reset-radar-poll', scheduledTime: at.value });

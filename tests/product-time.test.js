@@ -1,3 +1,4 @@
+// Legacy launch/event mode requires an explicit opt-out from reset-only filtering.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -59,7 +60,7 @@ test('a clock-only reply needs the exact preceding product conversation; later c
 });
 
 test('popup shows a labelled regional assumption and Korean conversion without confirming a reset', () => {
-  const news = News.select(null, { items: [post('3am on a tuesday')] }, Settings.sanitize());
+  const news = News.select(null, { items: [post('3am on a tuesday')] }, Settings.sanitize({ resetOnly: false }));
   assert.equal(news.label, '후보');
   assert.match(news.timing, /미 서부 .*오전 3:00\n한국 .*오후 [78]:00 · 추정/);
   assert.match(news.timingDetail, /샌프란시스코/);
@@ -71,7 +72,7 @@ test('popup shows a labelled regional assumption and Korean conversion without c
 
 test('feed collection shows timed candidates and uses the existing opt-in one-time notification', async () => {
   for (const notifyHints of [false, true]) {
-    const w = makeWorker({ stored: { settings: { monitorAccount: false, monitorStatusSource: false,
+    const w = makeWorker({ stored: { settings: { resetOnly: false, monitorAccount: false, monitorStatusSource: false,
       monitorHistorySource: false, monitorCommunitySource: false, quietHoursEnabled: false, notifyHints } },
       fetcher: async () => json({ items: [{ external_id: '123456', content: '3am on a tuesday',
         published_at: new Date().toISOString(), metadata: { author_user_name: 'thsottiaux' } }] }) });

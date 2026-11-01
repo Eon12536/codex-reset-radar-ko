@@ -1,3 +1,4 @@
+// Legacy launch/event mode requires an explicit opt-out from reset-only filtering.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 global.RadarTime = require('../src/core/time');
@@ -7,7 +8,7 @@ const Events = require('../src/core/events');
 const Settings = require('../src/core/settings');
 const { makeWorker, json } = require('./helpers/worker');
 const now = Date.parse('2026-09-28T18:00:00Z');
-const settings = Settings.sanitize({ notifyHints: true, quietHoursEnabled: false });
+const settings = Settings.sanitize({ resetOnly: false, notifyHints: true, quietHoursEnabled: false });
 const post = (text, id = '951', age = 60000, author = 'thsottiaux') => ({ id, text, author,
   createdAt: new Date(now - age).toISOString(), source: { id: 'codex-lead', weight: 1 }, url: `https://x.com/${author}/status/${id}` });
 const opts = { now };
@@ -140,7 +141,7 @@ test('a postponement with a replacement date remains pinned and equivalent timez
 
 function feedWorker(extra = {}) {
   let sequence = 0, content = [];
-  const w = makeWorker({ stored: { settings: { monitorAccount: false, monitorLeadSource: true, monitorStatusSource: false,
+  const w = makeWorker({ stored: { settings: { resetOnly: false, monitorAccount: false, monitorLeadSource: true, monitorStatusSource: false,
     monitorHistorySource: false, monitorCommunitySource: false, notifyHints: true, quietHoursEnabled: false }, ...extra },
     fetcher: async () => json({ items: content }) });
   w.posts = texts => { content = texts.map(text => ({ external_id: String(980 + sequence++), content: text,

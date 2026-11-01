@@ -1,3 +1,4 @@
+// Legacy launch/event mode requires an explicit opt-out from reset-only filtering.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 global.RadarTime = require('../src/core/time');
@@ -30,7 +31,7 @@ test('all three authors support dated events and launch clues without a fixed cl
     assert.equal(hint.eventAt, null);
     assert.equal(Signals.classify(item).actionable, false);
     assert.equal(Schedule.reconcile({}, [item]).events.length, 0);
-    const news = News.select(null, { items: [item] }, Settings.sanitize());
+    const news = News.select(null, { items: [item] }, Settings.sanitize({ resetOnly: false }));
     assert.equal(news.label, topic === 'event' ? '행사' : '출시');
     assert.equal(news.kindLabel, '리셋 미확인');
     assert.equal(Security.evidenceUrl(item), item.url);
@@ -57,7 +58,7 @@ test('new ChatGPT capabilities announced with can now are launch news without be
     assert.equal(hint.topic, 'launch');
     assert.equal(hint.actionable, false);
     assert.equal(Signals.classify(item).actionable, false);
-    assert.equal(News.select(null, { items: [item] }, Settings.sanitize()).label, '출시');
+    assert.equal(News.select(null, { items: [item] }, Settings.sanitize({ resetOnly: false })).label, '출시');
   }
   for (const text of ['You can use ChatGPT for coding.', 'You can now order lunch.',
     'You cannot now deploy plugins in ChatGPT.', 'Yesterday you could deploy plugins in ChatGPT.'])
@@ -72,7 +73,7 @@ test('dotted model versions remain in their announcement sentence without mergin
     const item = post(text, author);
     assert.equal(Signals.classifyHint(item).topic, 'launch', text);
     assert.equal(Signals.classify(item).actionable, false, text);
-    assert.equal(News.select(null, { items: [item] }, Settings.sanitize()).label, '출시');
+    assert.equal(News.select(null, { items: [item] }, Settings.sanitize({ resetOnly: false })).label, '출시');
   }
   for (const text of ['GPT-6.1 is not available.', 'GPT-6.1 was released yesterday.',
     'We like GPT-6.1. Lunch is available now.', 'We like GPT-6.1. My flight is coming tomorrow.'])
@@ -92,16 +93,16 @@ test('actual reset promises and banked grants retain their existing priority', (
   const assessment = Signals.classify(promised);
   assert.equal(assessment.actionable, true);
   assert.equal(Signals.classifyHint(promised).candidate, false);
-  assert.equal(News.select({ activeSignals: [{ ...promised, assessment }] }, null, Settings.sanitize()).label, 'reset');
+  assert.equal(News.select({ activeSignals: [{ ...promised, assessment }] }, null, Settings.sanitize({ resetOnly: false })).label, 'reset');
   const grant = post('At DevDay we gave everyone a banked reset.', 'reach_vb');
-  assert.equal(News.select({ reports: [grant] }, { items: [grant] }, Settings.sanitize()).label, 'Banked');
+  assert.equal(News.select({ reports: [grant] }, { items: [grant] }, Settings.sanitize({ resetOnly: false })).label, 'Banked');
 });
 
 test('profile URLs survive projections while unsafe image locations are rejected', () => {
   const avatarUrl = 'https://pbs.twimg.com/profile_images/123/example_normal.jpg';
   for (const text of ['DevDay tomorrow', 'We gave everyone a banked reset.', 'Resets all propagated.']) {
     const item = post(text, 'OpenAI', { avatarUrl });
-    assert.equal(News.select({ reports: [item] }, { items: [item] }, Settings.sanitize()).item.avatarUrl, avatarUrl);
+    assert.equal(News.select({ reports: [item] }, { items: [item] }, Settings.sanitize({ resetOnly: false })).item.avatarUrl, avatarUrl);
   }
   for (const value of ['https://pbs.twimg.com.evil.test/profile_images/123/x.png', 'https://pbs.twimg.com/media/x.jpg',
     'https://pbs.twimg.com/profile_images/123/x.svg', 'https://pbs.twimg.com/profile_images/123/x.png?token=x', 'data:image/png;base64,AA', 'javascript:alert(1)'])
@@ -119,19 +120,19 @@ test('new event classification does not re-notify old or already observed tweets
 
 test('product notifications follow candidate opt-in and explicitly say reset unconfirmed', async () => {
   const item = post('Introducing GPT-7', 'OpenAI');
-  const worker = makeWorker({ stored: { settings: { monitorSignals: true, monitorLeadSource: true, notifyHints: true, quietHoursEnabled: false } } });
+  const worker = makeWorker({ stored: { settings: { resetOnly: false, monitorSignals: true, monitorLeadSource: true, notifyHints: true, quietHoursEnabled: false } } });
   await worker.context.maybeNotifyHint(item);
   assert.equal(worker.notifications['hint:811'].title, 'OpenAI 출시·행사 소식 · 리셋 미확인');
   assert.match(worker.notifications['hint:811'].message, /리셋 확정이 아닙니다/);
-  const off = makeWorker({ stored: { settings: { monitorSignals: true, monitorLeadSource: true, notifyHints: false } } });
+  const off = makeWorker({ stored: { settings: { resetOnly: false, monitorSignals: true, monitorLeadSource: true, notifyHints: false } } });
   await off.context.maybeNotifyHint(item);
   assert.equal(Object.keys(off.notifications).length, 0);
 });
 
 test('dated events retain their date and clock events keep the event badge', () => {
-  const dateOnly = News.select(null, { items: [post('Join us for DevDay on October 6.')] }, Settings.sanitize());
+  const dateOnly = News.select(null, { items: [post('Join us for DevDay on October 6.')] }, Settings.sanitize({ resetOnly: false }));
   assert.equal(dateOnly.timing, 'October 6');
-  const timed = News.select(null, { items: [post('Join us for OpenAI DevDay tomorrow at 10am PT.', 'OpenAI')] }, Settings.sanitize());
+  const timed = News.select(null, { items: [post('Join us for OpenAI DevDay tomorrow at 10am PT.', 'OpenAI')] }, Settings.sanitize({ resetOnly: false }));
   assert.equal(timed.label, '행사');
   assert.match(timed.timing, /한국/);
 });

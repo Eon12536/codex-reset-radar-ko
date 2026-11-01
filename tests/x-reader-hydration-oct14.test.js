@@ -42,6 +42,18 @@ test('a recycled article without its own hydrated body cannot erase a collected 
   assert.equal(result.bodyUnavailableCount, 0);
 });
 
+test('a reset conversation returns bounded same-author follow-up leads separately from preceding parent evidence', async () => {
+  const at = Date.now() - 120000;
+  const follow = { id: '901', author: 'thsottiaux', at: new Date(at + 60000).toISOString(),
+    text: 'Landing tomorrow before 10am PST together with a small ship.' };
+  const { result } = await readDom({ initialText: 'Day 18/ That is a reset!', finalText: 'Day 18/ That is a reset!',
+    pathname: '/thsottiaux/status/900', postCreatedAt: new Date(at).toISOString(), suffix: [follow,
+      { ...follow, id: '902', author: 'someone' }, { ...follow, id: '903', at: new Date(at - 60000).toISOString() }] });
+  assert.deepEqual(Array.from(result.rows, row => row.id), ['900']);
+  assert.deepEqual(Array.from(result.followUps, row => row.id), ['901']);
+  assert.equal(result.followUps[0].text, follow.text);
+});
+
 test('a timestamp-only row keeps hydration waiting until its own reset body appears', async () => {
   const announced = 'Global reset landing by EOD PST time. Enjoy';
   const { result, elapsed } = await readDom({ initialText: null, finalText: announced, hydrateAfter: 3000 });

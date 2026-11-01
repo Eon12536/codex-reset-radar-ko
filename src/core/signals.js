@@ -36,7 +36,10 @@
   function hasFutureTiming(text) {
     // End-of-day is a delivery deadline, not an exact execution hour. Match
     // words rather than the substring "eod" inside an unrelated word.
-    return includesAny(text, FUTURE_TERMS) || /\b(?:by|before) (?:eod|(?:the )?end of (?:the )?day)\b/.test(text);
+    if (includesAny(text, FUTURE_TERMS) || /\b(?:by|before) (?:eod|(?:the )?end of (?:the )?day)\b/.test(text)) return true;
+    // Strict full-string deadline helper recognizes qualified clocks and
+    // midnight phrases; plain today/midnight substrings are not sufficient.
+    return !!clockDeadline(text) || relativeResetDeadline(text);
   }
 
   // Rules curated from supplied short excerpts, not a trained model or verified
@@ -65,6 +68,44 @@
   }
   function resetHeadline(text) {
     return /^day\s+[1-9]\d{0,2}\s*[/:–—-]\s*(?:global\s+|(?:le\s+)?(?:(?:usage|weekly|rate)\s+)?limits?\s+)?reset[.!]*$/i.test(String(text || '').trim());
+  }
+  // Daily-series reset announcement, e.g. "Day 20/ Rest and reset". Only this
+  // exact bounded shape; polls, demands, reviews and negations never match.
+  function restAndResetHeadline(text) {
+    return /^day\s*[1-9]\d{0,2}\s*[/:–—-]\s*rest and reset[.!]*$/i.test(String(text || '').trim().replace(/\s+/g, ' '));
+  }
+  function resetAnchor(item) {
+    if (!isLead(item) || !publicIdentity(item) || item.truncated) return false;
+    if (resetHeadline(item.text) || resetDayForecast(item) || restAndResetHeadline(item.text)) return true;
+    // A reset-button joke can precede a separate, explicit daily reset line.
+    const lines = String(item.text || '').trim().split(/\r?\n+/).map(line => line.trim()).filter(Boolean);
+    if (lines.length === 2 && resetHeadline(lines[1]) &&
+        /^the reports of (?:my|the) reset button being lost are greatly exaggerated[.!]*$/i.test(lines[0])) return true;
+    const text = normalizedText(item);
+    // A mixed Day-series announcement can end with an explicit reset claim.
+    // Inspect that clause, rather than borrowing the unrelated product news.
+    return /^day\s+[1-9]\d{0,2}\s*[/:–—-]/.test(text) && /\bcodex\b|\b(?:usage|weekly|rate) limits?\b/.test(text) && clauses(text).some(part =>
+      /^(?:but\s+)?(?:yes[,…\s]+)?(?:that(?:'s| is)|it(?:'s| is)) (?:a |another |the )?reset$/.test(part) &&
+      !UNRELATED.test(part) && !isNegated(part) && !SPECULATIVE.test(part));
+  }
+  function timingStatement(text) {
+    const value = String(text || '').trim().toLowerCase().replace(/[’‘]/g, "'");
+    // Permit a bounded, non-temporal release aside; never trim arbitrary text
+    // which could contain another deadline, negation or cancellation.
+    return value.replace(/ together with (?:a |another |one )?(?:small |minor )?(?:ship|release|update)[.!]*$/, '').replace(/[.!]+$/, '');
+  }
+  // "By midnight PST" is a deadline (end of the source-zone calendar day), not
+  // an execution instant. Exactly one zone; no negation or extra clock.
+  function midnightDeadline(text) {
+    return /^(?:(?:lands|landing|arriving|coming|rolling out)(?: (?:sometime|later))? )?(?:(?:today|tonight|tomorrow) )?(?:by|before) midnight(?: (?:tonight|tomorrow))? (?:pst|pdt|pt|utc|gmt|kst)$/.test(timingStatement(text));
+  }
+  function clockDeadline(text) {
+    if (midnightDeadline(text)) return true;
+    return /^(?:lands|landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:[1-9]|1[0-2])(?::[0-5]\d)? ?(?:am|pm) (?:pst|pdt|pt|utc|gmt|kst)$/.test(timingStatement(text));
+  }
+  // A bounded relative promise gives context but is not an execution instant.
+  function relativeResetDeadline(text) {
+    return /^(?:landing|arriving|coming|rolling out) within (?:the )?next (?:[1-9]|1[0-2]) hours?$/.test(timingStatement(text));
   }
   // A trusted author's "Day N/ ... and reset. Enjoy." series post. Only a bare
   // reset clause counts; a separate availability cue ("enjoy", "it's live")
@@ -97,7 +138,7 @@
       return { rule: 'reset-poll', reason: '리셋 필요 여부를 묻는 설문 · 지급·실행 약속은 아님' };
     // Numbered rollout headlines omit a verb. Surface their reset wording
     // without inventing a promise, completed reset, reset kind or clock time.
-    if (!item.truncated && resetHeadline(text))
+    if (!item.truncated && (resetHeadline(text) || resetAnchor(item)))
       return { rule: 'reset-short', reason: '일차별 소식에 리셋을 짧게 언급 · 실행 여부·시각 미확정' };
     if (/\b(?:updates?|releases?|features?|ships?) or (?:a |another |the )?reset\b/.test(text))
       return { rule: 'reset-choice', reason: '업데이트와 리셋을 선택지로 언급 · 실행 여부·시각 미확정' };
@@ -116,7 +157,8 @@
 
   function resetDayForecast(item) {
     if (!item || !isLead(item) || !publicIdentity(item) || item.truncated) return false;
-    const raw = String(normalizedText(item) || "").replace(/[\u2018\u2019\u02BC\u0060\u00B4]/g, "'");
+    const raw = String(normalizedText(item) || "").replace(/[\u2018\u2019\u02BC\u0060\u00B4]/g, "'")
+      .replace(/^(\s*(?:day\s*\d+\s*[\/:.\-\u2013\u2014]?\s*)?)not enough res(?:e)?ts?\s*[,.]?\s*but\s+(?=today is a reset\b)/i, "$1");
     const first = raw.split(/\r?\n\s*\r?\n/)[0].trim().toLowerCase();
     if (!first || /[?"\u201C\u201D]/.test(first)) return false;
     // A later reset cancellation still wins; unrelated paragraphs cannot negate the reset subject.
@@ -124,9 +166,9 @@
     if (resetScan.split(/(?<=[.!?])\s+|\n+/).filter((part) => /\breset\b/i.test(part)).some((part) =>
       isNegated(part) || /\b(?:cancel(?:l)?ed|withdrawn|fake|not|never|won['\u2019]t|cannot|can['\u2019]t|no)\b/i.test(part))) return false;
     const text = first.replace(/\bbut no,\s*(?=it's reset day today\b)/g, "but ").replace(/\s+/g, " ");
-    if (!/\b(?:it's|it is) reset day today\b|\btoday is reset day\b/.test(text)) return false;
+    if (!/\b(?:it's|it is) reset day today\b|\btoday is reset day\b|\btoday is a reset\b/.test(text)) return false;
     if (isNegated(text)) return false;
-    if (/n't\b|\b(?:not|never|no|won't|cancell?ed|canceled|maybe|might|could|should|if|yesterday|ago|last|rumou?rs?|heard|said|router|password|device|banked|credits?)\b/.test(text)) return false;
+    if (/n't\b|\b(?:not|never|no|won't|cancell?ed|canceled|maybe|might|could|should|if|yesterday|ago|last|rumou?rs?|heard|said|router|password|device|banked|credits?|claude|anthropic|gemini)\b/.test(text)) return false;
     if (new RegExp(UNRELATED.source, UNRELATED.flags.replace("g", "")).test(text)) return false;
     return !includesAny(text, EXCLUSIONS);
   }
@@ -144,9 +186,8 @@
       referenceId(parent.id) && parent.id !== item.id && author(parent.author) === author(item.author) &&
       parent.url === `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` &&
       Number.isFinite(parentAt) && Number.isFinite(itemAt) && parentAt < itemAt && itemAt - parentAt <= 7 * 86400000 &&
-      (resetHeadline(parent.text) || resetDayForecast({ ...parent, source: item.source }));
-    return linkedHeadline && (/^(?:landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst|est|edt|et))?(?: time)?$/.test(text) ||
-      /^(?:lands|landing|arriving|coming|rolling out)(?: (?:today|tonight|tomorrow))? (?:by|before) (?:[1-9]|1[0-2])(?::[0-5]\d)? ?(?:am|pm) (?:pst|pdt|pt|utc|gmt|kst)\.?$/.test(text));
+      resetAnchor({ ...parent, source: item.source });
+    return linkedHeadline && (/^(?:landing|arriving|coming|rolling out)(?: (?:sometime|later))?(?: (?:today|tonight|tomorrow))? (?:by|before) (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst|est|edt|et))?(?: time)?$/.test(timingStatement(text)) || clockDeadline(text) || relativeResetDeadline(text));
   }
 
   function leadResetAnnouncement(item, text) {
@@ -364,6 +405,51 @@
     return /^(?:[1-9]\d{0,24})$/.test(String(value || "")) ? String(value) : null;
   }
 
+  function resetMetaphor(item) {
+    if (!isLead(item) || !publicIdentity(item) || item.truncated) return false;
+    const text = normalizedText(item);
+    if (isNegated(text) || UNRELATED.test(text) || BANKED_CREDIT.test(text) ||
+        /\b(?:password|factory|router|device|database|cache|memory|git|car|browser|terminal|settings|workspace|session|workflow|brain|mind|claude|anthropic|gemini|launch|release|product|funding|investment)\b|\b(?:api[ -]?key|context window)\b/.test(text) ||
+        clauses(text).some(part => isCompleted(part))) return false;
+    const future = clauses(text).filter(part => prospective(part)).join('. ');
+    if (!future) return false;
+    if (/\breset button\b/.test(future) && /\b(?:dust(?:ing)?|find|look(?:ing)? for|press(?:ing)?|push(?:ing)?)\b/.test(future)) return true;
+    return /\b(?:codex|quotas?|allowances?|(?:usage|weekly|rate) limits?)\b/.test(future) &&
+      /\b(?:refuel|fresh fuel|fill (?:up )?(?:the |your )?tank|gas in (?:the |your )?tank|recharge (?:the |your )?batter(?:y|ies)|fresh start|clean slate|second wind|another round|back to full|full tank)\b/.test(future);
+  }
+
+  // Presentation intent is separate from confidence in the post-to-post link.
+  // A validated timing promise borrows its reset subject from the identified
+  // announcement. Otherwise require affirmative reset wording in the own text.
+  // This display decision never promotes inferred linkage into a verified reply.
+  function isResetForecast(item) {
+    if (!item || item.assessment?.report) return false;
+    if (item.assessment?.completionLink === 'inferred') return false;
+    if (resetMetaphor(item)) return false;
+    if (isLead(item) && publicIdentity(item) && !item.truncated && !(item.poll || item.card?.poll || (Array.isArray(item.pollOptions) && item.pollOptions.length)) &&
+      (inferredTimingContext(item) || resetTimingReply(item, normalizedText(item)))) return true;
+    const text = normalizedText(item).replace(/\s+/g, ' ');
+    if (!/\breset(?:s|ting)?\b/.test(text)) return false;
+    if (item.poll || item.card?.poll || (Array.isArray(item.pollOptions) && item.pollOptions.length)) return false;
+    // Validated affirmative reset-day forecast (canonical identity/lead, first
+    // paragraph, rhetorical 'but no' stripped, later cancellation, technical and
+    // speculative contexts rejected) wins before the generic full-body scans.
+    if (resetDayForecast(item)) return true;
+    if (/\?/.test(text)) return false;
+    if (/\b(?:please|pls|plz|can you|could you|would you|should|we need|need a|give us|bring|want|wish|hope|begging|demand)\b/.test(text)) return false;
+    const resetParts = clauses(text).filter(part => /\breset(?:s|ting)?\b/.test(part));
+    if (resetParts.some(part => isNegated(part) || /n't\b|\b(?:not|never|no|cancell?ed|canceled|fake|maybe|might|could|if)\b/.test(part) ||
+      new RegExp(UNRELATED.source, UNRELATED.flags.replace('g', '')).test(part))) return false;
+    return item.assessment?.actionable === true || resetAnchor(item) || !!dayResetAnnouncement(item) ||
+      resetParts.some(part => /^(?:but\s+)?(?:yes[,…\s]+)?(?:that(?:'s| is)|it(?:'s| is)) (?:a |another |the )?reset$/.test(part.replace(/[.!]+$/, '').trim()));
+  }
+
+  function isInferredReset(item) {
+    const a = item?.assessment || {};
+    return !isResetForecast(item) && !a.actionable && (['reset-metaphor', 'reset-scarcity', 'semantic-reset', 'refuel', 'fresh-start', 'reset-button'].includes(a.rule) ||
+      a.timingLink === 'inferred' || a.completionLink === 'inferred' || resetMetaphor(item));
+  }
+
   // These are deliberately weak, local hints. They never enter actionable(),
   // forecasts or account advice, and are not a general semantic classifier.
   function classifyHint(item, options = {}) {
@@ -372,6 +458,13 @@
     const now = options.now ?? Date.now();
     const at = root.RadarTime?.parseTimestamp?.(item.createdAt);
     if (!at || at > now + 300000 || now - at > 7 * 24 * 3600000) return none;
+    if (publicIdentity(item) && !item.truncated && !(item.poll || item.card?.poll || (Array.isArray(item.pollOptions) && item.pollOptions.length)) &&
+        /^not enough resets?[.!]*$/.test(normalizedText(item).replace(/\s+/g, ' '))) {
+      return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '',
+        rule: 'reset-scarcity', reason: '리셋 부족 언급 · 실행·일정·완료 미확인' };
+    }
+    const semantic = root.RadarSemantic?.hint(item, options);
+    if (semantic && !classify(item, options).actionable && !reports([item], options).length) return semantic;
     const text = normalizedText(item);
     if (UNRELATED.test(text) || BANKED_CREDIT.test(text)) return none;
     const rhetorical = text.replace(RHETORICAL, "rhetorical reset question");
@@ -380,6 +473,8 @@
     if (isNegated(rhetorical)) return none;
     if (classify(item, options).actionable) return none;
     if (resetUpdate(item)) return none;
+    if (resetMetaphor(item)) return { candidate: true, actionable: false, confidence: 'low', eventAt: null,
+      rule: 'reset-metaphor', reason: '리셋을 암시하는 은유 · 실행·일정은 미확인' };
     const day = dayResetAnnouncement(item);
     if (day === 'completed') return none;
     if (day) return { candidate: true, actionable: false, confidence: 'low', eventAt: null, qualifier: '',
@@ -484,7 +579,9 @@
         id: String(item.id), text: String(item.text).slice(0, 6000), author: item.author, avatarUrl: avatarUrl(item.avatarUrl),
         createdAt: item.createdAt, source: item.source, url: item.url, assessment,
         ...(pollOptions(item.pollOptions).length ? { pollOptions: pollOptions(item.pollOptions) } : {}),
-        ...(item.replyContext ? { replyContext: item.replyContext } : {})
+        ...(item.replyContext ? { replyContext: item.replyContext } : {}),
+        ...(assessment.rule === 'semantic-reset' ? { semantic: item.semantic,
+          ...(item.semanticContext ? { semanticContext: item.semanticContext } : {}) } : {})
       });
     }
     const limit = Number.isInteger(options.limit) ? Math.min(100, Math.max(1, options.limit)) : 3;
@@ -510,9 +607,52 @@
     item.url === `https://x.com/${String(item.author).replace(/^@/, '')}/status/${item.id}`;
   const sameAuthor = (a, b) => String(a?.author || '').replace(/^@/, '').toLowerCase() === String(b?.author || '').replace(/^@/, '').toLowerCase();
 
+  // Display evidence for a standalone clock follow-up; never a confirmed reply
+  // relationship, high-confidence reset claim, execution time or account reset.
+  function inferredTimingContext(item) {
+    const parent = item?.replyContext, before = Date.parse(parent?.createdAt), at = Date.parse(item?.createdAt);
+    return !!(isLead(item) && publicIdentity(item) && !item.truncated && (clockDeadline(normalizedText(item)) || relativeResetDeadline(normalizedText(item))) &&
+      parent?.relation === 'previous-reset-announcement' && parent.targetId === item.id && publicIdentity(parent) &&
+      parent.id !== item.id && sameAuthor(parent, item) && !parent.truncated && Number.isFinite(before) && Number.isFinite(at) &&
+      before < at && at - before <= 15 * 60000 && (!item.inReplyToId || item.inReplyToId === parent.id) &&
+      resetAnchor({ ...parent, source: item.source }));
+  }
+
+  function linkTimingFollowUps(items) {
+    const originals = [...new Map((items || []).filter(item => item?.id).map(item => [item.id, item])).values()];
+    return originals.map(item => {
+      if (item.replyContext?.relation === 'previous-reset-announcement') {
+        const { replyContext: _old, ...raw } = item; item = raw;
+      }
+      if (item.replyContext || item.quotedPost || !publicIdentity(item) || !isLead(item) || item.truncated ||
+          !(clockDeadline(normalizedText(item)) || relativeResetDeadline(normalizedText(item)))) return item;
+      const at = Date.parse(item.createdAt);
+      const parents = originals.filter(parent => parent.id !== item.id && publicIdentity(parent) && sameAuthor(parent, item) &&
+        !parent.truncated && isLead(parent) && Date.parse(parent.createdAt) < at && at - Date.parse(parent.createdAt) <= 15 * 60000 &&
+        resetAnchor(parent));
+      if (parents.length !== 1) return item;
+      const parent = parents[0], before = Date.parse(parent.createdAt);
+      // An intervening same-author post, another reset or an explicit different
+      // reply target makes the subject ambiguous. Never choose the nearest guess.
+      if (originals.some(other => other.id !== item.id && other.id !== parent.id && sameAuthor(other, item) &&
+          Date.parse(other.createdAt) > before && Date.parse(other.createdAt) < at)) return item;
+      const linked = { ...item, replyContext: { id: parent.id, author: parent.author, text: parent.text, url: parent.url,
+        createdAt: parent.createdAt, relation: 'previous-reset-announcement', targetId: item.id } };
+      return inferredTimingContext(linked) ? linked : item;
+    });
+  }
+
   function shortResetCompletion(item) {
-    if (!isLead(item) || !publicIdentity(item) || item.truncated || !SHORT_COMPLETION.test(normalizedText(item))) return null;
+    // Propagation is a completion only under the verified quote/reply below.
+    // Permit the observed coding/week-ahead aside, not arbitrary rollout text.
+    const body = normalizedText(item).replace(/\s+/g, ' ');
+    const propagated = /^(?:it(?:'s| is| has)(?: now)?(?: been)? |the resets? (?:has|have|is|are)(?: now)?(?: been)? )?(?:all|fully|all fully) (?:propagated|rolled out)[.!]*(?: enjoy (?:some )?mad codexing tomorrow[.!]*| fun week ahead(?: too)?[.!]*)*$/.test(body);
+    const dusted = /^done and dusted[.!]*$/.test(body);
+    // This sign-off requires the same verified quote/reply context as other completions.
+    const goodNews = /^and it(?:['\u2019]s| is) done[.!]* see you tomorrow for some good news[.!]*$/.test(body);
+    if (!isLead(item) || !publicIdentity(item) || item.truncated || !(SHORT_COMPLETION.test(body) || propagated || dusted || goodNews)) return null;
     const parent = item.replyContext, inferred = parent?.relation === 'previous-announcement';
+    if (inferred && !SHORT_COMPLETION.test(body)) return null;
     const before = root.RadarTime.parseTimestamp(parent?.createdAt), at = root.RadarTime.parseTimestamp(item.createdAt);
     if ((!inferred && !['quoted-post', 'conversation-before'].includes(parent?.relation)) || parent?.targetId !== item.id ||
         !publicIdentity(parent) || parent.id === item.id || !sameAuthor(parent, item) || parent.truncated ||
@@ -520,14 +660,18 @@
         /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(parent))) return null;
     // A bare same-author "Day N/ ... reset" headline is itself the reset
     // claim, so it may anchor an inferred completion like a timing reply.
-    return classify({ ...parent, source: item.source }, { now: before }).actionable || resetHeadline(parent.text)
-      ? { inferred } : null;
+    // The quote/reply identifies the timing post directly; only the timing
+    // post's subject may use the separately bounded follow-up association.
+    const contextInferred = !inferred && inferredTimingContext({ ...parent, source: item.source });
+    return classify({ ...parent, source: item.source }, { now: before }).actionable || resetHeadline(parent.text) ||
+      propagated && !inferred && resetAnchor({ ...parent, source: item.source }) || contextInferred
+      ? { inferred, contextInferred } : null;
   }
 
   function completionReference(item, targetId, relation, nested = true) {
     const parent = { id: item.id, author: item.author, text: String(item.text).slice(0, 6000),
       createdAt: item.createdAt, url: item.url, truncated: Boolean(item.truncated), relation, targetId };
-    if (nested && publicIdentity(item.replyContext) && ['quoted-post', 'conversation-before'].includes(item.replyContext?.relation))
+    if (nested && publicIdentity(item.replyContext) && ['quoted-post', 'conversation-before', 'previous-reset-announcement'].includes(item.replyContext?.relation))
       parent.replyContext = completionReference(item.replyContext, item.id, item.replyContext.relation, false);
     return parent;
   }
@@ -548,15 +692,28 @@
         publicIdentity(context) && ['quoted-post', 'conversation-before', 'previous-announcement'].includes(context.relation)
         ? { ...item, replyContext: completionReference(context, item.id, context.relation) } : item);
     }
+    const contextOnly = new Set();
     // Retained reports keep the bounded public evidence, never a permanent
     // verdict. Prefer a newly collected edit over the saved promise body.
     for (const item of originals) if (shortResetCompletion(item)?.inferred && !byId.has(item.replyContext.id))
       byId.set(item.replyContext.id, { ...item.replyContext, source: item.source });
     // Cached hint posts (e.g. a headline seen on an earlier poll) are claim
     // evidence only; they are never emitted as rows themselves.
-    const contextOnly = new Set();
     for (const extra of Array.isArray(options.context) ? options.context : [])
       if (extra?.id && !byId.has(extra.id)) { byId.set(extra.id, extra); contextOnly.add(extra.id); }
+    // A saved quoted completion retains two evidence posts. Reuse them only
+    // if the saved chain is structurally valid, after current posts and hints.
+    for (const item of originals) if (shortResetCompletion(item)?.contextInferred) {
+      for (const evidence of [item.replyContext, item.replyContext.replyContext]) {
+        if (!byId.has(evidence.id)) {
+          byId.set(evidence.id, { ...evidence, source: item.source });
+          contextOnly.add(evidence.id);
+        }
+      }
+    }
+    // Recheck uniqueness and intervening posts against the entire current
+    // pool. An edited root or newly found competing root revokes old links.
+    for (const item of linkTimingFollowUps([...byId.values()])) byId.set(item.id, item);
     const rows = [...byId.values()].sort((a, b) => (root.RadarTime.parseTimestamp(a.createdAt) || 0) - (root.RadarTime.parseTimestamp(b.createdAt) || 0));
     const consumed = new Set();
     return rows.map(item => {
@@ -565,8 +722,11 @@
       const reference = item.replyContext, full = byId.get(reference?.id);
       if (['quoted-post', 'conversation-before'].includes(reference?.relation) && full &&
           publicIdentity(full) && sameAuthor(full, reference) && full.url === reference.url && full.text === reference.text &&
-          root.RadarTime.parseTimestamp(full.createdAt) === root.RadarTime.parseTimestamp(reference.createdAt) && full.replyContext)
-        item = { ...item, replyContext: { ...reference, replyContext: full.replyContext } };
+          root.RadarTime.parseTimestamp(full.createdAt) === root.RadarTime.parseTimestamp(reference.createdAt)) {
+        const { replyContext: _old, ...currentReference } = reference;
+        item = { ...item, replyContext: { ...currentReference,
+          ...(full.replyContext ? { replyContext: full.replyContext } : {}) } };
+      }
       if (item.replyContext?.relation === 'previous-announcement') {
         const { replyContext: _inferred, ...original } = item; item = original;
       }
@@ -619,7 +779,14 @@
       const resetCompletion = resetCompletedFollowUp(item) || Boolean(shortCompletion);
       const grant = Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
         /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
-      const completed = resetCompletion || relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
+      // A concrete processed statement needs reset-specific surrounding context;
+      // earlier unrelated speculation is not itself a completion assertion.
+      const processed = publicIdentity(item) && !item.truncated && !BANKED_CREDIT.test(text) && !UNRELATED.test(text) &&
+        !includesAny(text, EXCLUSIONS) && !isNegated(text) &&
+        !/\b(?:cancel(?:led|ed)|withdrawn|not|never|maybe|might|could|should|if|yesterday|ago)\b/.test(text) &&
+        (/\b(?:codex|usage|quota|limits?|global)\b/.test(text) || /\b(?:vote|community)\b/.test(text)) &&
+        relevant.some(part => /^(?:the |a )?reset (?:has been|was) processed$/.test(part));
+      const completed = resetCompletion || processed || relevant.some(part => !BANKED_CREDIT.test(part) && !/\bbanked resets?\b/.test(part) &&
         !includesAny(part, EXCLUSIONS) && (!prospective(part) || reflected(part)) && /\bresets?\b/.test(part) &&
         ((/\b(?:codex|chatgpt|limits?|quotas?|allowance|usage|tokens?)\b/.test(part) &&
           (isCompleted(part) || /\b(?:was|were|we've|i've) (?:just |now )?reset\b/.test(part))) ||
@@ -631,14 +798,15 @@
         createdAt: item.createdAt, source: item.source, url: item.url,
         ...((update || followUp || resetCompletion) && item.replyContext ? { replyContext: item.replyContext } : {}),
         assessment: { report: grant ? 'credit-grant' : completed || dayReset ? 'completed-reset' : 'reset-update', actionable: false,
-          confidence: shortCompletion?.inferred || dayReset ? 'medium' : 'high', eventAt: null,
+          confidence: shortCompletion?.inferred || shortCompletion?.contextInferred || dayReset ? 'medium' : 'high', eventAt: null,
           ...(dayReset ? { announcement: 'day-series' } : {}),
           ...(shortCompletion ? { completionLink: shortCompletion.inferred ? 'inferred' : 'verified' } : {}),
+          ...(shortCompletion?.contextInferred ? { completionContext: 'inferred' } : {}),
           ...(followUp ? { grantStage: followUp } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
           reason: followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
             followUp === 'timing' ? '리셋권 지급 시간 안내 · 원문 시간 표현 기준 · 정확한 시각 미확정' :
-            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : dayReset ? '일차별 소식의 리셋 공지 · 리셋 종류·시각·내 계정 반영은 별도 확인' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
+            grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : dayReset ? '일차별 소식의 리셋 공지 · 리셋 종류·시각·내 계정 반영은 별도 확인' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : shortCompletion?.contextInferred ? '인용한 일정의 완료 공지 · 리셋 원글 연결은 후속 문맥 추정 · 내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
     }
     return [...unique.values()].sort((a, b) => root.RadarTime.parseTimestamp(b.createdAt) - root.RadarTime.parseTimestamp(a.createdAt)).slice(0, 30);
@@ -657,13 +825,21 @@
         parent.url !== `https://x.com/${String(parent.author).replace(/^@/, '')}/status/${parent.id}` ||
         !Number.isFinite(parentAt) || !Number.isFinite(itemAt) || parentAt >= itemAt || itemAt - parentAt > 7 * 86400000 ||
         /\b(?:banked|stored|spare|credits?)\b/.test(normalizedText(parent)) ||
-        !classify({ ...parent, source: item.source }, { now: parentAt }).actionable) return false;
+        !(classify({ ...parent, source: item.source }, { now: parentAt }).actionable || explicitEodResetPromise(parent))) return false;
     const text = normalizedText(item);
     if (!/\bresets?\b/.test(text) || isNegated(text) || UNRELATED.test(text) || includesAny(text, EXCLUSIONS) ||
         /\b(?:banked|stored|spare|credits?|products?|launch|releases?|dev ?day|events?|not|never|cannot|can't|won't|cancelled|canceled|withdrawn|yesterday|last (?:year|month|week)|ago|previous|recap)\b/.test(text)) return false;
     const statements = text.replace(/[^.!?;\n]*\?/g, '');
     if (SPECULATIVE.test(statements)) return false;
-    return clauses(statements).some(part => /^(?:it's|it is|the reset is|the reset has been) (?:now )?(?:done|complete(?:d)?|finished)$/.test(part));
+    return clauses(statements).some(part => /^(?:it's|it is|the reset is|the reset has been) (?:now )?(?:done|complete(?:d)?|finished)$/.test(part)) ||
+      /^put the reset in the bag\.\s*all propagated[.!]*$/.test(text);
+  }
+
+  function explicitEodResetPromise(item) {
+    const text = normalizedText(item);
+    if (!text || isNegated(text) || UNRELATED.test(text) || BANKED_CREDIT.test(text) || includesAny(text, EXCLUSIONS) ||
+        /\b(?:not|never|maybe|might|could|should|if|cancel(?:led|ed)|withdrawn|yesterday|ago)\b/.test(text)) return false;
+    return clauses(text).some(part => /^(?:(?:a|the) )?(?:global |full )?reset (?:is )?(?:landing )?by (?:eod|(?:the )?end of (?:the )?day)(?: (?:pst|pdt|pt|utc|gmt|kst))?$/.test(part));
   }
 
   function resetGrantFollowUp(item) {
@@ -771,7 +947,8 @@
   }
 
   root.RadarSignals = Object.freeze({
-    isLead, authorName, avatarUrl, pollOptions, resetHeadline, resetDiscussion, eventContext, hasEventTime,
+    isLead, authorName, avatarUrl, pollOptions, resetHeadline, resetAnchor, timingStatement, clockDeadline, resetDiscussion, eventContext, hasEventTime,
+    inferredTimingContext, linkTimingFollowUps, resetMetaphor, isInferredReset, isResetForecast,
     classify,
     classifyHint,
     hintCandidates,

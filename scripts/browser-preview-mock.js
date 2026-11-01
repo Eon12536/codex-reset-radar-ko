@@ -35,11 +35,12 @@
       timezoneMode: "system",
       timezoneOverride: "UTC",
       monitorSignals: true,
+      resetOnly: true,
       monitorAccount: true,
       monitorLeadSource: true,
       monitorStatusSource: true,
-      monitorHistorySource: true,
-      monitorCommunitySource: true,
+      monitorHistorySource: false,
+      monitorCommunitySource: false,
       confidenceThreshold: "high",
       notifyOfficialReset: true,
       notifyCreditExpiry: true,
@@ -138,6 +139,87 @@
   };
 
   const mode = new URLSearchParams(globalThis.location?.search || "").get("mode");
+  // Observed public source text; display fixture only, never native delivery.
+  if (mode === 'dailyReset' || mode === 'lateTiming' || mode === 'statusChips' || mode === 'identityTiming' || mode === 'standaloneTiming' || mode === 'inferredReset' || mode === 'midnightReset' || mode === 'intentReset') {
+    const parent = { id: '2113492187770175603', author: 'thsottiaux', source: { id: 'codex-lead', weight: 1 },
+      url: 'https://x.com/thsottiaux/status/2113492187770175603', createdAt: '2026-10-23T04:46:19.000Z',
+      text: 'Day 18/ Decisions API is GA, OpenResponses joined the Linux Foundation, we shipped some performance improvements and Uber is going all-in on codex & work. But yes… that’s a reset!' };
+    const reply = { id: '2113492502355562875', author: 'thsottiaux', source: parent.source,
+      url: 'https://x.com/thsottiaux/status/2113492502355562875', createdAt: '2026-10-23T04:47:34.000Z',
+      text: 'Landing tomorrow before 10am PST together with a small ship.', isReply: true,
+      replyContext: { ...parent, relation: 'conversation-before', targetId: '2113492502355562875' },
+      assessment: { actionable: true, confidence: 'high', score: 8, weightedScore: 8, eventAt: null, untimedPromise: true } };
+    if (mode === 'midnightReset' || mode === 'intentReset') {
+      // Screenshot text with synthetic IDs/reply time: conversion fixture only.
+      Object.assign(parent, { id: '9900001', url: 'https://x.com/thsottiaux/status/9900001',
+        createdAt: '2026-10-25T03:39:00Z', text: 'Day 20/ Rest and reset' });
+      Object.assign(reply, { id: '9900002', url: 'https://x.com/thsottiaux/status/9900002',
+        createdAt: '2026-10-25T03:40:00Z', text: 'By midnight PST',
+        replyContext: { ...parent, relation: 'conversation-before', targetId: '9900002' } });
+    }
+    state.settings.dailyResetDigest = new URLSearchParams(location.search).get('digest') !== 'off';
+    state.uiLocale = new URLSearchParams(location.search).get('country') || 'ko-KR';
+    state.signalSnapshot = { checkedAt: now, activeSignals: [reply], timingReplies: [reply], reports: [], leadStatus: { directOk: true, collectionVerified: true,
+      latestPostAt: Date.parse(reply.createdAt), directScan: { posts: 106, timelines: ['posts', 'replies'].flatMap(kind =>
+        ['thsottiaux', 'reach_vb', 'openai'].map(author => ({ kind, author, ok: true }))) } } };
+    state.hintSnapshot = { items: [parent] };
+    state.semanticStatus = { state: 'available', pending: 0, classified: 106, checkedAt: now };
+    state.publicAlertState = { entries: Object.fromEntries([parent, reply].map(item => [item.id,
+      { observedAt: now - 60000, expiresAt: now + 86340000, publishedAt: Date.parse(item.createdAt) }])) };
+    if (mode === 'intentReset') {
+      // User-supplied wording; synthetic ID/publication time for display QA.
+      const today = { ...parent, id: '9910001', url: 'https://x.com/thsottiaux/status/9910001',
+        createdAt: '2026-10-26T03:00:00Z', text: 'Not enough resets. But today is a reset.',
+        assessment: { actionable: true, confidence: 'high', score: 8, weightedScore: 8, eventAt: null, untimedPromise: true } };
+      state.signalSnapshot.activeSignals.push(today);
+      state.signalSnapshot.leadStatus.latestPostAt = Date.parse(today.createdAt);
+      state.publicAlertState.entries[today.id] = { observedAt: now - 60000, expiresAt: now + 86340000, publishedAt: Date.parse(today.createdAt) };
+      for (const item of [parent, reply]) state.publicAlertState.entries[item.id].observedAt = Date.parse('2026-10-25T05:00:00Z');
+    }
+    if (mode === 'identityTiming') {
+      const display = { ...parent, id: 'feed:' + parent.id, url: parent.url + '?s=20' };
+      state.hintSnapshot.items = [display];
+      state.signalSnapshot.activeSignals = [];
+      state.publicAlertState.entries[display.id] = state.publicAlertState.entries[parent.id];
+    }
+    if (mode === 'standaloneTiming') {
+      // The direct-reply relationship is absent, matching the reported view.
+      // Stored inference is revalidated by RadarNews; no native delivery here.
+      state.signalSnapshot.activeSignals = [];
+      state.signalSnapshot.timingReplies = [{ ...reply, isReply: false,
+        replyContext: { ...parent, relation: 'previous-reset-announcement', targetId: reply.id },
+        assessment: { actionable: false, candidate: true, confidence: 'medium', timingLink: 'inferred' } }];
+    }
+    if (mode === 'inferredReset') {
+      const make = (id, text, assessment = {}) => ({ ...parent, id, text, createdAt: new Date(now - 60000).toISOString(), url: `https://x.com/thsottiaux/status/${id}`, assessment });
+      const mention = make('82001', 'Day 20/ Rest and reset');
+      const forecast = make('82002', 'We will reset Codex usage limits tomorrow.', { actionable: true, confidence: 'high', score: 8, weightedScore: 8, eventAt: now + 86400000 });
+      const completed = make('82003', 'Codex usage limits have been reset for everyone.', { report: 'completed-reset' });
+      const inferred = make('82004', 'Time to refuel Codex soon.');
+      state.signalSnapshot.activeSignals = [forecast]; state.signalSnapshot.timingReplies = []; state.signalSnapshot.reports = [completed];
+      state.hintSnapshot.items = [mention, inferred];
+      for (const item of [mention, forecast, completed, inferred]) state.publicAlertState.entries[item.id] = {
+        observedAt: now - 60000, expiresAt: now + 86340000, publishedAt: Date.parse(item.createdAt) };
+    }
+    if (mode === 'statusChips') {
+      // Synthetic display-only rows exercise different statuses together.
+      // They do not assert these posts exist or send native notifications.
+      const mention = { ...parent, id: '81001', url: 'https://x.com/thsottiaux/status/81001',
+        text: 'Maybe dust off the reset button next Tuesday.' };
+      const completed = { ...parent, id: '81002', url: 'https://x.com/thsottiaux/status/81002',
+        text: 'Codex usage limits have been reset for everyone.' };
+      state.hintSnapshot.items.push(mention);
+      state.signalSnapshot.reports.push(completed);
+      for (const item of [mention, completed]) state.publicAlertState.entries[item.id] = {
+        observedAt: now - 60000, expiresAt: now + 86340000, publishedAt: Date.parse(item.createdAt) };
+    }
+    if (mode === 'lateTiming') {
+      const detected = Date.parse('2026-10-24T01:00:00Z'); // Explicitly labelled display fixture, not measured collection.
+      state.publicAlertState.entries[parent.id].observedAt = detected - 86400000;
+      state.publicAlertState.entries[reply.id].observedAt = detected;
+      state.signalSnapshot.checkedAt = detected;
+    }
+  }
   // Synthetic review-only fixture; preview mock never creates real notifications.
   // Observed public Day17 text; display fixture only, no actual collection or OS delivery.
   if (mode === 'resetDay17') {
@@ -177,6 +259,17 @@
 ];
     state.signalSnapshot = { checkedAt: now, activeSignals: posts.map(item => ({ ...item, assessment: { actionable: true, confidence: 'high', score: 8, weightedScore: 8, eventAt: null, untimedPromise: true } })), reports: [] };
     state.hintSnapshot = { items: [] };
+  }
+  // Synthetic semantic result: preview display only, not actual inference or notification.
+  if (mode === 'semanticReview') {
+    const item = { id: '95095', author: 'thsottiaux', text: 'Your quota gets a fresh start after dinner.',
+      createdAt: new Date(now - 1800000).toISOString(), source: { id: 'codex-lead', weight: 1 },
+      url: 'https://x.com/thsottiaux/status/95095' };
+    item.semantic = { version: 1, key: JSON.stringify({ policy: '2026-10-22.1', input: { id: item.id, author: item.author, text: item.text, createdAt: item.createdAt } }),
+      category: 'forecast', evidence: item.text };
+    state.signalSnapshot = { checkedAt: now, activeSignals: [], reports: [] };
+    state.hintSnapshot = { items: [item] };
+    state.semanticStatus = { state: 'available', pending: 0, classified: 1, positive: 1, checkedAt: now };
   }
   if (mode === 'resetReview') {
     state.settings.notifyHints = true;
@@ -621,10 +714,10 @@
           return { ok: true };
         }
         if (message?.type === "REFRESH_SIGNALS") return { ok: true, leadVerified: mode !== "staleFeed" };
-        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.94", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
+        if (message?.type === "NOTIFICATION_STATUS") return { ok: true, version: mode === "oldWorker" ? "0.2.18" : "0.2.95", permission: "granted", hintAlerts: Boolean(state.settings.notifyHints), resetHintAlerts: state.settings.notifyResetHints !== false, pending: 0, quiet: false, realDelivery: { status: "accepted", at: Date.now() - 3600000, test: false }, publicAlerts: { pending: 0, handled: 3, expired: 7, disabled: 2, eligible: 0 } };
         if (message?.type === "TEST_NOTIFICATION") {
           if (mode === "notificationTimeout") return new Promise(() => {});
-          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.94", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
+          return { version: mode === "oldWorker" ? "0.2.18" : "0.2.95", ...(mode === "notificationImageError" ? { ok: false, reason: "image" } : { ok: true }) };
         }
         if (["REFRESH_ACCOUNT", "REFRESH_NOW"].includes(message?.type)) {
           if (mode === "reconnect" && previewSignedIn) {

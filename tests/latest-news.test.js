@@ -49,7 +49,7 @@ test('new rules preserve exclusions, source identity, completion and cancellatio
 test('newly fetched posts join old candidates and deliver the configured notification once', async () => {
   const fresh = fixture.posts.map(item => ({ ...item, createdAt: new Date().toISOString() }));
   const old = post('3am on a tuesday', { id: '100', createdAt: new Date(Date.now() - 3600000).toISOString() });
-  const w = makeWorker({ stored: { settings: { monitorAccount: false, monitorDirectX: true, notifyHints: true,
+  const w = makeWorker({ stored: { settings: { resetOnly: false, monitorAccount: false, monitorDirectX: true, notifyHints: true,
     monitorStatusSource: false, monitorHistorySource: false, monitorCommunitySource: false, quietHoursEnabled: false },
     hintSnapshot: { items: [old] } }, fetcher: async () => json({ items: [] }) });
   w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async () => ({ items: Direct.normalize(fresh),
@@ -57,7 +57,7 @@ test('newly fetched posts join old candidates and deliver the configured notific
   await w.context.refreshSignals();
   assert.equal(w.local.signalSnapshot.signal.id, fresh[0].id);
   assert.equal(w.local.hintSnapshot.items.length, 2);
-  assert.equal(News.list(w.local.signalSnapshot, w.local.hintSnapshot, Settings.sanitize()).length, 3);
+  assert.equal(News.list(w.local.signalSnapshot, w.local.hintSnapshot, Settings.sanitize({ resetOnly: false })).length, 3);
   assert.ok(w.notifications['signal:' + fresh[0].id]);
   assert.ok(w.notifications['hint:' + fresh[1].id]);
   const history = JSON.stringify(w.local.notificationHistory);

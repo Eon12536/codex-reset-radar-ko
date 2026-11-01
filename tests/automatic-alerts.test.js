@@ -9,7 +9,7 @@ const WAKE = 'codex-reset-radar-wake-check';
 function harness(stored = {}) {
   let now = START;
   const source = { fail: false, creditsStatus: 200, count: 1, expires: [START + 48 * HOUR], posts: [] };
-  const w = makeWorker({ stored: { ...stored, settings: { monitorAccount: true,
+  const w = makeWorker({ stored: { expiryStagesSchema: 1, ...stored, settings: { monitorAccount: true, expiryWarningHours: 24,
     monitorSignals: false, quietHoursEnabled: false, notifyAdvice: false,
     notifyAccountReset: false, ...stored.settings } }, fetcher: async url => {
     if (source.fail) throw new Error('offline');
@@ -24,6 +24,72 @@ function harness(stored = {}) {
     refresh: () => w.context.pollAll({ quiet: true }),
     alarm: name => w.context.chrome.alarms.get(name) };
 }
+
+test('a verified available credit warns at 72, 48 and 24 hours exactly once across checks', async () => {
+  const h = harness({ settings: { expiryWarningHours: 72 } });
+  h.source.expires = [START + 96 * HOUR];
+  await h.refresh();
+  assert.equal((await h.alarm(EXPIRY)).when, START + 24 * HOUR);
+  for (const [offset, stage] of [[24, 72], [48, 48], [72, 24]]) {
+    h.clock(START + offset * HOUR);
+    await h.events.alarm({ name: EXPIRY, scheduledTime: START + offset * HOUR });
+    await h.events.alarm({ name: EXPIRY, scheduledTime: START + offset * HOUR });
+    assert.equal(Object.keys(h.notifications).filter(id => id.endsWith(':' + stage)).length, 1);
+  }
+  assert.equal(Object.keys(h.notifications).filter(id => id.startsWith('expiry:')).length, 3);
+  assert.equal(await h.alarm(EXPIRY), undefined);
+});
+
+test('on upgrade existing 24-hour default moves to 72 hours without enabling an opted-out alert', async () => {
+  const h = harness({ expiryStagesSchema: 0, settings: { expiryWarningHours: 24, notifyCreditExpiry: false } });
+  await h.context.ensureSecurity();
+  assert.equal(h.local.settings.expiryWarningHours, 72);
+  assert.equal(h.local.settings.notifyCreditExpiry, false);
+  assert.equal(h.local.expiryStagesSchema, 1);
+});
+
+test('after a missed threshold only the current expiry stage is delivered', async () => {
+  const h = harness({ settings: { expiryWarningHours: 72 } });
+  h.source.expires = [START + 96 * HOUR];
+  await h.refresh();
+  h.clock(START + 55 * HOUR);
+  await h.events.alarm({ name: EXPIRY, scheduledTime: START + 24 * HOUR });
+  const ids = Object.keys(h.notifications).filter(id => id.startsWith('expiry:'));
+  assert.equal(ids.length, 1);
+  assert.match(ids[0], /:48$/);
+  assert.equal((await h.alarm(EXPIRY)).when, START + 72 * HOUR);
+});
+
+test('a quiet-hours queued old stage is discarded once a later stage becomes due', async () => {
+  const h = harness({ settings: { expiryWarningHours: 72 } });
+  h.source.expires = [START + 96 * HOUR];
+  await h.refresh();
+  h.context.RadarTime = { ...h.context.RadarTime, isQuietHours: () => true };
+  h.clock(START + 24 * HOUR);
+  await h.events.alarm({ name: EXPIRY, scheduledTime: START + 24 * HOUR });
+  assert.ok(h.local.pendingNotifications.some(item => item.id.endsWith(':72')));
+  h.context.RadarTime = { ...h.context.RadarTime, isQuietHours: () => false };
+  h.clock(START + 48 * HOUR);
+  await h.events.alarm({ name: EXPIRY, scheduledTime: START + 48 * HOUR });
+  assert.ok(!h.local.pendingNotifications.some(item => item.id.endsWith(':72')));
+  const ids = Object.keys(h.notifications).filter(id => id.startsWith('expiry:'));
+  assert.equal(ids.length, 1);
+  assert.match(ids[0], /:48$/);
+});
+
+test('legacy expiry receipt remains honored after enabling the staged schedule', async () => {
+  const h = harness({ settings: { expiryWarningHours: 24 } });
+  await h.refresh(); h.clock(START + 24 * HOUR);
+  await h.events.alarm({ name: EXPIRY, scheduledTime: START + 24 * HOUR });
+  const stagedId = Object.keys(h.notifications).find(id => id.startsWith('expiry:'));
+  const legacyId = stagedId.replace(/:24$/, '');
+  h.local.notificationHistory[legacyId] = h.local.notificationHistory[stagedId];
+  delete h.local.notificationHistory[stagedId];
+  h.local.settings.expiryWarningHours = 72;
+  await h.refresh();
+  assert.equal(Object.keys(h.notifications).filter(id => id.startsWith('expiry:')).length, 1);
+  assert.equal(await h.alarm(EXPIRY), undefined);
+});
 
 test('a verified credit schedules its own exact 24-hour warning and a lightweight wake check', async () => {
   const h = harness(); await h.refresh();
@@ -44,6 +110,43 @@ test('the expiry alarm rechecks current credits and notifies once without openin
   assert.equal(Object.keys(h.notifications).length, 1);
   assert.match(Object.keys(h.notifications)[0], /^expiry:/);
   assert.equal(await h.alarm(EXPIRY), undefined);
+});
+
+test('an approaching verified credit expiry triggers a Windows alert and persistent toolbar exclamation without changing settings', async () => {
+  const h = harness(); const labels = [], colors = [];
+  h.context.chrome.action.setBadgeText = async ({ text }) => labels.push(text);
+  h.context.chrome.action.setBadgeBackgroundColor = async ({ color }) => colors.push(color);
+  await h.refresh();
+  const settings = structuredClone(h.local.settings);
+  assert.doesNotMatch(labels.at(-1), /!/);
+  h.clock(START + 24 * HOUR);
+  await h.events.alarm({ name: EXPIRY, scheduledTime: START + 24 * HOUR });
+  assert.match(labels.at(-1), /!$/);
+  assert.equal(colors.at(-1), '#e05f52');
+  assert.match(Object.keys(h.notifications)[0], /^expiry:/);
+  assert.deepEqual(h.local.settings, settings);
+  const cleanup = await h.alarm('codex-reset-radar-badge-expiry');
+  assert.equal(cleanup.when, START + 48 * HOUR);
+  h.clock(START + 48 * HOUR);
+  await h.events.alarm({ name: 'codex-reset-radar-badge-expiry', scheduledTime: START + 48 * HOUR });
+  assert.doesNotMatch(labels.at(-1), /!/);
+});
+
+test('expiry badge respects an opted-out alert, an unverified or used credit, and full quota remains legible', async () => {
+  const h = harness(); const labels = [];
+  h.context.chrome.action.setBadgeText = async ({ text }) => labels.push(text);
+  await h.refresh(); h.clock(START + 24 * HOUR);
+  const snapshot = structuredClone(h.local.accountSnapshot);
+  snapshot.usage = { windows: [{ kind: 'weekly', remainingPercent: 100 }] };
+  await h.context.updateBadge(snapshot, null, null);
+  assert.ok(labels.at(-1).endsWith('!') && labels.at(-1).length <= 4);
+  await h.context.updateBadge({ ...snapshot, accountKey: null }, null, null);
+  assert.doesNotMatch(labels.at(-1), /!/);
+  await h.context.updateBadge({ ...snapshot, credits: { availableCount: 0, credits: [] } }, null, null);
+  assert.doesNotMatch(labels.at(-1), /!/);
+  await h.context.updateBadge(snapshot, null, null);
+  await h.context.saveSettings({ ...h.local.settings, notifyCreditExpiry: false });
+  assert.doesNotMatch(labels.at(-1), /!/);
 });
 
 test('a spent credit cancels its scheduled warning after a fresh automatic read', async () => {
@@ -198,7 +301,7 @@ test('startup catches a missed 24-hour expiry warning without requiring the popu
 });
 
 test('initialization repairs lost automatic alarms without resetting an existing poll deadline', async () => {
-  const h = harness();
+  const h = harness({ settings: { pollMinutes: 30 } });
   await h.context.chrome.alarms.create('codex-reset-radar-poll', { when: START + 17 * 60000, periodInMinutes: 30 });
   await h.context.ensureSecurity();
   assert.equal((await h.alarm('codex-reset-radar-poll')).when, START + 17 * 60000);

@@ -85,6 +85,85 @@ test('concurrent direct scans share one tab and remove the session ownership rec
   assert.equal(b.alarms.size, 0);
 });
 
+test('a scan-created X tab is closed after its page drops the marker and Chrome activates it', async () => {
+  const b = browser({ script: id => {
+    b.tabs.get(id).url = PAGE;
+    b.tabs.get(id).active = true;
+    b.listeners.activate({ tabId: id });
+  } }), core = b.load();
+  // Losing read-page identity may abort collection; it must not strand the
+  // same-session temporary reader on the unchanged public page.
+  await read(core).catch(() => {});
+  assert.equal(b.calls.filter(call => call[0] === 'create').length, 1);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.session[KEY], undefined);
+  assert.equal(b.alarms.has(core.CLEANUP_ALARM), false);
+});
+
+test('same-session selected markerless cleanup preserves wrong pages, query changes and explicit protection', async () => {
+  const token = '00000000-0000-4000-8000-000000000087';
+  for (const patch of [{ url: PAGE + '?user=1' }, { url: 'https://x.com/reach_vb' },
+    { url: PAGE + '#radar-x-reader=00000000-0000-4000-8000-000000000099' },
+    { pinned: true }, { windowId: 2 }]) {
+    const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url: PAGE, ...patch } });
+    assert.equal(await b.load().cleanup({ recover: true }), false, JSON.stringify(patch));
+    assert.equal(b.calls.some(call => call[0] === 'remove'), false);
+  }
+  const b = browser({ stored: lease({ token, claimed: true, protected: true }), tab: { id: 7, active: true, url: PAGE } });
+  assert.equal(await b.load().cleanup({ recover: true }), false);
+  assert.equal(b.tabs.has(7), true);
+});
+
+test('activation can restore a valid session reader before cleanup without losing its same-session proof', async () => {
+  const token = '00000000-0000-4000-8000-000000000088';
+  const b = browser({ stored: lease({ token }), tab: { id: 7, active: true, url: PAGE } }), core = b.load();
+  b.listeners.activate({ tabId: 7 });
+  assert.equal(await core.cleanup({ recover: true }), true);
+  assert.equal(b.tabs.size, 0);
+});
+
+test('worker restart can close a selected markerless reader with a valid session ownership record', async () => {
+  const token = '00000000-0000-4000-8000-000000000089';
+  const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url: PAGE } });
+  b.load(); b.stopWorker();
+  assert.equal(await b.load().cleanup({ recover: true }), true);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.session[KEY], undefined);
+});
+
+test('a markerless durable lease alone never adopts a tab after session ownership is lost', async () => {
+  const token = '00000000-0000-4000-8000-000000000090';
+  const b = browser({ tab: { id: 7, active: true, url: PAGE } }), core = b.load();
+  b.local[core.GUARD_KEY] = { version: 2, blocked: true, lease: lease({ token, claimed: true }) };
+  assert.equal(await core.cleanup({ recover: true }), false);
+  assert.equal(b.tabs.has(7), true);
+  assert.equal(b.calls.some(call => call[0] === 'remove'), false);
+  assert.equal(b.session[KEY], undefined);
+});
+
+test('markerless selected removal failure keeps its fence until retry, without creating another tab', async () => {
+  const token = '00000000-0000-4000-8000-000000000091';
+  const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url: PAGE }, failRemove: true }), core = b.load();
+  await assert.rejects(core.cleanup({ recover: true }), /X_TAB_CLEANUP_FAILED/);
+  await assert.rejects(read(core), /X_TAB_CLEANUP_FAILED/);
+  assert.equal(b.calls.some(call => call[0] === 'create'), false);
+  assert.equal(b.alarms.has(core.CLEANUP_ALARM), true);
+  b.faults.failRemove = false;
+  assert.equal(await core.cleanup({ recover: true }), true);
+  await read(core);
+  assert.equal(b.tabs.size, 0);
+  assert.equal(b.maxTabs(), 1);
+});
+
+test('a pre-existing user X tab remains open while a separately created scan tab is removed', async () => {
+  const b = browser({ tab: { id: 7, active: true, url: PAGE } });
+  await read(b.load());
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.tabs.has(7), true);
+  assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 7), false);
+  assert.equal(b.calls.filter(call => call[0] === 'create').length, 1);
+});
+
 test('a restarted worker reclaims its interrupted scan before creating another tab', async () => {
   const reached = deferred(), abandoned = deferred();
   let pause = true;
@@ -336,6 +415,20 @@ test('a closed known reader does not strand update recovery behind an unrelated 
   assert.equal(b.calls.some(call => call[0] === 'remove' && call[1] === 8), false);
 });
 
+test('a lost session and changed tab ID with a missing marker fences an ambiguous reader instead of opening another', async () => {
+  const b = browser({ tab: { id: 8, url: PAGE } });
+  const core = b.load();
+  b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'session-lost', lease: lease({
+    token: '00000000-0000-4000-8000-000000000081' }) };
+  for (let i = 0; i < 5; i++) await assert.rejects(read(b.load()), /X_TAB_BLOCKED/);
+  assert.equal(b.tabs.size, 1);
+  assert.equal(b.tabs.has(8), true);
+  assert.equal(b.calls.some(call => call[0] === 'create' || call[0] === 'remove'), false);
+  b.tabs.delete(8);
+  assert.equal((await read(b.load())).items.length, 1);
+  assert.equal(b.tabs.size, 0);
+});
+
 test('legacy ownerless update fences migrate without closing unrelated user X tabs', async () => {
   const b = browser({ tab: { id: 8, url: 'https://x.com/i/timeline' } });
   const core = b.load();
@@ -539,9 +632,9 @@ test('nonce-marked reader ownership never overrides pinning, moving or a pending
   }
 });
 
-test('selection cleanup requires the exact stored reader nonce and requested URL', async () => {
+test('selected cleanup refuses a wrong nonce or different reader page even with a valid session record', async () => {
   const token = '00000000-0000-4000-8000-000000000084';
-  for (const url of [PAGE, PAGE + '#radar-x-reader=00000000-0000-4000-8000-000000000099',
+  for (const url of [PAGE + '#radar-x-reader=00000000-0000-4000-8000-000000000099',
     'https://x.com/reach_vb#radar-x-reader=' + token, 'https://x.com/i/flow/login#radar-x-reader=' + token]) {
     const b = browser({ stored: lease({ token, claimed: true }), tab: { id: 7, active: true, url } });
     assert.equal(await b.load().cleanup({ recover: true }), false, url);

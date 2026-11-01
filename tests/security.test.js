@@ -139,11 +139,12 @@ test("settings discard unknown fields, custom endpoints and invalid types", () =
   const value=Settings.sanitize(JSON.parse('{"__proto__":{"polluted":true},"token":"secret","sourceUrl":"https://evil.invalid","monitorAccount":"true","quietStart":"99:99","pollMinutes":1}'));
   assert.equal(value.monitorAccount,false);
   assert.equal(value.sourceUrl,"");assert.equal(value.token,undefined);assert.equal(value.polluted,undefined);
-  assert.equal(value.quietStart,"23:00");assert.equal(value.pollMinutes,30);
+  assert.equal(value.quietStart,"23:00");assert.equal(value.pollMinutes,15);
 });
 
 test("public requests omit cookies, credentials, referrers and tokens", async () => {
-  const w=makeWorker();await w.context.refreshSignals();
+  // Include opt-in community sources so every public destination is checked.
+  const w=makeWorker({stored:{settings:{monitorAccount:false,monitorHistorySource:true,monitorCommunitySource:true}}});await w.context.refreshSignals();
   assert.equal(w.requests.length,4);
   for(const {options} of w.requests){assert.equal(options.credentials,"omit");assert.equal(options.referrerPolicy,"no-referrer");assert.equal(options.headers.authorization,undefined);assert.equal(options.redirect,"error");assert.equal(options.method,"GET");}
 });

@@ -58,15 +58,17 @@
 
       <section id="scanControls" class="scan-controls" aria-label="탐지 상태와 지금 확인">
       <div class="scan-toolbar">
-        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.94</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
+        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.132</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
         <button id="refreshButton" class="refresh-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg><span data-i18n="refreshNow">지금 확인</span></button>
       </div>
       <p id="newsFreshness" class="news-status muted" role="status"></p>
+      <p id="semanticStatus" class="news-status muted" role="status"></p>
+      <button id="openSemanticSettings" class="text-button" type="button">기기 AI 설정</button>
       <p id="refreshStatus" class="refresh-status" role="status" aria-live="polite"></p>
       </section>
 
       <section id="newsPanel" class="signal-panel news-panel" aria-labelledby="signalTitle">
-        <div class="section-heading news-heading"><h2 id="signalTitle">리셋·출시 소식</h2><span id="newsUnread" class="unread-marker" role="img" hidden>!</span><small class="news-timing-note">예고 시간보다 늦어질 수 있어요</small><small id="newsCount" class="muted"></small></div>
+        <div class="section-heading news-heading"><h2 id="signalTitle">리셋·출시 소식</h2><span id="newsUnread" class="unread-marker" role="img" hidden>!</span><small id="newsCount" class="muted"></small></div>
         <p id="newsEmpty" class="muted">새 소식을 확인하고 있어요</p>
         <div id="newsList" class="news-list" role="list" aria-label="감지한 소식 · 리셋 우선" tabindex="0" hidden></div>
         <div id="pinnedEvents" class="pinned-events" aria-label="행사 일정" hidden></div>
@@ -76,7 +78,7 @@
         <div class="section-heading"><h2 id="chatCountTitle">Chat · 모델별 사용량</h2><strong id="chatCountValue" class="chat-count-value" hidden>계정 확인 전</strong><button id="enableChatCounter" class="text-action" type="button">계정 연결</button></div>
         <div id="chatMeters" class="chat-meters" aria-label="Chat 추정 잔여량" hidden></div>
         <details id="chatPlanControls" class="chat-plan-controls" hidden>
-          <summary><span id="chatPlanSource">한도 기준 선택</span><span aria-hidden="true">⌄</span></summary>
+          <summary><span id="chatPlanSource">한도 기준 선택</span><span class="summary-toggle" aria-hidden="true"><span class="toggle-closed" data-i18n="creditsExpand">펼치기</span><span class="toggle-open" data-i18n="creditsCollapse">접기</span><span class="summary-chevron"></span></span></summary>
           <label for="chatPlanChoice">현재 계정의 요금제</label>
           <select id="chatPlanChoice" aria-describedby="chatCountStatus"><option value="auto">자동 확인</option></select>
           <small>선택은 이 계정에만 적용되며, 구독을 변경하지 않습니다.</small>
@@ -100,7 +102,7 @@
         <button id="viewBankedCredits" class="text-action" type="button" aria-controls="moreDetails">리셋권 보기</button>
       </section>
       <details id="moreDetails" class="more-details">
-        <summary><span class="summary-label">리셋권 · 상태 <span id="creditsUnread" class="unread-marker" role="img" hidden>!</span></span><span aria-hidden="true">+</span></summary>
+        <summary><span class="summary-label">리셋권 · 상태 <span id="creditsUnread" class="unread-marker" role="img" hidden>!</span></span><span class="summary-toggle" aria-hidden="true"><span class="toggle-closed" data-i18n="creditsExpand">펼치기</span><span class="toggle-open" data-i18n="creditsCollapse">접기</span><span class="summary-chevron"></span></span></summary>
         <div class="details-body">
           <section class="credits-panel" aria-labelledby="creditsTitle">
             <div class="section-heading"><h2 id="creditsTitle">리셋권</h2><strong id="creditsCount">—</strong></div>
@@ -127,18 +129,23 @@
     <script src="../core/time.js"></script>
     <script src="../core/usage.js"></script>
     <script src="../core/credit-grants.js"></script>
+    <script src="../core/reset-scope.js"></script>
+    <script src="../core/semantic.js"></script>
     <script src="../core/signals.js"></script>
     <script src="../core/news.js"></script>
     <script src="../core/events.js"></script>
     <script src="../core/chat-counter.js"></script>
     <script src="../core/chat-history.js"></script>
     <script src="../core/schedule.js"></script>
+    <script src="../core/daily-news.js"></script>
     <script src="../core/badge.js"></script>
     <script src="../core/forecast.js"></script>
     <script src="../core/advice.js"></script>
     <script src="../core/security.js"></script>
+    <script src="../core/reset-history.js"></script>
     <script src="../shared/news-avatar.js"></script>
     <script src="popup.js"></script>
+    <script src="../shared/semantic-ui.js"></script>
     <script src="../shared/chat-history-ui.js"></script>
     <script src="../core/ui-copy-locales.js"></script>
     <script src="../core/ui-copy.js"></script>

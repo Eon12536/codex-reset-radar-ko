@@ -7,7 +7,7 @@ function worker(extra = {}) {
   return makeWorker({ stored: { settings: { monitorAccount: false, monitorLeadSource: true,
     monitorStatusSource: false, monitorHistorySource: false, monitorCommunitySource: false,
     notifyHints: true, quietHoursEnabled: false } }, fetcher: async () => json({ items: [{
-    external_id: '251', content: 'Burn those tokens', published_at: publishedAt,
+    external_id: '251', content: 'Maybe we should reset Codex usage limits tomorrow.', published_at: publishedAt,
     metadata: { author_user_name: 'reach_vb' }
   }] }), ...extra });
 }

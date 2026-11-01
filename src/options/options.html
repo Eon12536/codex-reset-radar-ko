@@ -14,7 +14,7 @@
       <main class="settings-main">
         <div class="page-topbar">
           <div class="brand"><img src="../../assets/icons/icon128.png" width="48" height="48" alt=""><strong>Codex</strong><span>리셋 레이더</span></div>
-          <span class="version">v0.2.94</span>
+          <span class="version">v0.2.132</span>
         </div>
         <header class="page-heading">
           <div><h1>설정</h1><p>화면과 알림을 원하는 방식으로 맞춰보세요.</p></div>
@@ -41,14 +41,21 @@
               <h2>OpenAI · Tibo · VB 수집 연결</h2>
               <div class="settings-card">
                 <div class="setting-row">
-                  <div><strong>X 글·답글 직접 확인 · 항상 켜짐</strong><small>공개 소식 감시가 켜져 있으면 정기 확인과 컴퓨터 시작·절전 복귀 확인에 항상 포함됩니다. 처음 한 번 X 접근 권한 허용이 필요합니다.</small><small>OpenAI, Tibo, VB의 원글과 답글 목록을 각각 확인하고 긴 본문을 펼쳐 읽습니다. 목록별 최대 24회 스크롤, 작성자별 최대 160개, 대화 원문 최대 3개를 확인합니다. 최대 270초 동안 비활성 탭을 열었다 닫으며 같은 Chrome의 X 로그인이 필요할 수 있습니다. 공개 본문·시각·링크·작성자 사진 주소·선행 대화만 기기에 보관하며 DM·쿠키·로그인 정보는 읽지 않습니다. 최근 7일을 목표로 확인하지만 전체 수집을 보장하지 않습니다.</small></div>
+                  <div><strong>X 글·답글 직접 확인 · 항상 켜짐</strong><small>공개 소식 감시가 켜져 있으면 정기 확인과 컴퓨터 시작·절전 복귀 확인에 항상 포함됩니다. 처음 한 번 X 접근 권한 허용이 필요합니다.</small><small>OpenAI, Tibo, VB의 원글과 답글 목록을 각각 확인하고 긴 본문을 펼쳐 읽습니다. 목록별 최대 24회 스크롤, 작성자별 최대 160개, 남은 조회 시간 안에서 대화 원문을 이어서 확인합니다. 리셋 원글 아래 같은 작성자의 후속 글도 찾아 개별 대화에서 일정을 검증합니다. 최대 270초 동안 비활성 탭을 열었다 닫으며 같은 Chrome의 X 로그인이 필요할 수 있습니다. 공개 본문·시각·링크·작성자 사진 주소·선행 대화만 기기에 보관하며 DM·쿠키·로그인 정보는 읽지 않습니다. 최근 7일을 목표로 확인하지만 전체 수집을 보장하지 않습니다.</small></div>
                   <label class="switch"><input id="monitorDirectX" type="checkbox" checked disabled aria-label="X 공개 페이지 직접 확인 · 항상 켜짐"><span></span></label>
                 </div>
                 <div class="setting-row notification-check"><div><strong>글·답글 수집 상태</strong><small id="publicConnectionState" role="status">확인 전</small></div><div class="account-actions"><button id="checkPublic" class="account-button" type="button">공개 소식 확인</button></div></div>
+                <div class="setting-row notification-check"><div><strong>텔레그램 보조 확인</strong><small>공개 채널의 X 글 번호만 참고해 직접 수집에서 빠진 Tibo 글을 확인합니다. X 원문이 확인되지 않으면 공지로 표시하지 않습니다.</small><small id="telegramConnectionState" role="status">확인 전</small></div><div class="account-actions"><button id="telegramPermission" class="account-button" type="button">텔레그램 연결</button></div></div>
                 <div id="checkTabRecovery" class="setting-row notification-check" hidden><div><strong data-i18n="checkTabsPaused">확인 탭 생성 중지</strong><small data-i18n="checkTabsRecoveryHelp">이전 X 또는 요금제 확인 탭이 남았을 수 있어 새 탭 생성을 차단했습니다. 남은 확인 탭을 닫고 재개해 주세요. 공개 피드와 잔여량 조회는 계속됩니다.</small><label><input id="checkTabsClosed" type="checkbox"> <span data-i18n="checkTabsRecoveryConfirm">남은 X / ChatGPT 확인 탭을 모두 닫았습니다.</span></label><small id="checkTabRecoveryState" role="status"></small></div><div class="account-actions"><button id="resumeCheckTabs" class="account-button" type="button" data-i18n="resumeCheckTabs" disabled>탭 닫은 후 재개</button></div></div>
               </div>
             </div>
             <div class="settings-group">
+              <h2>기기 AI 문장·문맥 판정</h2>
+              <div class="settings-card">
+                <div class="setting-row"><div><strong>리셋 관련 글만 표시·알림</strong><small>기본 켜짐. 원문의 리셋·한도 회복 근거나 확인된 리셋 답글 문맥이 있어야 표시하고 알립니다. 일반 출시·행사·축하·토큰 소진 권유와 근거 없는 AI 후보는 제외합니다. 끄면 기존 출시·행사 후보도 다시 포함합니다.</small></div><label class="switch"><input id="resetOnly" type="checkbox" aria-label="리셋 관련 글만 표시·알림"><span></span></label></div>
+                <div class="setting-row"><div><strong>수집한 새 글의 의미 판정</strong><small>Chrome 내장 모델로 공개 글과 확인된 본인 선행 대화를 읽습니다. 유료 API·Claude 크레딧·외부 서버를 사용하지 않습니다. 모델 준비와 지원 기기가 필요합니다. 실패한 글은 최근 7일·최대 1,000개·2MiB 대기열에서 재시도하며, 보관 상한 초과는 표시합니다. AI 판정도 틀릴 수 있어 근거와 미확정을 표시합니다.</small></div><label class="switch"><input id="semanticEnabled" type="checkbox" aria-label="기기 AI 의미 판정"><span></span></label></div>
+                <div class="setting-row"><div><strong>모델 준비·판정 상태</strong><small id="semanticStatus" role="status">확인 전</small></div><button id="prepareSemanticModel" class="account-button" type="button">Chrome 모델 준비</button></div>
+              </div>
               <h2 data-i18n="monitoringTargets">확인할 항목</h2>
               <div class="settings-card">
             <div class="setting-row">
@@ -97,10 +104,12 @@
                 <label><input id="confidenceThresholdAll" type="radio" name="confidenceThreshold" value="all"><span data-i18n="all">전체</span></label>
               </div>
             </div>
+            <p class="muted">신뢰도는 공식 리셋 예고 알림에 적용합니다. 리셋 후보·설문 알림은 알림 탭의 별도 스위치로 제어합니다.</p>
                           </div>
             </div>
             <div class="settings-group">
               <h2 data-i18n="sourcesAndWeights">정보 출처·반영 비중</h2>
+              <p class="muted">기본은 공개 공지와 공식 상태 확인입니다. 커뮤니티 제보·과거 기록 추정은 기본 꺼짐이며 필요할 때 별도로 켤 수 있습니다.</p>
               <div class="settings-card">
             <div class="setting-row">
               <div><strong>OpenAI · Tibo · VB의 Codex 소식 · 1.00</strong><small>OpenAI, Tibo, VB의 공개 리셋·제품 출시·행사 소식을 확인합니다. 출시·행사만으로 리셋을 확정하지 않습니다.</small></div>
@@ -174,12 +183,16 @@
               <label class="switch"><input id="notifyPublicOnResume" type="checkbox" aria-label="놓친 공개 소식 복귀 알림"><span></span></label>
             </div>
             <div class="setting-row">
+              <div><strong>공개 리셋 소식 하루 한 번 요약</strong><small>기본 켜짐. 선택한 국가의 날짜 기준으로 Windows 알림은 하루 한 번만 보내고, 추가 글·답글은 팝업의 같은 날짜 요약과 원문 링크에 반영합니다. 실제 계정 회복·리셋권 지급·만료 알림은 별도입니다. 끄면 개별 소식 알림으로 돌아갑니다.</small></div>
+              <label class="switch"><input id="dailyResetDigest" type="checkbox" aria-label="공개 리셋 소식 하루 한 번 요약"><span></span></label>
+            </div>
+            <div class="setting-row">
               <div><strong data-i18n="resetDiscussionAlerts">리셋 설문·선택지 암시 알림</strong><small data-i18n="resetDiscussionAlertsHelp">리셋 필요 여부 설문과 업데이트·리셋 선택지 글을 한 번 알립니다. 실행 약속·시각은 미확정이며 일반 출시·행사 알림과 별도로 켜고 끌 수 있습니다. 시작·절전 복귀 때 새 조회 후 놓친 글을 알립니다.</small></div>
               <label class="switch"><input id="notifyResetHints" type="checkbox" aria-label="리셋 설문·선택지 암시 알림"><span></span></label>
             </div>
             <div class="setting-row">
-              <div><strong>암시·출시·행사 후보 알림</strong><small>리셋 암시·제품 예고와 날짜·요일·시각이 있는 행사 소식을 알립니다. 같은 행사는 최초 일정·변경·취소 때만 알립니다. 출시·행사는 리셋 확정이 아닙니다. 기본 켜짐. 최근 글·저장된 복귀 범위에 적용하며 사진·영상이나 불명확한 표현은 놓칠 수 있습니다.</small></div>
-              <label class="switch"><input id="notifyHints" type="checkbox" aria-label="암시·출시·행사 후보 알림"><span></span></label>
+              <div><strong>리셋 암시·후보 알림</strong><small>기본 켜짐. 리셋 전용 필터를 통과한 관련 후보를 한 번 알리며 실행 확정은 아닙니다. 일반 출시·행사 소식은 '리셋 관련 글만 표시·알림'을 끈 경우에만 포함합니다. 최근 글·저장된 복귀 범위에 적용하며 사진·영상이나 불명확한 표현은 놓칠 수 있습니다.</small></div>
+              <label class="switch"><input id="notifyHints" type="checkbox" aria-label="리셋 암시·후보 알림"><span></span></label>
             </div>
             <div class="setting-row">
               <div><strong>리셋 예고·후속·완료·리셋권 공지 알림</strong><small>기준에 맞는 예고·후속 조치·완료·리셋권 지급 공지를 한 번 알립니다. 내 계정 반영은 잔여량 조회로 별도 확인합니다.</small></div>
@@ -226,7 +239,7 @@
               <div class="settings-card">
             <div class="about-block">
               <div>
-                <h3>Codex 리셋 레이더 <span>한국어판 · v0.2.94</span></h3>
+                <h3>Codex 리셋 레이더 <span>한국어판 · v0.2.132</span></h3>
                 <p data-i18n="aboutDescription">MIT 라이선스의 비공식 한국어 확장프로그램입니다. 보안 강화판은 페이지 코드 주입과 토큰 저장을 제거하고 통신·링크·메시지를 제한합니다. 계정 조회만 하며 리셋권을 자동 사용하지 않습니다.</p>
                 <p data-i18n="aboutInspiration">codex-reset-watchdog와 codex-reset-watcher에서 영감을 받았습니다.</p>
               </div>
@@ -246,9 +259,12 @@
     <script src="../core/chat-counter.js"></script>
     <script src="../core/chat-history.js"></script>
     <script src="../core/time.js"></script>
+    <script src="../core/reset-scope.js"></script>
+    <script src="../core/semantic.js"></script>
     <script src="../core/signals.js"></script>
     <script src="../core/sources.js"></script>
     <script src="options.js"></script>
+    <script src="../shared/semantic-ui.js"></script>
     <script src="../core/ui-copy-locales.js"></script>
     <script src="../core/ui-copy.js"></script>
     <script src="../shared/language-ui.js"></script>

@@ -1,0 +1,19 @@
+{
+  "source": "Public X conversation observed in Chrome on 2026-10-23; timestamps from visible article time elements",
+  "posts": [
+    {
+      "id": "2113492187770175603",
+      "author": "thsottiaux",
+      "url": "https://x.com/thsottiaux/status/2113492187770175603",
+      "createdAt": "2026-10-23T04:46:19.000Z",
+      "text": "Day 18/ Decisions API is GA, OpenResponses joined the Linux Foundation, we shipped some performance improvements and Uber is going all-in on codex & work. But yes… that’s a reset!"
+    },
+    {
+      "id": "2113492502355562875",
+      "author": "thsottiaux",
+      "url": "https://x.com/thsottiaux/status/2113492502355562875",
+      "createdAt": "2026-10-23T04:47:34.000Z",
+      "text": "Landing tomorrow before 10am PST together with a small ship."
+    }
+  ]
+}

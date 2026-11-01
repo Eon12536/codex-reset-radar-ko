@@ -4,6 +4,8 @@
     const chrome = root.chrome;
     const guardKey = key + 'GuardV1';
     let tab, inUse = false, creating = false, restoring = false, creationJob, operations = Promise.resolve();
+    // Ephemeral proof that this worker created the tab or adopted a valid session/nonce record. Never persisted.
+    let sameSessionOwned = false;
     const selectedDuringCreate = new Set(), selectedDuringRestore = new Set();
     const error = name => new Error(prefix + '_' + name);
     const tokenValid = token => typeof token === 'string' && /^[a-f0-9-]{36}$/.test(token);
@@ -17,6 +19,11 @@
     }
     function exactReaderUrl(url) {
       return Boolean(recovery && tokenValid(tab?.token) && tab.urls.some(requested => sameReaderPage(url, marked(requested))));
+    }
+    function sameSessionReaderUrl(url) {
+      if (!sameSessionOwned || !recovery || !tokenValid(tab?.token) || typeof url !== 'string' || !url) return false;
+      try { if (new URL(url).hash) return false; } catch { return false; }
+      return tab.urls.some(requested => sameReaderPage(url, requested));
     }
     async function persistGuard(blocked, reason) {
       const previous = recovery ? (await chrome.storage.local.get(guardKey))[guardKey] : null;
@@ -80,6 +87,13 @@
       // URL filtering omits a tab whose URL Chrome cannot currently expose.
       // Its live ID still fences creation until ownership can be established.
       if (knownReaderPresent) return null;
+      // After a browser restart both the old tab ID and the URL fragment may
+      // change. An unmarked tab on an exact previously requested reader page
+      // could be that interrupted reader or a user's tab; neither closing it
+      // nor creating another reader is safe until the ambiguity is resolved.
+      const ambiguousReader = lease && candidates.some(current => urls.some(requested =>
+        sameReaderPage(current.url, requested) || sameReaderPage(current.pendingUrl, requested)));
+      if (ambiguousReader) return null;
       // Search the nonce first because browser restart can change tab IDs.
       // An unrelated X timeline is not evidence that the known reader exists.
       if (knownReaderMissing && !hasReaderMarker) return false;
@@ -110,7 +124,7 @@
       // to recover; the reverse order could strand a fence after every scan.
       await chrome.storage.local.remove(guardKey);
       await chrome.storage.session.remove(key);
-      tab = undefined; inUse = false;
+      tab = undefined; inUse = false; sameSessionOwned = false;
       await chrome.alarms.clear(alarm);
     }
     function cleanup({ force = false, recover = false } = {}) {
@@ -131,6 +145,7 @@
                 if (recovered) {
                   tab = recovered;
                   await chrome.storage.session.set({ [key]: tab });
+                  sameSessionOwned = true;
                 } else {
                   // Retain the durable proof if an active/pending reader has
                   // not yet been resolved; later cleanup can retry safely.
@@ -143,6 +158,7 @@
                 }
               } else {
                 tab = value;
+                sameSessionOwned = true;
               }
               if (selectedDuringRestore.has(tab.id)) tab.claimed = true;
             } finally { restoring = false; selectedDuringRestore.clear(); }
@@ -166,7 +182,7 @@
             current.pendingUrl.length > 0 && !exactReaderUrl(current.pendingUrl);
           const userChanged = tab.protected || current.pinned || current.windowId !== tab.windowId || pendingNavigation ||
             (typeof current.url === 'string' && current.url.length > 0 && !matches(current.url, tab.urls));
-          const closeSelected = closeSelectedReader && exactReaderUrl(current.url) && !userChanged;
+          const closeSelected = closeSelectedReader && (exactReaderUrl(current.url) || sameSessionReaderUrl(current.url)) && !userChanged;
           const userClaimed = userChanged || (!closeSelected && (tab.claimed || current.active));
           if (userClaimed || !matches(current.url, tab.urls)) {
             inUse = false;
@@ -195,7 +211,7 @@
       void operation(async () => {
         const value = tab || (await chrome.storage.session.get(key))[key];
         if (valid(value) && value.id === tabId) {
-          value.claimed = true; tab = value;
+          value.claimed = true; tab = value; sameSessionOwned = true;
           await persistGuard(true, 'tab-open');
           await chrome.storage.session.set({ [key]: value });
         }
@@ -216,7 +232,7 @@
         created = await chrome.tabs.create({ url: marked(url, token), active: false });
         tab = { id: created.id, windowId: created.windowId, startedAt, expiresAt, urls: [url],
           ...(token ? { token } : {}), claimed: Boolean(created.active) || selectedDuringCreate.has(created.id) };
-        inUse = true;
+        inUse = true; sameSessionOwned = true;
         await operation(async () => {
           await watch(tab.expiresAt);
           if (token) await persistGuard(false, 'owned');

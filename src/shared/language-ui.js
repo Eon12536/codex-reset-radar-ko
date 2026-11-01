@@ -37,7 +37,7 @@
     // Localize only the action prefix; the following quoted post is untouched.
     for(const link of document.querySelectorAll('.news-link[aria-label]')){
       const label=link.getAttribute('aria-label'), separator=label.indexOf(': ');
-      if(separator>=0) link.setAttribute('aria-label',root.RadarUiCopy.translate('원문 보기')+': '+label.slice(separator+2));
+      if(separator>=0) link.setAttribute('aria-label',root.RadarUiCopy.translate(link.dataset?.sourceLabel || '원문 보기')+': '+label.slice(separator+2));
     }
     if(select){
       const country=countries.find(item=>item.locale===root.RadarI18n.uiLanguage()) || countries[0];

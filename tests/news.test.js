@@ -9,18 +9,18 @@ const { json } = require('./helpers/worker.js');
 const post = (text, extra = {}) => ({ id: '2101352781219258527', text, author: 'thsottiaux', createdAt: new Date().toISOString(), source: { id: 'codex-lead', weight: 1 }, url: 'https://x.com/thsottiaux/status/2101352781219258527', ...extra });
 
 test('Tuesday reply is a candidate even when its parent literally says reset', () => {
-  const reply = post('OK fine. But it’s also still coming in Tuesday', { replyContext: { id: '2101352781219258526', author: 'udiWertheimer', text: 'you owe us a banked reset', url: 'https://x.com/udiWertheimer/status/2101352781219258526', relation: 'conversation-before', targetId: '2101352781219258527' } });
+  const reply = post('OK fine. But it’s also still coming in Tuesday', { replyContext: { id: '2101352781219258526', author: 'udiWertheimer', text: 'you owe us a banked reset', url: 'https://x.com/udiWertheimer/status/2101352781219258526', relation: 'conversation-before', targetId: '2101352781219258527', createdAt: new Date(Date.now() - 60000).toISOString() } });
   const news = News.select(null, { items: [reply] }, settings);
   assert.equal(news.label, '후보');
   assert.equal(news.timing, '화요일 · 미 서부 추정\n한국 시각 미정');
   assert.equal(news.item.text, reply.text);
 });
 
-test('literal reset badge describes wording, not whether the action is confirmed', () => {
+test('ambiguous reset-button wording is inferred and does not manufacture a reset schedule', () => {
   const news = News.select(null, { items: [post('Maybe we should dust off the reset button tomorrow.')] }, settings);
-  assert.equal(news.label, 'reset');
-  assert.equal(news.timing, '내일 · 미 서부 추정\n한국 시각 미정');
-  assert.match(news.caption, /실행 확정과는 다릅니다/);
+  assert.equal(news.label, '리셋 추정');
+  assert.equal(news.timing, '리셋 시각 미확인');
+  assert.match(news.caption, /미확정/);
   assert.equal(news.item.assessment.actionable, false);
   assert.equal(News.select(null, { items: [news.item] }, { ...settings, monitorSignals: false }), null);
 });
@@ -54,7 +54,7 @@ test('unified original link opens the selected candidate and still rejects an un
 });
 
 test('news lists all retained candidates in time order with stable keys and no duplicates', () => {
-  const items = Array.from({ length: 6 }, (_, i) => post('Tuesday at 3am', {
+  const items = Array.from({ length: 6 }, (_, i) => post('Maybe we should reset Codex usage limits Tuesday at 3am', {
     id: String(100 + i), createdAt: new Date(Date.now() - i * 60000).toISOString()
   }));
   const news = News.list(null, { items: [...items, items[0]] }, settings);
@@ -62,13 +62,13 @@ test('news lists all retained candidates in time order with stable keys and no d
   assert.equal(News.select(null, { items }, settings).key, news[0].key);
   assert.equal(News.list(null, { items }, { ...settings, monitorSignals: false }).length, 0);
   assert.equal(News.list(null, { items }, { ...settings, monitorLeadSource: false }).length, 0);
-  assert.equal(News.list(null, { items: [post('Tuesday at 3am', { createdAt: new Date(Date.now() - 8 * 86400000).toISOString() })] }, settings).length, 0);
+  assert.equal(News.list(null, { items: [post('Maybe we should reset Codex usage limits Tuesday at 3am', { createdAt: new Date(Date.now() - 8 * 86400000).toISOString() })] }, settings).length, 0);
 });
 
 test('each list source action opens its own stored URL and rejects forged IDs, URLs and callers', async () => {
   const w = makeWorker({ stored: { settings: { monitorAccount: false } } });
   await w.context.ensureSecurity();
-  w.local.hintSnapshot = { items: [100, 101, 102, 103, 104].map(id => post('Tuesday at 3am', {
+  w.local.hintSnapshot = { items: [100, 101, 102, 103, 104].map(id => post('Maybe we should reset Codex usage limits Tuesday at 3am', {
     id: String(id), url: `https://x.com/thsottiaux/status/${id}`
   })) };
   for (const id of [104, 101, 100]) {
@@ -90,7 +90,7 @@ test('collection retains and considers every fresh candidate for notification', 
   const w = makeWorker({ stored: { settings: { monitorAccount: false, monitorStatusSource: false,
     monitorHistorySource: false, monitorCommunitySource: false, quietHoursEnabled: false, notifyHints: true } },
     fetcher: async () => json({ items: Array.from({ length: 6 }, (_, i) => ({ external_id: String(100 + i),
-      content: 'Tuesday at 3am', published_at: new Date(Date.now() - i * 60000).toISOString(), metadata: { author_user_name: 'thsottiaux' } })) }) });
+      content: 'Maybe we should reset Codex usage limits Tuesday at 3am', published_at: new Date(Date.now() - i * 60000).toISOString(), metadata: { author_user_name: 'thsottiaux' } })) }) });
   await w.context.refreshSignals();
   assert.equal(w.local.hintSnapshot.items.length, 6);
   assert.equal(News.list(w.local.signalSnapshot, w.local.hintSnapshot, settings).length, 6);

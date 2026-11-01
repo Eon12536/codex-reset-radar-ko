@@ -1,3 +1,4 @@
+// Legacy launch/event mode requires an explicit opt-out from reset-only filtering.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 global.RadarTime = require('../src/core/time');
@@ -7,7 +8,7 @@ const Events = require('../src/core/events');
 const Settings = require('../src/core/settings');
 const Forecast = require('../src/core/forecast');
 const { makeWorker } = require('./helpers/worker');
-const settings = Settings.sanitize();
+const settings = Settings.sanitize({ resetOnly: false });
 const now = Date.parse('2026-09-28T18:00:00Z');
 const end = Date.parse('2026-09-30T02:00:00Z');
 const post = (text = 'DevDay, 29th September 2026!', extra = {}) => ({ id: '901', author: 'reach_vb', text,
@@ -148,7 +149,7 @@ test('worker restart and an empty refresh retain event evidence beyond normal hi
   const realNow = Date.now();
   const future = new Date(realNow + 20 * 86400000).toISOString().slice(0,10);
   const old = post(`OpenAI livestream on ${future} from 10am to 7pm PT.`,{createdAt:new Date(realNow-10*86400000).toISOString()});
-  const worker = makeWorker({stored:{settings:{monitorAccount:false,monitorSignals:true,monitorLeadSource:true},hintSnapshot:{items:[old]}}});
+  const worker = makeWorker({stored:{settings:{resetOnly:false,monitorAccount:false,monitorSignals:true,monitorLeadSource:true},hintSnapshot:{items:[old]}}});
   await worker.context.revalidateCachedSignals(0);
   assert.equal(worker.local.hintSnapshot.items.length,0);
   assert.equal(worker.local.hintSnapshot.events[0].id,old.id);

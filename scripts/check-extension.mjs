@@ -9,6 +9,8 @@ const errors = [];
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
 if (manifest.version !== packageJson.version) errors.push('Manifest and package versions must match');
+if (manifest.version_name !== undefined && manifest.version_name !== manifest.version)
+  errors.push('Chrome display version must match manifest.version; omit version_name to prevent stale version labels');
 if (!readme.includes(`CodexReset-Radar-KO-${manifest.version}.zip`)) errors.push('README download filename must use the current version');
 
 function exists(relativePath) {
@@ -99,7 +101,7 @@ const backgroundSource = fs.readFileSync(path.join(root, "src/background.js"), "
 const contentSource = "";
 if (manifest.content_scripts?.length) errors.push("Unconditional page injection is not permitted; Chat counter must be opt-in");
 if (JSON.stringify(manifest.optional_permissions) !== JSON.stringify(["scripting"]) ||
-    JSON.stringify(manifest.optional_host_permissions) !== JSON.stringify(["https://x.com/*"])) errors.push("Optional access must stay limited to scripting and X");
+    JSON.stringify(manifest.optional_host_permissions) !== JSON.stringify(["https://x.com/*", "https://t.me/*"])) errors.push("Optional access must stay limited to scripting, X and Telegram");
 exists("src/chat-counter.js");
 exists("src/core/chat-counter.js");
 exists("src/core/direct-x.js");

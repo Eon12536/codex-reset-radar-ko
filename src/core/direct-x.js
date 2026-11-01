@@ -39,8 +39,9 @@
   const resetContext = text => /\b(?:banked resets?|reset credits?|codex.{0,60}(?:reset|limits?|quota)|(?:reset|limits?|quota).{0,60}codex|(?:usage|weekly|rate) limits?.{0,40}reset)\b/i.test(text || "");
   const publicContext = text => resetContext(text) ||
     (root.RadarSignals || (typeof require === 'function' ? require('./signals') : null))?.resetHeadline(text) ||
+    /\b(?:that(?:'|’)s|that is) (?:a |another |the )?reset\b/i.test(text || '') ||
     /\b(?:dev\s?day|developer conference|codex|chatgpt|openai|sora|gpt[- ]?\d[\w.-]*|reset\s+day\s+today|today\s+is\s+reset\s+day)\b/i.test(text || "");
-  const needsContext = item => /^(?:done|all done|complete(?:d)?|finished|it(?:'s| is) (?:now )?(?:done|complete(?:d)?|finished))[.!]*$/i.test(item.text.trim()) || item.truncated || item.quotedPost || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|eod|end of (?:the )?day|confirmed|landed|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
+  const needsContext = item => /^(?:done(?: and dusted)?|all done|complete(?:d)?|finished|it(?:'s| is) (?:now )?(?:done|complete(?:d)?|finished))[.!]*$/i.test(item.text.trim()) || item.truncated || item.quotedPost || /👀|🚀/.test(item.text) || /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|soon|next week|coming|eod|midnight|noon|propagated|rolled out|end of (?:the )?day|confirmed|landed|dev\s?day|launch|release|keynote|stay tuned|👀|surprise|refill|refuel|button|reset)\b|\b(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s*[ap]\.?m\.?\b|\b(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(item.text);
 
   function quotedPost(value, now) {
     if (!value || !trusted(value.author) || typeof value.text !== 'string' || !value.text || value.truncated) return null;
@@ -54,7 +55,7 @@
     // exact author/time/body match with a separately collected original post.
     // A quote alone or its position in a timeline cannot establish identity.
     const body = text => String(text).replace(/\s+(?:https?:\/\/)?(?:x\.com|t\.co)\/\S+\s*$/i, '').replace(/\s+/g, ' ').trim();
-    return items.map(item => {
+    const linked = items.map(item => {
       const quote = item.quotedPost;
       if (!quote) return item;
       const matches = items.filter(parent => parent.id !== item.id && !parent.truncated &&
@@ -65,6 +66,14 @@
       return { ...item, replyContext: { id: parent.id, author: parent.author, text: parent.text,
         url: parent.url, createdAt: parent.createdAt, relation: 'quoted-post', targetId: item.id } };
     });
+    // Rebuild timing subjects only for an exactly identified quote target.
+    // Other conversation results and their short retry schedule stay intact.
+    const targets = new Set(linked.filter(item => item.quotedPost && item.replyContext?.relation === 'quoted-post')
+      .map(item => item.replyContext.id));
+    if (!targets.size) return linked;
+    const signals = root.RadarSignals || (typeof require === 'function' ? require('./signals') : null);
+    const timing = new Map((signals?.linkTimingFollowUps(linked) || linked).map(item => [item.id, item]));
+    return linked.map(item => targets.has(item.id) ? timing.get(item.id) : item);
   }
 
   function normalize(rows, now = Date.now()) {
@@ -98,21 +107,33 @@
     if (result?.targetId !== item.id || !Array.isArray(result.rows)) return item;
     const index = result.rows.findIndex(row => row.id === item.id && row.author?.toLowerCase() === item.author.toLowerCase());
     if (index < 0) return item;
-    const { replyContext: _previousContext, ...original } = item;
+    const { replyContext: _previousContext, semanticContext: _previousSemantic, ...original } = item;
     const target = result.rows[index];
     const verified = normalize([target], now).find(row => row.id === item.id && row.url === item.url);
-    const base = verified && !verified.truncated ? { ...original, text: verified.text,
+    const { quotedPost: previousQuote, ...unquoted } = original;
+    const quote = verified?.quotedPost || (verified && verified.text !== item.text ? null : previousQuote);
+    const base = verified && !verified.truncated ? { ...unquoted, text: verified.text,
+      ...(quote ? { quotedPost: quote } : {}),
       pollOptions: verified.pollOptions || [], avatarUrl: verified.avatarUrl || original.avatarUrl, truncated: false } : original;
     // Only rows preceding this exact target on its own conversation page.
     const candidates = result.rows.slice(0, index).slice(-6).reverse();
     const context = candidates.find(row => typeof row.id === "string" && /^[1-9]\d{0,24}$/.test(row.id) &&
       typeof row.author === "string" && /^[a-zA-Z0-9_]{1,15}$/.test(row.author) &&
       row.url === `https://x.com/${row.author}/status/${row.id}` && typeof row.text === "string" && !row.truncated &&
-      Date.parse(row.createdAt) <= Date.parse(item.createdAt) && now - Date.parse(row.createdAt) <= 14 * day && publicContext(row.text));
-    return context ? { ...base, isReply: true, replyContext: {
+        Date.parse(row.createdAt) <= Date.parse(item.createdAt) && now - Date.parse(row.createdAt) <= 14 * day &&
+        (publicContext(row.text) || root.RadarSignals?.resetAnchor({ ...row, source: item.source })));
+    const semanticParent = candidates.find(row => row?.author?.toLowerCase() === item.author.toLowerCase() &&
+      /^[1-9]\d{0,24}$/.test(row.id || '') && row.url === `https://x.com/${row.author}/status/${row.id}` &&
+      typeof row.text === 'string' && row.text.trim() && row.text.length <= 6000 && !row.truncated &&
+      Date.parse(row.createdAt) < Date.parse(item.createdAt) && Date.parse(item.createdAt) - Date.parse(row.createdAt) <= 7 * day);
+    const enriched = semanticParent ? { ...base, semanticContext: {
+      id: semanticParent.id, author: semanticParent.author, text: semanticParent.text, url: semanticParent.url,
+      createdAt: semanticParent.createdAt, relation: 'conversation-before', targetId: item.id
+    } } : base;
+    return context ? { ...enriched, isReply: true, replyContext: {
       id: context.id, author: context.author, text: context.text.slice(0, 6000), url: context.url,
       createdAt: context.createdAt, relation: "conversation-before", targetId: item.id
-    } } : base;
+    } } : enriched;
   }
 
   function archivePosts(rows, now = Date.now()) {
@@ -163,7 +184,8 @@
   function read(signal, options) {
     return readJob ||= runRead(signal, options).finally(() => { readJob = undefined; });
   }
-  async function runRead(signal, { authors = AUTHORS, contextCache = {}, retainedPosts = [], onCheckpoint } = {}) {
+  async function runRead(signal, { authors = AUTHORS, contextCache = {}, retainedPosts = [], resetTargets = [], onCheckpoint,
+    telegramLeads = null, telegramAttempts = {}, knownHistoryIds = [], onTelegramAttempt, onTelegramHistory } = {}) {
     if (!Array.isArray(authors) || !authors.length || authors.some(author => !AUTHORS.includes(author))) throw new Error('X_UNSUPPORTED_AUTHOR');
     // Scan originals for every monitored author before replies so one busy reply feed cannot starve the other author.
     const TIMELINES = ['posts', 'replies'].flatMap(kind => authors.map(author => ({author, kind,
@@ -176,7 +198,7 @@
     signal.throwIfAborted();
     let tab, currentUrl = TIMELINES[0].url, currentStage = "navigation";
     const deadline = Date.now() + authors.length * 90000;
-    const diagnostics = { posts: 0, contexts: 0, conversations: 0, conversationFailures: 0, pages: 0, stopReason: "unknown", timelines: [],
+    const diagnostics = { readerBuild: root.chrome?.runtime?.getManifest?.()?.version || 'local', posts: 0, contexts: 0, conversations: 0, conversationFailures: 0, pages: 0, stopReason: "unknown", timelines: [],
       bodyUnavailableCount: 0, bodyUnavailable: [], bodyUnavailableLatestAt: null, mediaOnlyCount: 0 };
     const unavailableBodies = new Map(), unavailableCounts = new Map(), mediaOnlyCounts = new Map();
     function bodyQualityOf(result, expectedAuthor) {
@@ -196,21 +218,22 @@
       diagnostics.bodyUnavailableLatestAt = Math.max(0, ...[...unavailableBodies.values()].map(row => Date.parse(row.createdAt))) || null;
       diagnostics.mediaOnlyCount = [...mediaOnlyCounts.values()].reduce((sum, count) => sum + count, 0);
     }
-    async function bounded(promise, limit) {
+    async function bounded(promise, limit, until = deadline) {
       signal.throwIfAborted();
       let timer, abort;
       try {
         return await Promise.race([promise, new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error("X_TIMEOUT")), Math.max(1, Math.min(limit, deadline - Date.now())));
+          timer = setTimeout(() => reject(new Error("X_TIMEOUT")), Math.max(1, Math.min(limit, until - Date.now())));
           abort = () => reject(new Error("X_ABORTED"));
           signal.addEventListener("abort", abort, { once: true });
           if (signal.aborted) abort();
         })]);
       } finally { clearTimeout(timer); if (abort) signal.removeEventListener("abort", abort); }
     }
-    async function page(url) {
+    async function page(url, until = deadline) {
       currentStage = "navigation";
       signal.throwIfAborted();
+      if (until <= Date.now()) throw new Error("X_TIMEOUT");
       const previousUrl = tab ? currentUrl : null;
       if (tab) {
         const current = await chrome.tabs.get(tab.id);
@@ -248,7 +271,7 @@
           if (!requested && !previous && !initial) finish(new Error("X_PAGE_UNAVAILABLE"));
         }, finish);
         const onUpdated = (id, change) => { if (id === tab.id && (change.status || change.url)) void checkReady(); };
-        const timer = setTimeout(() => finish(new Error("X_TIMEOUT")), Math.max(1, Math.min(15000, deadline - Date.now())));
+        const timer = setTimeout(() => finish(new Error("X_TIMEOUT")), Math.max(1, Math.min(15000, until - Date.now())));
         chrome.tabs.onUpdated.addListener(onUpdated);
         signal.addEventListener("abort", abort, { once: true });
         void checkReady();
@@ -260,7 +283,8 @@
       if (current.url?.startsWith("https://x.com/i/flow/login")) throw new Error("X_LOGIN_REQUIRED");
       if (!sameReaderPage(current.url, currentUrl)) throw new Error("X_PAGE_UNAVAILABLE");
       currentStage = "reading";
-      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 24000);
+      if (until <= Date.now()) throw new Error("X_TIMEOUT");
+      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 24000, until);
       signal.throwIfAborted();
       const afterRead = await chrome.tabs.get(tab.id);
       if (!sameReaderPage(afterRead.url, currentUrl) || (afterRead.pendingUrl && !sameReaderPage(afterRead.pendingUrl, currentUrl)) || afterRead.active || afterRead.pinned || afterRead.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
@@ -283,16 +307,142 @@
     async function checkpoint() {
       signal.throwIfAborted();
       if (onCheckpoint) {
-        try { await onCheckpoint({ posts: archivePosts([...collected.values()]), contextCache: compactCache() }); }
+        try { await onCheckpoint({ posts: archivePosts([...collected.values()]), contextCache: compactCache(),
+          timingReplies: root.RadarNews?.timingReplies([...collected.values()]) || [] }); }
         catch { diagnostics.checkpointError = true; }
       }
       signal.throwIfAborted();
     }
+    // Roots stay eligible for the UI's 7-day retention. A timing child is never
+    // a root: the candidate's own body must mention the reset.
+    const recentResetRoot = item => !item.truncated && Date.now() - Date.parse(item.createdAt) < 7 * day &&
+      /\breset(?:s|ting)?\b/i.test(item.text || '') &&
+      (root.RadarSignals?.resetAnchor(item) || root.RadarSignals?.resetHeadline(item.text) || resetContext(item.text));
+    // Per-run exact-root ledger: the same unchanged root is read at most once
+    // per scan (known roots, posts and replies timelines share it).
+    const checkedRoots = new Map(), rootKey = item => [item.text, item.url, item.createdAt].join('\n');
+    const sameBody = (a, b) => a && b && a.id === b.id && a.author?.toLowerCase() === b.author?.toLowerCase() &&
+      a.url === b.url && a.text === b.text && Date.parse(a.createdAt) === Date.parse(b.createdAt) && !a.truncated && !b.truncated;
+    const parentChanged = entry => entry?.result?.rows?.some(row => {
+      const known = row.id !== entry.result.targetId && collected.get(row.id);
+      return known && !known.truncated && (known.text !== row.text || known.url !== row.url || Date.parse(known.createdAt) !== Date.parse(row.createdAt));
+    });
+    const matchesCache = (item, entry) => entry?.text === item.text && entry.truncated === item.truncated &&
+      entry.url === item.url && entry.createdAt === item.createdAt && !parentChanged(entry);
+    function retainedConversation(item, conversation) {
+      const entry = cache[item.id];
+      const prior = matchesCache(item, entry) && entry.result
+        ? conversationContext(item, entry.result) : collected.get(item.id);
+      const fresh = conversationContext(item, conversation);
+      // Missing UI is not a retraction. Preserve only exact-target evidence;
+      // edited bodies, changed parents and a different visible parent win.
+      if (!sameBody(prior, fresh) || parentChanged(entry)) return fresh;
+      const differentParent = fresh.semanticContext && prior.replyContext && !sameBody(fresh.semanticContext, prior.replyContext);
+      const editedParent = prior.replyContext && conversation?.rows?.some(row => row.id === prior.replyContext.id &&
+        !row.truncated && row.text?.trim() && row.url === prior.replyContext.url && !sameBody(row, prior.replyContext));
+      const changedQuote = fresh.quotedPost && prior.quotedPost && JSON.stringify(fresh.quotedPost) !== JSON.stringify(prior.quotedPost);
+      return { ...fresh,
+        ...(!fresh.quotedPost && prior.quotedPost ? { quotedPost: prior.quotedPost } : {}),
+        ...(!fresh.semanticContext && !changedQuote && prior.semanticContext?.targetId === item.id ? { semanticContext: prior.semanticContext } : {}),
+        ...(!fresh.replyContext && !differentParent && !editedParent && !changedQuote && prior.replyContext?.targetId === item.id &&
+          prior.replyContext.relation === 'conversation-before' ? { isReply: true, replyContext: prior.replyContext } : {}) };
+    }
+    function rememberConversation(item, conversation) {
+      const enriched = retainedConversation(item, conversation);
+      const { replyContext: parent, ...target } = enriched;
+      cache[item.id] = { schema: CONTEXT_SCHEMA, text: enriched.text, truncated: enriched.truncated, url: enriched.url,
+        createdAt: enriched.createdAt, queuedAt: cache[item.id]?.queuedAt || Date.now(), checkedAt: Date.now(), attemptedAt: Date.now(),
+        result: { targetId: item.id, rows: parent ? [parent, target] : [target] } };
+      collected.set(item.id, enriched); diagnostics.conversations++;
+      if (parent?.relation === 'conversation-before') diagnostics.contexts++;
+      return enriched;
+    }
+    const deferredResetRoots = new Set();
+    async function checkResetFollowUps(item, reserve = 0) {
+      const old = cache[item.id];
+      if (old?.schema === CONTEXT_SCHEMA && old.text === item.text && old.url === item.url && old.createdAt === item.createdAt &&
+          old.followUpsVerified && old.followUpsCheckedAt > Date.now() - 5 * 60000) return;
+      if (checkedRoots.get(item.id) === rootKey(item)) return;
+      const followUpDeadline = deadline - reserve;
+      if (followUpDeadline - Date.now() < 15000) {
+        if (!deferredResetRoots.has(item.id)) {
+          deferredResetRoots.add(item.id);
+          diagnostics.deferredResetChecks = deferredResetRoots.size;
+          diagnostics.conversationFailures++;
+        }
+        return;
+      }
+      if (deferredResetRoots.delete(item.id)) {
+        diagnostics.deferredResetChecks = deferredResetRoots.size;
+        diagnostics.conversationFailures--;
+      }
+      checkedRoots.set(item.id, rootKey(item));
+      const status = { id: item.id, author: item.author, state: 'checking', discovered: 0, verified: 0, inferred: 0, children: [] };
+      (diagnostics.resetFollowUps ||= []).push(status);
+      try {
+        const conversation = await page(item.url, followUpDeadline);
+        if (conversation?.targetId !== item.id || !conversation.rows?.some(row => row.id === item.id && row.author?.toLowerCase() === item.author.toLowerCase()))
+          throw new Error('X_NO_PUBLIC_POSTS');
+        if (bodyQualityOf(conversation).count) throw new Error('X_BODY_UNAVAILABLE');
+        const target = normalize(conversation.rows).find(row => row.id === item.id && row.url === item.url && !row.truncated);
+        if (!target) throw new Error('X_BODY_UNAVAILABLE');
+        const original = rememberConversation(target, conversation);
+        if (!recentResetRoot(original)) { status.state = 'changed'; return; }
+        const leads = [...new Map([...normalize(conversation.followUps), ...collected.values()].filter(child => child.id !== original.id &&
+          child.author.toLowerCase() === original.author.toLowerCase() && Date.parse(child.createdAt) > Date.parse(original.createdAt) &&
+          Date.parse(child.createdAt) - Date.parse(original.createdAt) <= 2 * day &&
+          /\b(?:eod|end of (?:the )?day|before|by)\b|\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\b|\b\d{1,2}:\d{2}\b/i.test(child.text))
+          .map(child => [child.id, child])).values()].slice(0, 3);
+        status.discovered = leads.length;
+        for (const child of leads) {
+          collected.set(child.id, child);
+          if (followUpDeadline - Date.now() < 15000) throw new Error('X_TIMEOUT');
+          const reply = await page(child.url, followUpDeadline);
+          if (reply?.targetId !== child.id || !reply.rows?.some(row => row.id === child.id && row.author?.toLowerCase() === child.author.toLowerCase()))
+            throw new Error('X_NO_PUBLIC_POSTS');
+          if (bodyQualityOf(reply).count) throw new Error('X_BODY_UNAVAILABLE');
+          const checked = rememberConversation(child, reply), parent = checked.replyContext;
+          const matches = parent?.id === original.id && parent.url === original.url && parent.text === original.text &&
+            Date.parse(parent.createdAt) === Date.parse(original.createdAt);
+          const followUp = !parent && root.RadarSignals.linkTimingFollowUps([...collected.values()])
+            .find(item => item.id === child.id && item.replyContext?.id === original.id && root.RadarSignals.inferredTimingContext(item));
+          if (followUp) { collected.set(child.id, followUp); status.inferred++; }
+          status.children.push({ id: child.id, parentId: parent?.id || followUp?.replyContext.id || null,
+            state: matches ? 'verified' : followUp ? 'inferred' : !parent ? 'parent-missing' : parent.id !== original.id ? 'different-parent' : 'parent-mismatch' });
+          if (matches) status.verified++;
+          await checkpoint();
+        }
+        cache[item.id].followUpsCheckedAt = Date.now();
+        cache[item.id].followUpsVerified = status.verified;
+        status.state = status.verified ? 'verified' : status.inferred ? 'inferred' : 'not-found';
+      } catch (error) {
+        signal.throwIfAborted(); status.state = 'failed'; status.error = failureReason(error);
+        diagnostics.conversationFailures++;
+      } finally { await checkpoint(); }
+    }
     try {
       let lastError;
+      // A known reset shown in the popup must not depend on profile loading
+      // succeeding again. Verify its permalink before bulk collection starts.
+      const knownRoots = (Array.isArray(resetTargets) ? resetTargets : []).slice(0, 480).flatMap(item => {
+        // Feed metadata can contain a display name or a prefixed source ID.
+        // The URL is only a navigation lead; its actual public body must be
+        // read and validated above before entering the collected evidence.
+        const match = /^https:\/\/x\.com\/(thsottiaux|reach_vb|openai)\/status\/([1-9]\d{0,24})(?:[?#].*)?$/i.exec(item?.url || '');
+        if (!match) return [];
+        return normalize([{ ...item, author: match[1], id: match[2], url: `https://x.com/${match[1]}/status/${match[2]}` }]);
+      }).filter(item => authors.includes(item.author.toLowerCase()) && recentResetRoot(item));
+      // Bounded global pick: least recently checked first (never-checked = 0),
+      // then newest, so an older visible root cannot be starved by a newer one.
+      const knownPicks = [...new Map(knownRoots.map(item => [item.id, item])).values()]
+        .sort((a, b) => (Number(cache[a.id]?.followUpsCheckedAt) || 0) - (Number(cache[b.id]?.followUpsCheckedAt) || 0) ||
+          Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 3);
+      for (const known of knownPicks) {
+        await checkResetFollowUps(known, TIMELINES.length * 20000);
+      }
       // X may expose a reply-only stream here; scan original posts separately
       // so a busy reply timeline cannot bury the latest reset announcement.
-      for (const timeline of TIMELINES) {
+      for (const [timelineIndex, timeline] of TIMELINES.entries()) {
         let bodyQuality = {};
         try {
           const result = await page(timeline.url);
@@ -308,14 +458,22 @@
           if (!rows.length) throw new Error(missingCount ? 'X_BODY_UNAVAILABLE' : 'X_NO_PUBLIC_POSTS');
           for (const item of rows) {
             const previous = collected.get(item.id);
-            collected.set(item.id, { ...previous, ...item,
+            const unchanged = sameBody(previous, item) || previous && !previous.truncated && item.truncated &&
+              previous.url === item.url && previous.createdAt === item.createdAt;
+            collected.set(item.id, { ...(unchanged ? previous : {}), ...item,
               ...(previous && !previous.truncated && item.truncated ? { text: previous.text, truncated: false } : {}),
-              ...(previous?.replyContext && !item.replyContext ? { replyContext: previous.replyContext } : {}) });
+              ...(unchanged && previous?.replyContext && !item.replyContext ? { replyContext: previous.replyContext } : {}) });
           }
           const pages = Number(result?.pages) || 1;
           diagnostics.pages += pages;
           diagnostics.timelines.push({ author: timeline.author, kind: timeline.kind, ok: true, posts: rows.length, pages, expanded: Number(result?.expanded) || 0, stopReason: result?.stopReason || 'initial-load', ...bodyQuality });
           await checkpoint();
+          // Do not make the latest reset wait for all six expensive timelines.
+          // Its own page and short timing replies share this same owned tab.
+          if (timeline.kind === 'posts' || !diagnostics.resetFollowUps?.some(check => check.author.toLowerCase() === timeline.author && check.state === 'verified')) {
+            const latest = rows.filter(recentResetRoot).filter(item => checkedRoots.get(item.id) !== rootKey(item)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+            if (latest) await checkResetFollowUps(latest, (TIMELINES.length - timelineIndex - 1) * 20000);
+          }
         } catch (error) {
           signal.throwIfAborted(); lastError = error;
           diagnostics.timelines.push({ author: timeline.author, kind: timeline.kind, ok: false, error: failureReason(error), stage: currentStage, ...bodyQuality });
@@ -329,8 +487,49 @@
           }
         }
       }
+      // Telegram supplies IDs only. Read each missing Tibo status in the same
+      // owned tab after the primary timelines; never trust channel text or labels.
+      if (telegramLeads && authors.includes('thsottiaux')) {
+        let secondaryTimer;
+        const secondary = await Promise.race([telegramLeads, new Promise(resolve => {
+          secondaryTimer = setTimeout(() => resolve({ state: 'pending', ids: [] }), 1000);
+        })]).finally(() => clearTimeout(secondaryTimer));
+        signal.throwIfAborted();
+        const ids = Array.isArray(secondary?.ids) ? [...new Set(secondary.ids.filter(id => typeof id === 'string' && /^[1-9]\d{0,24}$/.test(id)))].slice(0, 40) : [];
+        const knownHistory = new Set(Array.isArray(knownHistoryIds) ? knownHistoryIds.filter(id => typeof id === 'string') : []);
+        const complete = id => { const item = collected.get(id); return knownHistory.has(id) || Boolean(item && !item.truncated && item.text?.trim()); };
+        diagnostics.telegram = { state: secondary?.state || 'unavailable', leads: ids.length, missing: ids.filter(id => !complete(id)).length, attempted: 0, recovered: 0 };
+        for (const id of ids) {
+          if (complete(id) || diagnostics.telegram.attempted >= 2 || Date.now() - (Number(telegramAttempts[id]) || 0) < 30 * 60000) continue;
+          const until = Math.min(deadline - 20000, Date.now() + 20000);
+          if (!tab || until - Date.now() < 15000) break;
+          try {
+            // Persist before navigation so worker termination cannot repeatedly
+            // open the same unavailable or misleading status every poll.
+            if (onTelegramAttempt) await onTelegramAttempt(id);
+            diagnostics.telegram.attempted++;
+            const result = await page('https://x.com/thsottiaux/status/' + id, until);
+            const target = (result?.rows || []).find(row => row.id === id && String(row.author || '').toLowerCase() === 'thsottiaux');
+            const published = Date.parse(target?.createdAt), age = Date.now() - published;
+            if (!Number.isFinite(published) || age < -300000 || age > 365 * day) continue;
+            const item = normalize([target], age > 7 * day ? published : Date.now()).find(row => row.id === id && row.author.toLowerCase() === 'thsottiaux' && !row.truncated);
+            if (result?.targetId !== id || !item) continue;
+            if (age > 7 * day) {
+              if (onTelegramHistory && await onTelegramHistory(conversationContext(item, result, published))) diagnostics.telegram.recovered++;
+            } else {
+              collected.set(id, conversationContext(item, result));
+              diagnostics.telegram.recovered++;
+              await checkpoint();
+            }
+          } catch (error) {
+            signal.throwIfAborted();
+            diagnostics.telegram.error = failureReason(error);
+            break; // Never navigate a tab whose ownership or page state is uncertain.
+          }
+        }
+      }
       const items = authors.flatMap(author => [...collected.values()].filter(item => item.author.toLowerCase() === author).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 160)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, authors.length * 160);
-      if (!items.length) throw lastError || new Error("X_NO_PUBLIC_POSTS");
+      if (!items.length) throw Object.assign(lastError || new Error("X_NO_PUBLIC_POSTS"), { diagnostics });
       diagnostics.posts = items.length;
       diagnostics.truncated = items.filter(item => item.truncated).length;
       diagnostics.stopReason = diagnostics.timelines.length === TIMELINES.length && diagnostics.timelines.every(t => t.ok) ? 'all-timelines' : 'partial';
@@ -338,36 +537,55 @@
       // Otherwise the same three newest replies starve every older candidate.
       const pending = [];
       for (let index = 0; index < items.length; index++) {
-        const item = items[index], entry = cache[item.id];
+        let item = items[index];
+        const entry = cache[item.id];
         if (!needsContext(item)) continue;
-        const match = entry?.schema === CONTEXT_SCHEMA && entry.text === item.text && entry.truncated === item.truncated && entry.url === item.url && entry.createdAt === item.createdAt;
+        const changedParent = parentChanged(entry);
+        if (changedParent) {
+          const { replyContext: _stale, semanticContext: _semantic, ...original } = item;
+          item = original; items[index] = item; collected.set(item.id, item);
+        }
+        const identityMatch = matchesCache(item, entry);
+        const match = identityMatch && entry?.schema === CONTEXT_SCHEMA;
         // These short follow-ups can appear before X hydrates the parent.
         // An empty first read must not suppress their context retry for hours.
-        const shortGrantReply = /\b(?:eod|end of (?:the )?day|confirmed.{0,20}landed)\b/i.test(item.text);
-        const contextAge = shortGrantReply && !entry?.result?.rows?.some(row => row.id !== item.id &&
-          (resetContext(row.text) || root.RadarSignals?.resetHeadline(row.text))) ? 5 * 60000 : 6 * 3600000;
+        const shortGrantReply = /\b(?:eod|end of (?:the )?day|confirmed.{0,20}landed|lands?|landing|tomorrow|before|midnight|noon|done|complete(?:d)?|finished|propagated|rolled out|\d\s*[ap]m)\b/i.test(item.text);
+        const recentReset = /\bresets?\b/i.test(item.text) && Date.now() - Date.parse(item.createdAt) < 2 * day;
+        const contextAge = recentReset || shortGrantReply && !entry?.result?.rows?.some(row => row.id !== item.id &&
+          publicContext(row.text)) ? 5 * 60000 : 6 * 3600000;
+        // A refresh deadline is not evidence expiry. Keep an unchanged,
+        // validated relationship while scheduling a fresh lookup. A failed
+        // lookup must not remove a completion already tied to its reset.
+        if (identityMatch && entry.result) {
+          item = conversationContext(item, entry.result);
+          items[index] = item;
+          collected.set(item.id, item);
+        }
         if (match && entry.result && entry.checkedAt > Date.now() - contextAge) {
-          items[index] = conversationContext(item, entry.result);
           if (items[index].replyContext?.relation === 'conversation-before') diagnostics.contexts++;
         } else {
-          cache[item.id] = { ...entry, queuedAt: entry?.queuedAt || Date.now() };
+          cache[item.id] = { ...entry, ...(!identityMatch ? { result: undefined } : {}), queuedAt: entry?.queuedAt || Date.now() };
           pending.push(item);
         }
       }
-      const age = item => cache[item.id]?.checkedAt || cache[item.id]?.queuedAt || 0;
-      const priority = item => /\b(?:resets?|refill|refuel|eod|end of (?:the )?day|landed|limits?|quota)\b/i.test(item.text) ? 2 : item.truncated ? 1 : 0;
+      const age = item => cache[item.id]?.attemptedAt || cache[item.id]?.checkedAt || cache[item.id]?.queuedAt || 0;
+      const priority = item => /\b(?:resets?|refill|refuel|eod|end of (?:the )?day|lands?|landed|done|shipped|finished|limits?|quota)\b/i.test(item.text) ? 2 : item.truncated ? 1 : 0;
       const oldest = [...pending].sort((a, b) => age(a) - age(b) || Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
-      // Reserve one slot for the oldest pending attempt so a constant stream
-      // of high-priority replies cannot starve less obvious clues forever.
+      // Read as many conversations as fit the existing scan deadline, rather
+      // than stopping after three even when the reader still has time.
+      // Reserve the third position for the oldest so fresh clues cannot starve it.
       const candidates = [...pending].sort((a, b) => priority(b) - priority(a) || age(a) - age(b) ||
-        Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, pending.length > 3 ? 2 : 3);
-      if (pending.length > 3) candidates.push(candidates.includes(oldest) ? pending.find(item => !candidates.includes(item)) : oldest);
+        Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      if (oldest && candidates.indexOf(oldest) > 2) {
+        candidates.splice(candidates.indexOf(oldest), 1); candidates.splice(2, 0, oldest);
+      }
       await checkpoint();
       let resolved = 0;
       for (const item of candidates) {
         if (deadline - Date.now() < 15000) { diagnostics.conversationFailures++; break; }
-        cache[item.id] = { schema: CONTEXT_SCHEMA, text: item.text, truncated: item.truncated, url: item.url,
-          createdAt: item.createdAt, queuedAt: cache[item.id]?.queuedAt || Date.now(), checkedAt: Date.now() };
+        cache[item.id] = { ...cache[item.id], schema: cache[item.id]?.result ? cache[item.id].schema : CONTEXT_SCHEMA,
+          text: item.text, truncated: item.truncated, url: item.url,
+          createdAt: item.createdAt, queuedAt: cache[item.id]?.queuedAt || Date.now(), attemptedAt: Date.now() };
         try {
           const conversation = await page(item.url);
           if (conversation?.targetId !== item.id || !conversation.rows?.some(row => row.id === item.id && row.author?.toLowerCase() === item.author.toLowerCase()))
@@ -392,15 +610,20 @@
           // context lookup pending without inventing a parent or caching an
           // authoritative no-parent result from this still-incomplete page.
           if (quality.missing.length) continue;
-          diagnostics.conversations++;
           resolved++;
-          const enriched = conversationContext(item, conversation);
-          // Cache only the target and the relevant preceding public post.
-          const { replyContext: parent, ...target } = enriched;
-          cache[item.id].result = { targetId: item.id, rows: parent ? [parent, target] : [target] };
+          const enriched = rememberConversation(item, conversation);
           items[items.indexOf(item)] = enriched;
-          collected.set(item.id, enriched);
-          if (enriched.replyContext?.relation === "conversation-before") diagnostics.contexts++;
+          if (root.RadarSignals?.resetAnchor(enriched) || resetContext(enriched.text) || root.RadarSignals?.resetHeadline(enriched.text)) {
+            for (const child of normalize(conversation.followUps).filter(child => child.author.toLowerCase() === item.author.toLowerCase() &&
+              Date.parse(child.createdAt) > Date.parse(item.createdAt) && Date.parse(child.createdAt) - Date.parse(item.createdAt) <= 2 * day && needsContext(child)).slice(0, 12)) {
+              if (items.some(known => known.id === child.id)) continue;
+              // Timeline order is not a relationship. Queue this exact public
+              // child URL for independent parent verification in the same scan.
+              items.push(child); collected.set(child.id, child); pending.push(child);
+              cache[child.id] = { queuedAt: Date.now() };
+              candidates.splice(candidates.indexOf(item) + 1, 0, child);
+            }
+          }
         } catch (error) {
           signal.throwIfAborted();
           diagnostics.conversationFailures++;
@@ -413,7 +636,11 @@
       diagnostics.contextPending = pending.length - resolved;
       diagnostics.truncated = items.filter(item => item.truncated).length;
       await checkpoint();
-      return { items: linkQuotedContexts(items), diagnostics, contextCache: compactCache(), retainedPosts: archivePosts(items) };
+      const output = authors.flatMap(author => items.filter(item => item.author.toLowerCase() === author)
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 160))
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+      diagnostics.posts = output.length;
+      return { items: linkQuotedContexts(output), diagnostics, contextCache: compactCache(), retainedPosts: archivePosts(output) };
     } finally {
       if (tab?.id !== undefined) {
         try {

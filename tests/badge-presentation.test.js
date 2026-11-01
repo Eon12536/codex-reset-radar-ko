@@ -8,8 +8,8 @@ const KEY = 'a'.repeat(64);
 const POST = '2105843926221660585';
 const popup = fs.readFileSync(require.resolve('../src/popup/popup.js'), 'utf8');
 const renderSource = popup.slice(popup.indexOf('function renderBankedArrival('), popup.indexOf('function renderAdvice('));
-function page({ creditGrantState, credits = { availableCount: 3 }, monitorAccount = true, read = false } = {}) {
-  const w = makeWorker({ stored: { settings: { monitorAccount, monitorSignals: true, monitorLeadSource: true, quietHoursEnabled: false },
+function page({ creditGrantState, credits = { availableCount: 3 }, monitorAccount = true, read = false, dailyResetDigest = false } = {}) {
+  const w = makeWorker({ stored: { settings: { dailyResetDigest, monitorAccount, monitorSignals: true, monitorLeadSource: true, quietHoursEnabled: false },
     accountSnapshot: { accountKey: KEY, updatedAt: NOW - 60000, credits, usage: { windows: [{ kind: 'weekly', remainingPercent: 40 }] } },
     signalSnapshot: { activeSignals: [], reports: [{ id: POST, author: 'thsottiaux', text: 'Resets all propagated.',
       createdAt: new Date(NOW - 3600000).toISOString(), url: `https://x.com/thsottiaux/status/${POST}`, source: { id: 'codex-lead', weight: 1 } }] },
@@ -25,7 +25,7 @@ function page({ creditGrantState, credits = { availableCount: 3 }, monitorAccoun
   w.context.chrome.action.setBadgeText = async ({ text }) => labels.push(text);
   return { ...w, elements, labels,
     view() { return w.context.RadarBadge.view(w.local, w.context.RadarSettings.sanitize(w.local.settings)); },
-    render() { const unread = this.view(); w.context.BadgeUi.renderBankedArrival(unread); w.context.BadgeUi.renderUnreadBadges(unread); return unread; },
+    render() { const unread = this.view(); w.context.BadgeUi.renderBankedArrival(unread, w.local.settings); w.context.BadgeUi.renderUnreadBadges(unread); return unread; },
     ack() { return w.send({ type: 'ACK_VISIBLE_BADGES', receipt: this.view().receipt }, w.sender('popup')); } };
 }
 function markers(p, visible) {
@@ -127,4 +127,17 @@ test('a previously reviewed Banked grant does not hide a later public unread mar
   assert.equal(p.elements.creditsUnread.hidden, false);
   assert.equal(p.elements.weeklyUnread.hidden, false);
   assert.equal(p.elements.bankedArrivalUnread.hidden, true);
+});
+
+test('daily summary mode hides only the duplicate public banner while preserving unread markers and real inventory', () => {
+  const p = page({ credits: null, dailyResetDigest: true });
+  const unread = p.render();
+  assert.equal(unread.publicItems.length, 1);
+  assert.equal(p.elements.bankedArrival.hidden, true);
+  assert.equal(p.elements.newsUnread.hidden, false);
+  assert.equal(p.elements.creditsUnread.hidden, false);
+  const inventory = page({ dailyResetDigest: true });
+  inventory.render();
+  assert.equal(inventory.elements.bankedArrival.hidden, false);
+  assert.equal(inventory.elements.bankedArrival.dataset.kind, 'inventory');
 });
