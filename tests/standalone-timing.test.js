@@ -50,7 +50,7 @@ test('Day17 and Day18 announcements and validated deadline promises count as for
     const activeSignals = assessment.actionable ? [{ ...parent, assessment }] : [];
     const rows = RadarNews.list({ activeSignals, timingReplies }, { items: [parent] }, { monitorSignals: true, monitorLeadSource: true, resetOnly: true });
     assert.equal(rows.length, 2, fixture);
-    assert.deepEqual(Daily.resetCounts(rows), { forecast: 2, completed: 0, inferred: 0 }, fixture);
+    assert.deepEqual(Daily.resetCounts(rows), { forecast: 2, completed: 0, inferred: 0, grant: 0 }, fixture);
     for (const row of rows) assert.equal(Daily.status(row), '리셋 예고', fixture);
     assert.equal(timingReplies[0].assessment.actionable, false, 'presentation must not manufacture a high-confidence signal');
     assert.match(rows.find(row => row.item.id === parent.id).timing, /후속 글 기준/);

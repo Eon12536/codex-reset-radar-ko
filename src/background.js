@@ -33,6 +33,7 @@ const ALARM_NAME = "codex-reset-radar-poll";
 const RESUME_ALARM = "codex-reset-radar-resume";
 const PUBLIC_RESUME_ALARM = "codex-reset-radar-public-resume";
 const PUBLIC_RETRY_ALARM = "codex-reset-radar-public-retry";
+const HISTORY_RECOVERY_ALARM = "codex-reset-radar-history-recovery";
 const SEMANTIC_RETRY_ALARM = 'codex-reset-radar-semantic-retry';
 const PUBLIC_DELIVERY_ALARM = "codex-reset-radar-public-delivery";
 const BADGE_EXPIRY_ALARM = "codex-reset-radar-badge-expiry";
@@ -53,7 +54,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.132";
+const NOTIFICATION_BUILD = "0.2.144";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -178,6 +179,11 @@ function ensureSecurity() {
     await ensureAlarm(settings, { reset: false });
     if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX)
       await schedulePublicRetry({ restoreOnly: true });
+    if (settings.monitorSignals && settings.monitorLeadSource && settings.monitorDirectX) {
+      const { manualHistoryLeads = [] } = await chrome.storage.local.get('manualHistoryLeads');
+      if (Array.isArray(manualHistoryLeads) && manualHistoryLeads.length && !await chrome.alarms.get?.(HISTORY_RECOVERY_ALARM))
+        await chrome.alarms.create(HISTORY_RECOVERY_ALARM, { delayInMinutes: 2 });
+    }
     await scheduleCreditExpiryCheck(settings);
     try { await configureChatCounter(settings.monitorChat); }
     catch { await chrome.storage.local.set({ chatCounterError: true }); }
@@ -1039,6 +1045,80 @@ async function refreshSemanticPending() {
   return signalJob;
 }
 
+function rememberHistoryAttempt(id, epoch, signal) {
+  return mutate(async () => {
+    if (epoch !== stateEpoch || signal.aborted) throw new Error('X_ABORTED');
+    const { telegramLeadAttempts = {} } = await chrome.storage.local.get('telegramLeadAttempts');
+    const recent = Object.fromEntries(Object.entries(telegramLeadAttempts && typeof telegramLeadAttempts === 'object' ? telegramLeadAttempts : {})
+      .filter(([key, at]) => /^[1-9]\d{0,24}$/.test(key) && Number.isFinite(at) && at > Date.now() - 7 * 86400000)
+      .sort((a, b) => b[1] - a[1]).slice(0, 199));
+    await chrome.storage.local.set({ telegramLeadAttempts: { ...recent, [id]: Date.now() } });
+  });
+}
+
+function saveHistoricalCandidate(item, epoch, signal) {
+  return mutate(async () => {
+    if (epoch !== stateEpoch || signal.aborted) return false;
+    const current = await loadSettings();
+    if (!current.monitorSignals || !current.monitorLeadSource || !current.monitorDirectX) return false;
+    const at = RadarTime.parseTimestamp(item.createdAt);
+    if (!at || at > Date.now() + 300000 || Date.now() - at > 365 * 86400000) return false;
+    const rows = RadarResetHistory.classifyRows([item], current);
+    if (!rows.length) return false;
+    const { resetHistory } = await chrome.storage.local.get('resetHistory');
+    const archive = RadarResetHistory.merge(resetHistory, rows);
+    await chrome.storage.local.set({ resetHistory: archive });
+    return archive.items.some(entry => entry.id === item.id);
+  });
+}
+
+let historyRecoveryJob;
+async function recoverHistoricalCandidates() {
+  if (historyRecoveryJob) return historyRecoveryJob;
+  historyRecoveryJob = (async () => {
+    const settings = await loadSettings();
+    if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.monitorDirectX) return { attempted: 0, recovered: 0, paused: true };
+    const state = await chrome.storage.local.get(['manualHistoryLeads', 'resetHistory', 'telegramLeadAttempts']);
+    const ids = (Array.isArray(state.manualHistoryLeads) ? state.manualHistoryLeads : []).filter(id => {
+      if (typeof id !== 'string' || !/^[1-9]\d{0,24}$/.test(id)) return false;
+      try { const at = Number((BigInt(id) >> 22n) + 1288834974657n); return at <= Date.now() - 7 * 86400000 && at >= Date.now() - 365 * 86400000; }
+      catch { return false; }
+    }).slice(0, 40);
+    const known = (Array.isArray(state.resetHistory?.items) ? state.resetHistory.items : []).filter(item => item && !item.retracted).map(item => item.id);
+    const missing = ids.filter(id => !known.includes(id));
+    if (!missing.length) { await chrome.alarms.clear(HISTORY_RECOVERY_ALARM); return { attempted: 0, recovered: 0 }; }
+    const attempts = state.telegramLeadAttempts && typeof state.telegramLeadAttempts === 'object' ? state.telegramLeadAttempts : {};
+    const due = missing.filter(id => Date.now() - (Number(attempts[id]) || 0) >= 30 * 60000);
+    if (!due.length) {
+      const next = Math.min(...missing.map(id => (Number(attempts[id]) || 0) + 30 * 60000));
+      await chrome.alarms.create(HISTORY_RECOVERY_ALARM, { when: Math.max(Date.now() + 60000, next) });
+      return { attempted: 0, recovered: 0, waiting: true };
+    }
+    const epoch = stateEpoch, controller = new AbortController(); activeRequests.add(controller);
+    let nextDelay = 2;
+    try {
+      const result = await RadarDirectX.read(controller.signal, { authors: ['thsottiaux'], historyOnly: true,
+        telegramLeads: Promise.resolve({ state: 'ok', ids: due }), telegramAttempts: attempts, knownHistoryIds: known,
+        onTelegramAttempt: id => rememberHistoryAttempt(id, epoch, controller.signal),
+        onTelegramHistory: item => saveHistoricalCandidate(item, epoch, controller.signal) });
+      const summary = { attempted: result.diagnostics?.telegram?.attempted || 0, recovered: result.diagnostics?.telegram?.recovered || 0,
+        error: result.diagnostics?.cleanupError || result.diagnostics?.telegram?.error || null };
+      if (epoch === stateEpoch && !controller.signal.aborted) await chrome.storage.local.set({ historyRecoveryStatus: summary });
+      return summary;
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !controller.signal.aborted) {
+        nextDelay = 30;
+        if (epoch === stateEpoch) await chrome.storage.local.set({ historyRecoveryStatus: { attempted: 0, recovered: 0, error: RadarDirectX.failureReason(error) } });
+      }
+      throw error;
+    } finally {
+      activeRequests.delete(controller);
+      if (epoch === stateEpoch) await chrome.alarms.create(HISTORY_RECOVERY_ALARM, { delayInMinutes: nextDelay });
+    }
+  })().finally(() => { historyRecoveryJob = undefined; });
+  return historyRecoveryJob;
+}
+
 async function refreshSignals({ quiet = false, collectionRetry = false } = {}) {
   await ensureSecurity();
   await mutations;
@@ -1080,31 +1160,16 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
     if (!sources.length) return mutate(clearSignalState);
     const results = await Promise.allSettled(sources.map(async (source) => {
       if (source.kind === "x-page") {
-        const { directXContextCache = {}, directXPendingPosts = [], hintSnapshot, signalSnapshot, telegramLeadAttempts = {}, resetHistory } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts", "hintSnapshot", "signalSnapshot", "telegramLeadAttempts", "resetHistory"]);
-        const telegramLeads = RadarTelegramLeads.load(controller.signal).catch(() => ({ state: 'unavailable', ids: [] }));
+        const { directXContextCache = {}, directXPendingPosts = [], hintSnapshot, signalSnapshot, telegramLeadAttempts = {}, resetHistory, manualHistoryLeads = [] } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts", "hintSnapshot", "signalSnapshot", "telegramLeadAttempts", "resetHistory", "manualHistoryLeads"]);
+        const telegramLeads = RadarTelegramLeads.load(controller.signal).catch(() => ({ state: 'unavailable', ids: [] })).then(result => ({
+          ...result, ids: [...new Set([...(Array.isArray(manualHistoryLeads) ? manualHistoryLeads : []), ...result.ids])].slice(0, 40)
+        }));
         let direct;
         try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache, retainedPosts: directXPendingPosts,
           telegramLeads, telegramAttempts: telegramLeadAttempts && typeof telegramLeadAttempts === "object" ? telegramLeadAttempts : {},
           knownHistoryIds: (Array.isArray(resetHistory?.items) ? resetHistory.items : []).filter(item => item && !item.retracted).map(item => item.id),
-          onTelegramAttempt: id => mutate(async () => {
-            if (epoch !== stateEpoch || controller.signal.aborted) throw new Error('X_ABORTED');
-            const { telegramLeadAttempts = {} } = await chrome.storage.local.get('telegramLeadAttempts');
-            const recent = Object.fromEntries(Object.entries(telegramLeadAttempts && typeof telegramLeadAttempts === "object" ? telegramLeadAttempts : {}).filter(([key, at]) => /^[1-9]\d{0,24}$/.test(key) && Number.isFinite(at) && at > Date.now() - 7 * 86400000).sort((a, b) => b[1] - a[1]).slice(0, 199));
-            await chrome.storage.local.set({ telegramLeadAttempts: { ...recent, [id]: Date.now() } });
-          }),
-          onTelegramHistory: item => mutate(async () => {
-            if (epoch !== stateEpoch || controller.signal.aborted) return false;
-            const current = await loadSettings();
-            if (!current.monitorSignals || !current.monitorLeadSource || !current.monitorDirectX) return false;
-            const at = RadarTime.parseTimestamp(item.createdAt);
-            if (!at || at > Date.now() + 300000 || Date.now() - at > 365 * 86400000) return false;
-            const rows = RadarResetHistory.classifyRows([item], current);
-            if (!rows.length) return false;
-            const { resetHistory } = await chrome.storage.local.get('resetHistory');
-            const archive = RadarResetHistory.merge(resetHistory, rows);
-            await chrome.storage.local.set({ resetHistory: archive });
-            return archive.items.some(entry => entry.id === item.id);
-          }),
+          onTelegramAttempt: id => rememberHistoryAttempt(id, epoch, controller.signal),
+          onTelegramHistory: item => saveHistoricalCandidate(item, epoch, controller.signal),
           resetTargets: [...(hintSnapshot?.items || []), ...(signalSnapshot?.activeSignals || []), ...(signalSnapshot?.timingReplies || [])],
           onCheckpoint: value => mutate(async () => {
             if (epoch !== stateEpoch || controller.signal.aborted) return;
@@ -1402,7 +1467,7 @@ function signalNotificationEnabled(signal, settings) {
 }
 
 function reportNotificationOptions(report) {
-  return { title: report.assessment.completionLink === 'inferred' ? RadarSignals.authorName(report) + ' · 리셋 완료 표현 (연결 추정)' : report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + ' · Banked reset 지급 공지' : report.assessment.report === 'reset-update' ? RadarSignals.authorName(report) + ' · 리셋 후속 안내' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
+  return { title: report.assessment.completionLink === 'inferred' ? RadarSignals.authorName(report) + ' · 리셋 완료 표현 (연결 추정)' : report.assessment.report === 'credit-grant' ? RadarSignals.authorName(report) + (report.assessment.grantStage === 'forecast' ? ' · 리셋권 예고' : ' · Banked reset 지급 공지') : report.assessment.report === 'reset-update' ? RadarSignals.authorName(report) + ' · 리셋 후속 안내' : RadarSignals.resetKind(report) === 'ordinary' ? RadarSignals.authorName(report) + ' · 일반 리셋 완료 공지' : RadarSignals.authorName(report) + ' · 리셋 완료 공지 (종류 미확인)',
     message: `${RadarTime.formatDateTime(report.createdAt, 'Asia/Seoul', 'ko-KR')} 게시 · ${report.assessment.reason}. 원문과 내 계정 잔여량을 확인하세요.`,
     buttons: [{ title: '원문 보기' }] };
 }
@@ -2214,6 +2279,7 @@ async function clearLocalData() {
     chatBindings.clear(); chatPlanTabs.clear();
     await chrome.alarms.clear(PUBLIC_DELIVERY_ALARM);
     await chrome.alarms.clear(CREDIT_EXPIRY_ALARM);
+    await chrome.alarms.clear(HISTORY_RECOVERY_ALARM);
     await chrome.storage.session.clear();
     await chrome.storage.local.set({ settings, securitySchema: SECURITY_SCHEMA });
     for (const id of Object.keys(await visibleNotificationsForCleanup())) await clearNotificationForCleanup(id);
@@ -2298,6 +2364,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const recoveringDirectX = alarm.name === RadarDirectX.CLEANUP_ALARM &&
     (await chrome.storage.local.get(RadarDirectX.GUARD_KEY))[RadarDirectX.GUARD_KEY]?.blocked;
   await ensureSecurity();
+  if (alarm.name === HISTORY_RECOVERY_ALARM) {
+    await recoverHistoricalCandidates().catch(() => {});
+    return;
+  }
   if (alarm.name === RadarDirectX.CLEANUP_ALARM) {
     const recovered = await RadarDirectX.cleanup().catch(() => false);
     if (recoveringDirectX && recovered && !signalJob && await preparePublicResume()) {
@@ -2586,6 +2656,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message.type === "SAVE_THEME") return { ok: true, settings: await saveTheme(message.theme) };
     if (message.type === "CLEAR_LOCAL_DATA") return clearLocalData();
+    if (message.type === "RESTORE_RESET_HISTORY") {
+      const settings = await loadSettings();
+      if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.monitorDirectX) return { ok: false, error: 'monitoring-off' };
+      if (!await chrome.permissions.contains({ permissions: ['scripting'], origins: ['https://x.com/*'] })) return { ok: false, error: 'x-permission' };
+      const source = RadarSources.DEFINITIONS.find(item => item.id === 'community-reset-history');
+      const html = await RadarSecurity.fetchData(source.url, { html: true });
+      const ids = RadarTelegramLeads.parse(html, Date.now(), { directOnly: true });
+      await chrome.storage.local.set({ manualHistoryLeads: ids });
+      const result = await refreshSignals({ quiet: true });
+      const history = await recoverHistoricalCandidates().catch(error => ({ attempted: 0, recovered: 0,
+        error: RadarDirectX.failureReason(error) }));
+      return { ok: true, leads: ids.length, directError: result?.directError || null,
+        historyError: history.error || null,
+        attempted: (result?.directScan?.telegram?.attempted || 0) + history.attempted,
+        recovered: (result?.directScan?.telegram?.recovered || 0) + history.recovered };
+    }
     if (message.type === "RESUME_CHECK_TABS") {
       if (message.confirmed !== true) return { ok: false };
       const x = await RadarDirectX.resume();

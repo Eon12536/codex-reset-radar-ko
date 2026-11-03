@@ -4,6 +4,7 @@ let displayedBadgeReceipt = null;
 let themeSaving = false;
 let savedTheme = "system";
 let renderRevision = 0;
+let selectedNewsMonth = '';
 
 RadarI18n.apply();
 RadarI18n.subscribe(() => render());
@@ -146,6 +147,12 @@ function collectionFailures(scan) {
 }
 
 function renderNews(data, settings) {
+  const months = selectedNewsMonth ? [selectedNewsMonth] : RadarDailyNews.recentMonths();
+  const en = (RadarI18n.uiLanguage() || 'ko').startsWith('en');
+  $('newsMonthLabel').textContent = selectedNewsMonth || (en ? 'Current and previous month' : '이번 달·지난달');
+  $('newsPeriodButton').textContent = en ? 'Period' : '기간설정';
+  $('newsMonthReset').hidden = !selectedNewsMonth;
+  $('newsMonthReset').textContent = en ? 'Recent months' : '최근 2개월';
   const grouped = settings.resetOnly || settings.dailyResetDigest;
   const allEntries = grouped ? RadarDailyNews.displayEntries(data, settings) :
     [...new Map([...RadarResetHistory.rows(data, settings), ...RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings)].map(row => [row.key, row])).values()]
@@ -153,7 +160,7 @@ function renderNews(data, settings) {
   const pinnedCount = renderPinnedEvents(data, settings, allEntries);
   // Dated events live in one calendar card below the reset feed. Expired event
   // cards disappear; their recent tweets must not reappear as ordinary rows.
-  const entries = allEntries.filter(news => news.topic !== 'event' || !news.event);
+  const entries = allEntries.filter(news => (news.topic !== 'event' || !news.event) && Number.isFinite(news.publishedAt) && months.includes(RadarDailyNews.dayKey(news.publishedAt).slice(0, 7)));
   const lead = data.signalSnapshot?.leadStatus;
   const timeZone = RadarTime.countryZone().zone;
   $("signalTitle").textContent = settings.resetOnly ? "리셋 소식" : entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
@@ -189,7 +196,7 @@ function renderNews(data, settings) {
   const list = $("newsList"), scrollTop = list.scrollTop;
   const focusedKey = document.activeElement?.dataset.newsId;
   list.hidden = !entries.length;
-  list.replaceChildren(...(grouped ? RadarDailyNews.groups(data, settings).map(group => createDailyNewsCard(group, settings)) : entries.map(news => createNewsRow(news, allEntries))));
+  list.replaceChildren(...(grouped ? RadarDailyNews.groups(data, settings, months).map(group => createDailyNewsCard(group, settings)) : entries.map(news => createNewsRow(news, allEntries))));
   list.scrollTop = scrollTop;
   if (focusedKey) [...list.querySelectorAll("button")].find(button => button.dataset.newsId === focusedKey)?.focus({ preventScroll: true });
   const status = freshness;
@@ -205,8 +212,9 @@ function createDailyNewsCard(group, settings) {
   const summaryLine = document.createElement('p'); summaryLine.className = 'daily-news-summary'; summaryLine.setAttribute('data-no-translate', '');
   summaryLine.textContent = RadarDailyNews.digestText(group.items);
   const counts = RadarDailyNews.resetCounts(group.items), chips = document.createElement('div'); chips.className = 'news-status-chips daily-news-counts';
-  for (const [kind, label] of [['forecast', en ? 'Forecast' : '리셋 예고'], ['completed', en ? 'Completed' : '리셋 완료'], ['inferred', en ? 'Inferred' : '리셋 추정']]) {
+  for (const [kind, label] of [['forecast', en ? 'Forecast' : '리셋 예고'], ['completed', en ? 'Completed' : '리셋 완료'], ['inferred', en ? 'Inferred' : '리셋 추정'], ['grant', en ? 'Credit notice' : '리셋권']]) {
     const chip = createNewsStatusChip(null, { kind, text: `${label} ${counts[kind]}` });
+    if (kind === 'grant') chip.title = en ? 'Public reset-credit posts, not your personal balance' : '공개 리셋권 관련 공지 수 · 개인 보유량 아님';
     if (!counts[kind]) chip.classList.add('is-muted'); chips.append(chip);
   }
   const schedule = document.createElement('div'), times = RadarDailyNews.dayTimes(group.items);
@@ -224,7 +232,10 @@ function createDailyNewsCard(group, settings) {
   group.items.forEach((news, index) => {
     const row = document.createElement('li'), link = document.createElement('button');
     link.type = 'button'; link.className = 'text-action news-link'; link.dataset.newsId = news.key;
-    link.textContent = labels[index] + ' ↗'; link.dataset.sourceLabel = link.textContent;
+    // Daily counters are totals across different posts. Keep the individual
+    // classification visible beside each source to avoid implying otherwise.
+    link.textContent = labels[index] + ' · ' + RadarDailyNews.status(news) + ' ↗';
+    link.dataset.sourceLabel = link.textContent;
     const association = news.item.assessment?.completionContext === 'inferred' ?
       (en ? 'Original reset association inferred' : '리셋 원글 연결 추정') : '';
     const full = [news.historical ? (en ? 'Past record' : '이전 탐지 기록') : '', `${RadarDailyNews.author(news)} · ${RadarDailyNews.status(news)}`, association, news.publishedText, news.item.text].filter(Boolean).join('\n');
@@ -582,6 +593,29 @@ async function render() {
 }
 
 $("openSettings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+function prepareNewsPeriod() {
+  const current = RadarDailyNews.dayKey().slice(0, 7);
+  const [year, month] = (selectedNewsMonth || current).split('-').map(Number);
+  const selectYear = $('newsYear'), selectMonth = $('newsMonth');
+  selectYear.replaceChildren(); selectMonth.replaceChildren();
+  for (let y = Math.max(Number(current.slice(0, 4)) + 1, year); y >= 2020; y--) {
+    const option = document.createElement('option'); option.value = String(y); option.textContent = String(y); selectYear.append(option);
+  }
+  for (let m = 1; m <= 12; m++) {
+    const option = document.createElement('option'); option.value = String(m).padStart(2, '0'); option.textContent = String(m); selectMonth.append(option);
+  }
+  selectYear.value = String(year); selectMonth.value = String(month).padStart(2, '0');
+}
+$('newsPeriod').addEventListener('toggle', () => { if ($('newsPeriod').open) prepareNewsPeriod(); });
+$('newsPeriodApply').addEventListener('click', () => {
+  const value = `${$('newsYear').value}-${$('newsMonth').value}`;
+  if (/^\d{4}-(?:0[1-9]|1[0-2])$/.test(value)) selectedNewsMonth = value;
+  $('newsPeriod').open = false; render();
+});
+$('newsPeriodClose').addEventListener('click', () => { $('newsPeriod').open = false; $('newsPeriodButton').focus(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('newsPeriod').open) { event.preventDefault(); $('newsPeriod').open = false; $('newsPeriodButton').focus(); } });
+document.addEventListener('click', event => { if ($('newsPeriod').open && !$('newsPeriod').contains(event.target)) $('newsPeriod').open = false; });
+$('newsMonthReset').addEventListener('click', () => { selectedNewsMonth = ''; $('newsPeriod').open = false; render(); });
 async function acknowledgeDisplayedBadges() {
   if (!displayedBadgeReceipt ||
     !displayedBadgeReceipt.public.length && !displayedBadgeReceipt.banked.length) return;

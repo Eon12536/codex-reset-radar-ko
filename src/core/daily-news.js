@@ -7,6 +7,12 @@
     const value = type => parts.find(part => part.type === type).value;
     return `${value('year')}-${value('month')}-${value('day')}`;
   }
+  function recentMonths(at = Date.now()) {
+    const current = dayKey(at).slice(0, 7);
+    const [year, month] = current.split('-').map(Number);
+    const previous = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+    return [current, previous];
+  }
   function entries(state, settings) {
     const rows = root.RadarNews.list(state.signalSnapshot, state.hintSnapshot, settings);
     const byKey = new Map(rows.map(row => [row.key, row]));
@@ -71,7 +77,8 @@
     const assessment = row.item.assessment || {};
     if (statusKind(row) === 'inferred') return en ? 'Reset inferred' : '리셋 추정';
     if (row.change || assessment.report === 'reset-update') return en ? 'Reset update' : '리셋 후속';
-    if (assessment.report === 'credit-grant') return en ? 'Reset credit granted' : '리셋권 지급';
+    if (statusKind(row) === 'grant') return assessment.grantStage === 'forecast' || root.RadarSignals.bankedForecast(row.item) ?
+      (en ? 'Reset credit forecast' : '리셋권 예고') : (en ? 'Reset credit granted' : '리셋권 지급');
     if (assessment.report === 'completed-reset') return assessment.completionLink === 'inferred' ?
       (en ? 'Completion inferred' : '리셋 완료 추정') : (en ? 'Reset completed' : '리셋 완료');
     if (statusKind(row) === 'forecast') return en ? 'Reset forecast' : '리셋 예고';
@@ -87,13 +94,14 @@
     const cut = text.slice(0, 177).replace(/\s+\S*$/, '');
     return (cut || text.slice(0, 177)) + '…';
   }
-  function groups(state, settings) {
+  function groups(state, settings, month = '') {
     const rows = displayEntries(state, settings), days = new Map();
     for (const row of rows) {
       const at = Number.isFinite(row.publishedAt) ? row.publishedAt :
         state.publicAlertState?.entries?.[row.item.id]?.observedAt || row.item.firstDetectedAt;
       if (!Number.isFinite(at)) continue;
       const key = dayKey(at);
+      if (month && !(Array.isArray(month) ? month : [month]).includes(key.slice(0, 7))) continue;
       if (!days.has(key)) days.set(key, []);
       days.get(key).push(row);
     }
@@ -124,7 +132,7 @@
   function statusKind(row) { // Mirrors status(); class hook only, text comes from status().
     const assessment = row.item.assessment || {};
     if (row.change || assessment.report === 'reset-update') return 'update';
-    if (assessment.report === 'credit-grant') return 'grant';
+    if (assessment.report === 'credit-grant' || root.RadarSignals.bankedForecast(row.item) || root.RadarSignals.bankedGrant(row.item)) return 'grant';
     if (assessment.completionLink === 'inferred') return 'inferred';
     if (assessment.report === 'completed-reset') return 'completed';
     return root.RadarSignals.isResetForecast(row.item) ? 'forecast' : 'inferred';
@@ -142,8 +150,9 @@
     return { verified: true, at, text: compactTime({ text: time.text.split('\n').at(-1) }), detail: time.detail || '' };
   }
   // Display-only helpers for the daily card; ledger/summary semantics untouched.
-  function resetCounts(rows) { // Every row counts once; other public updates fold into inferred.
-    const counts = { forecast: 0, completed: 0, inferred: 0 };
+  function resetCounts(rows) { // Every row counts once; public credit-grant notices count separately (never as
+    // inferred resets, never as a personal balance); other public updates still fold into inferred.
+    const counts = { forecast: 0, completed: 0, inferred: 0, grant: 0 };
     for (const row of rows || []) { const kind = statusKind(row); counts[kind in counts ? kind : 'inferred']++; }
     return counts;
   }
@@ -169,6 +178,6 @@
       counts.set(base, n); return base + n;
     });
   }
-  root.RadarDailyNews = Object.freeze({ publicId, dayKey, entries, displayEntries, summary, headline, compactTime, status, statusKind, statusChips, verifiedTime, author, brief, groups, prune, signature, sourceSignature, excerpt, resetCounts, digestText, dayTimes, sourceLabels });
+  root.RadarDailyNews = Object.freeze({ publicId, dayKey, recentMonths, entries, displayEntries, summary, headline, compactTime, status, statusKind, statusChips, verifiedTime, author, brief, groups, prune, signature, sourceSignature, excerpt, resetCounts, digestText, dayTimes, sourceLabels });
   if (typeof module !== 'undefined') module.exports = root.RadarDailyNews;
 })(globalThis);

@@ -70,6 +70,27 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
 }
 const read = core => core.read(new AbortController().signal, { authors: ['thsottiaux'] });
 
+test('same-session inactive reader redirected to the same Codex Resets status closes without stranding its fence', async () => {
+  const id = '2116692584248623511', requested = PAGE + '/status/' + id;
+  const b = browser({ stored: lease({ urls: [requested] }), tab: { id: 7, url: 'https://x.com/codex_resets/status/' + id } });
+  const core = b.load();
+  assert.equal(await core.cleanup({ recover: true }), true);
+  assert.equal(b.tabs.has(7), false);
+  assert.equal(b.session[KEY], undefined);
+});
+
+test('redirect recovery keeps user-selected, moved, pinned and different posts protected', async () => {
+  const id = '2116692584248623511', requested = PAGE + '/status/' + id;
+  const patches = [{ active: true }, { pinned: true }, { windowId: 2 },
+    { url: 'https://x.com/codex_resets/status/2116692584248623512' },
+    { url: 'https://x.com/other/status/' + id }, { pendingUrl: 'https://x.com/home' }];
+  for (const patch of patches) {
+    const b = browser({ stored: lease({ urls: [requested] }), tab: { id: 7, url: 'https://x.com/codex_resets/status/' + id, ...patch } });
+    assert.equal(await b.load().cleanup({ recover: true }), false, JSON.stringify(patch));
+    assert.equal(b.tabs.has(7), true, JSON.stringify(patch));
+  }
+});
+
 test('concurrent direct scans share one tab and remove the session ownership record afterwards', async () => {
   const reached = deferred(), gate = deferred();
   const b = browser({ script: async () => { reached.resolve(); await gate.promise; } }), core = b.load();

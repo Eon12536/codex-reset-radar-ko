@@ -13,6 +13,7 @@
     NOTIFICATION_STATUS: ["src/options/options.html"],
     CLEAR_LOCAL_DATA: ["src/options/options.html"],
     RESUME_CHECK_TABS: ["src/options/options.html"],
+    RESTORE_RESET_HISTORY: ["src/options/options.html"],
     ENABLE_ACCOUNT: ["src/welcome/welcome.html"],
     OPEN_ACCOUNT_LOGIN: ["src/popup/popup.html", "src/options/options.html", "src/welcome/welcome.html"],
     REFRESH_ACCOUNT: ["src/popup/popup.html", "src/options/options.html", "src/welcome/welcome.html"],

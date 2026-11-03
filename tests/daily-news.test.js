@@ -181,6 +181,21 @@ test('concise source presentation retains original meaning and distinguishes for
   assert.equal(daily.compactTime({ text: 'US Eastern (ET) Fri, Oct 23 · Before 2:00 PM · Deadline · Based on publication' }), 'US Eastern (ET) Fri, Oct 23 · Before 2:00 PM');
 });
 
+test('public banked reset grants count separately from forecast, completion and inferred posts', () => {
+  const daily = worker().context.RadarDailyNews;
+  const row = (assessment, text) => ({ item: { ...post('801', text), assessment } });
+  const counts = daily.resetCounts([
+    row({ report: 'credit-grant' }, 'We added a banked reset to all accounts.'),
+    row({ actionable: true }, 'We will reset Codex usage limits tomorrow.'),
+    row({ report: 'completed-reset' }, 'The Codex reset is done.'),
+    row({ candidate: true }, 'I hope for a reset.')
+  ]);
+  assert.equal(counts.grant, 1);
+  assert.equal(counts.forecast, 1);
+  assert.equal(counts.completed, 1);
+  assert.equal(counts.inferred, 1);
+});
+
 test('banner headings distinguish exact instants, deadlines, multiple schedules and unknown times in the selected country', () => {
   const w = worker(), daily = w.context.RadarDailyNews;
   const row = text => ({ key: 'codex-lead:801', item: post('801', text) });

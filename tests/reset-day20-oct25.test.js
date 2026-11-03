@@ -38,7 +38,7 @@ test('a unique bounded standalone midnight promise enriches parent and counts as
   const settings = { monitorSignals: true, monitorLeadSource: true, resetOnly: true };
   const rows = c.RadarDailyNews.entries(state, settings);
   assert.equal(rows.length, 2);
-  assert.deepEqual(JSON.parse(JSON.stringify(c.RadarDailyNews.resetCounts(rows))), { forecast: 2, completed: 0, inferred: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.RadarDailyNews.resetCounts(rows))), { forecast: 2, completed: 0, inferred: 0, grant: 0 });
   const root = rows.find(row => row.item.id === parent.id);
   assert.equal(root.timingSchedule.deadlineAt, Date.parse('2026-10-25T08:00Z'));
   assert.match(root.timing, /한국.*10\/25.*오후 5:00.*기한.*후속 글 기준/);

@@ -4,7 +4,7 @@
   const DAY = 86400000;
   // Channel data is untrusted. Only numerical X status IDs survive; no text,
   // author, timestamps, linked redirects, cookies or account data are used.
-  function parse(html, now = Date.now()) {
+  function parse(html, now = Date.now(), { directOnly = false } = {}) {
     if (typeof html !== 'string' || html.length > 2 * 1024 * 1024) return [];
     const found = new Set();
     const href = /\bhref\s*=\s*["']([^"'<>\s]{1,2048})["']/gi;
@@ -13,7 +13,7 @@
       try {
         const url = new root.URL(match[1]);
         if (url.protocol !== 'https:' || !['x.com', 'twitter.com'].includes(url.hostname.toLowerCase()) || url.port || url.username || url.password) continue;
-        const path = /^\/(?:i(?:\/web)?|thsottiaux)\/status\/([1-9]\d{0,24})\/?$/i.exec(url.pathname);
+        const path = (directOnly ? /^\/thsottiaux\/status\/([1-9]\d{0,24})\/?$/i : /^\/(?:i(?:\/web)?|thsottiaux)\/status\/([1-9]\d{0,24})\/?$/i).exec(url.pathname);
         if (!path) continue;
         const id = path[1];
         const posted = Number((BigInt(id) >> 22n) + 1288834974657n);

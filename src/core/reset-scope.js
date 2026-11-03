@@ -37,6 +37,7 @@
     if (sourceSetting && settings[sourceSetting] === false) return false;
     if (settings.resetOnly === false || item.source?.id !== 'codex-lead') return true;
     if (item.truncated || !str(item.text).trim()) return false;
+    if (root.RadarSignals?.bankedGrant(item)) return true;
     if (root.RadarSignals?.resetMetaphor(item)) return true;
     if (topical(item.text)) return true;
     // Revalidate the quote/reply chain rather than trusting a stored verdict.

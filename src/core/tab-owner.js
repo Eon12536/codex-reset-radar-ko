@@ -1,6 +1,6 @@
 (function initTabOwner(root) {
   function create({ key, alarm, accepts, matches, prefix, recovery, closeSelectedReader = false,
-    sameReaderPage = (actual, expected) => actual === expected }) {
+    sameReaderPage = (actual, expected) => actual === expected, readerRedirect = () => false }) {
     const chrome = root.chrome;
     const guardKey = key + 'GuardV1';
     let tab, inUse = false, creating = false, restoring = false, creationJob, operations = Promise.resolve();
@@ -180,11 +180,17 @@
           // protected across restarts, including navigation still in flight.
           const pendingNavigation = closeSelectedReader && typeof current.pendingUrl === 'string' &&
             current.pendingUrl.length > 0 && !exactReaderUrl(current.pendingUrl);
+          // A known same-session temporary reader can be redirected by X to a
+          // different author's canonical URL for the *same* status ID. Never
+          // extend this proof to selected, pinned, moved or previously claimed tabs.
+          const redirectedReader = closeSelectedReader && sameSessionOwned && !tab.claimed && !tab.protected &&
+            !current.active && !current.pinned && current.windowId === tab.windowId && !current.pendingUrl &&
+            readerRedirect(current.url, tab.urls);
           const userChanged = tab.protected || current.pinned || current.windowId !== tab.windowId || pendingNavigation ||
-            (typeof current.url === 'string' && current.url.length > 0 && !matches(current.url, tab.urls));
+            (typeof current.url === 'string' && current.url.length > 0 && !matches(current.url, tab.urls) && !redirectedReader);
           const closeSelected = closeSelectedReader && (exactReaderUrl(current.url) || sameSessionReaderUrl(current.url)) && !userChanged;
           const userClaimed = userChanged || (!closeSelected && (tab.claimed || current.active));
-          if (userClaimed || !matches(current.url, tab.urls)) {
+          if (userClaimed || (!matches(current.url, tab.urls) && !redirectedReader)) {
             inUse = false;
             // A temporarily unavailable URL is not a user gesture. Keep the
             // lease fenced, but allow a later read to prove safe ownership.

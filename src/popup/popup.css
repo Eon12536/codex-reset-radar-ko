@@ -120,6 +120,18 @@ details[open] > summary > span[aria-hidden="true"] { transform: rotate(45deg); }
 /* News template: small badge + timing / original text / source. */
 .confidence.candidate { color: var(--amber); background: var(--hint-bg); }
 .news-panel { padding: var(--space-md); }
+.news-month-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 11px; }
+.news-month-controls { position: relative; }
+.news-month-controls details { position: relative; margin-left: auto; }
+.news-month-controls summary { cursor: pointer; list-style: none; color: var(--text); border: 1px solid var(--panel-border); border-radius: 6px; padding: 3px 8px; font-size: 11px; }
+.news-month-controls summary::-webkit-details-marker { display: none; }
+.news-month-controls details[open] summary { border-color: var(--focus); }
+.news-period-panel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 185px; padding: 10px; color: var(--text); background: var(--panel-surface); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 5px 14px #0005; }
+.news-period-fields, .news-period-actions { display: flex; gap: 8px; }
+.news-period-fields label { display: grid; gap: 3px; flex: 1; }
+.news-period-fields select, .news-period-actions button { color: var(--text); background: var(--panel-surface); border: 1px solid var(--panel-border); border-radius: 5px; padding: 4px; }
+.news-period-actions { margin-top: 8px; justify-content: flex-end; }
+.news-period-actions button { cursor: pointer; padding: 3px 8px; }
 #newsCount { font-size: 11px; }
 #newsEmpty { margin: var(--space-sm) 0 0; font-size: 12px; }
 .news-list { max-height: 200px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; margin-top: var(--space-xs); padding: 0 2px; }
@@ -337,6 +349,8 @@ html[lang="en-US"] .news-timing-note { max-width: 128px; }
   --status-neutral-bg: var(--surface-3);
   --status-inferred-text: #68338b;
   --status-inferred-bg: #f2e9fa;
+  --status-grant-text: #765000;
+  --status-grant-bg: #fff1ba;
   --schedule-box-bg: var(--surface-3);
   --schedule-box-border: var(--panel-divider);
 }
@@ -346,8 +360,9 @@ html[lang="en-US"] .news-timing-note { max-width: 128px; }
 .news-status-chip.is-mention { color: var(--status-mention-text); background: var(--status-mention-bg); }
 .news-status-chip.is-completed { color: var(--status-completed-text); background: var(--status-completed-bg); }
 .news-status-chip.is-inferred { color: var(--status-inferred-text); background: var(--status-inferred-bg); border-style: dashed; }
-:root[data-theme="dark"] { --status-inferred-text: #d7b4f4; --status-inferred-bg: #3c2b4c; }
-.news-status-chip.is-grant, .news-status-chip.is-update { color: var(--status-neutral-text); background: var(--status-neutral-bg); }
+:root[data-theme="dark"] { --status-inferred-text: #d7b4f4; --status-inferred-bg: #3c2b4c; --status-grant-text: #ffda78; --status-grant-bg: #4a3405; }
+.news-status-chip.is-grant { color: var(--status-grant-text); background: var(--status-grant-bg); }
+.news-status-chip.is-update { color: var(--status-neutral-text); background: var(--status-neutral-bg); }
 .news-schedule-box { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-sm); margin: var(--space-xs) 0; padding: 6px; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid var(--schedule-box-border); border-radius: var(--radius-sm); background: var(--schedule-box-bg); }
 .news-schedule-label { color: var(--muted); font-size: 10px; font-weight: 650; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
 .news-schedule-box time, .news-schedule-box > span:not(.news-schedule-label) { display: block; flex: 1 1 100%; min-width: 0; color: var(--text); font-size: 12px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }

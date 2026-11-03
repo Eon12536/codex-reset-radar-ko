@@ -88,3 +88,68 @@ test('an old X-verified Telegram lead becomes display-only history without a fre
   assert.ok(w.context.RadarDailyNews.displayEntries(w.local, w.local.settings).some(row => row.item.id === historicId && row.historical));
   assert.equal(Object.keys(w.notifications).filter(key => key.includes(historicId)).length, 0);
 });
+
+test('manual history restore uses only direct Tibo links and leaves source settings and old records intact', async () => {
+  const historicId = '2110595484180214059', wrapper = '2114599388454481930';
+  const w = makeWorker({ stored: { settings: { monitorSignals: true, monitorLeadSource: true, monitorDirectX: true,
+    monitorAccount: false, semanticEnabled: false, monitorStatusSource: false, monitorHistorySource: false,
+    monitorCommunitySource: false, quietHoursEnabled: false }, resetHistory: { version: 1, items: [{ id: '123' }] } },
+    fetcher: async url => url === 'https://codex-resets.com/' ? new Response(
+      `<a href="https://x.com/thsottiaux/status/${historicId}">original</a><a href="https://x.com/i/status/${wrapper}">wrapper</a>`,
+      { headers: { 'content-type': 'text/html' } }) : json({ items: [] }) });
+  w.context.Date = class extends Date { static now() { return NOW; } };
+  w.context.chrome.permissions.contains = async p => Boolean(p.permissions?.includes('scripting'));
+  w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async (_signal, options) => {
+    assert.deepEqual(Array.from((await options.telegramLeads).ids), [historicId]);
+    await options.onTelegramHistory({ id: historicId, author: 'thsottiaux', text: 'Day 10/ Reset',
+      createdAt: '2026-10-15T04:55:51Z', url: `https://x.com/thsottiaux/status/${historicId}`,
+      source: { id: 'codex-lead', kind: 'x-page' } });
+    return { items: [], diagnostics: { posts: 0, timelines: [] } };
+  } };
+  const unauthorized = await w.send({ type: 'RESTORE_RESET_HISTORY' }, w.sender('popup'));
+  assert.equal(unauthorized.ok, false);
+  const result = await w.send({ type: 'RESTORE_RESET_HISTORY' }, w.sender('options'));
+  assert.equal(result.ok, true);
+  assert.equal(result.leads, 1);
+  assert.equal(w.local.settings.monitorHistorySource, false);
+  assert.ok(w.local.resetHistory.items.some(item => item.id === '123'));
+  assert.ok(w.local.resetHistory.items.some(item => item.id === historicId));
+  assert.equal(Object.keys(w.notifications).filter(key => key.includes(historicId)).length, 0);
+});
+
+test('queued historical recovery runs independently and preserves earlier records without alerts', async () => {
+  const historicId = '2110595484180214059';
+  const w = makeWorker({ stored: { settings: { monitorSignals: true, monitorLeadSource: true, monitorDirectX: true },
+    manualHistoryLeads: [historicId], resetHistory: { version: 1, items: [{ id: '123' }] } } });
+  w.context.Date = class extends Date { static now() { return NOW; } };
+  let reads = 0;
+  w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async (_signal, options) => {
+    reads++;
+    assert.equal(options.historyOnly, true);
+    assert.deepEqual(Array.from((await options.telegramLeads).ids), [historicId]);
+    await options.onTelegramAttempt(historicId);
+    assert.equal(await options.onTelegramHistory({ id: historicId, author: 'thsottiaux', text: 'Day 10/ Reset',
+      createdAt: '2026-10-15T04:55:51Z', url: `https://x.com/thsottiaux/status/${historicId}`,
+      source: { id: 'codex-lead', kind: 'x-page' } }), true);
+    return { diagnostics: { telegram: { attempted: 1, recovered: 1 } } };
+  } };
+  const result = await w.context.recoverHistoricalCandidates();
+  assert.equal(reads, 1);
+  assert.equal(result.recovered, 1);
+  assert.ok(w.local.resetHistory.items.some(item => item.id === '123'));
+  assert.ok(w.local.resetHistory.items.some(item => item.id === historicId));
+  assert.equal(Object.keys(w.notifications).length, 0);
+  await w.context.recoverHistoricalCandidates();
+  assert.equal(reads, 1);
+});
+
+test('historical recovery never turns disabled monitoring back on', async () => {
+  const w = makeWorker({ stored: { settings: { monitorSignals: false }, manualHistoryLeads: ['2110595484180214059'] } });
+  let reads = 0;
+  w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async () => { reads++; } };
+  const result = await w.context.recoverHistoricalCandidates();
+  assert.equal(result.paused, true);
+  assert.equal(reads, 0);
+  assert.equal(w.local.settings.monitorSignals, false);
+  assert.equal(w.local.manualHistoryLeads.length, 1);
+});

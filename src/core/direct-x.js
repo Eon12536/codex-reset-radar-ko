@@ -27,13 +27,25 @@
         urls.some(requested => new globalThis.URL(requested).pathname.toLowerCase() === path);
     } catch { return false; }
   }
+  function readerRedirect(value, urls) {
+    try {
+      const actual = new globalThis.URL(value);
+      if (actual.origin !== 'https://x.com' || actual.username || actual.password || actual.search || actual.hash) return false;
+      const result = /^\/codex_resets\/status\/([1-9]\d{0,24})\/?$/i.exec(actual.pathname);
+      return Boolean(result && urls.some(requested => {
+        const url = new globalThis.URL(requested);
+        return url.origin === 'https://x.com' && !url.search && !url.hash &&
+          url.pathname.toLowerCase() === '/thsottiaux/status/' + result[1];
+      }));
+    } catch { return false; }
+  }
   const TabOwner = root.RadarTabOwner || (typeof require === 'function' ? require('./tab-owner') : null);
   const owner = TabOwner.create({ key: 'directXScanTabV1', alarm: CLEANUP_ALARM, accepts: scanUrl, matches: ownedUrl, prefix: 'X',
-    closeSelectedReader: true, sameReaderPage,
+    closeSelectedReader: true, sameReaderPage, readerRedirect,
     recovery: { marker: 'radar-x-reader', permission: PERMISSION, urls: AUTHORS.flatMap(author =>
       ['https://x.com/' + author, 'https://x.com/' + author + '/with_replies', 'https://x.com/' + author + '/status/*'])
       .concat(['https://x.com/OpenAI', 'https://x.com/OpenAI/with_replies', 'https://x.com/OpenAI/status/*', 'https://x.com/home', 'https://x.com/i/timeline', 'https://x.com/i/flow/login*']) } });
-  let readJob;
+  let readJob, readHistoryOnly = false, historyAbort;
   const day = 86400000;
   const CONTEXT_SCHEMA = '2:' + (root.chrome?.runtime?.getManifest?.()?.version || 'local');
   const resetContext = text => /\b(?:banked resets?|reset credits?|codex.{0,60}(?:reset|limits?|quota)|(?:reset|limits?|quota).{0,60}codex|(?:usage|weekly|rate) limits?.{0,40}reset)\b/i.test(text || "");
@@ -181,11 +193,22 @@
     return "page-unavailable";
   }
 
-  function read(signal, options) {
-    return readJob ||= runRead(signal, options).finally(() => { readJob = undefined; });
+  function read(signal, options = {}) {
+    const historyOnly = options.historyOnly === true;
+    if (readJob) {
+      if (readHistoryOnly === historyOnly) return readJob;
+      // Current public detection has priority over an optional historical read.
+      if (readHistoryOnly && !historyOnly) historyAbort?.abort();
+      return readJob.catch(() => {}).then(() => { signal.throwIfAborted(); return read(signal, options); });
+    }
+    readHistoryOnly = historyOnly;
+    historyAbort = historyOnly ? new AbortController() : undefined;
+    const combined = historyAbort ? AbortSignal.any([signal, historyAbort.signal]) : signal;
+    readJob = runRead(combined, options).finally(() => { readJob = undefined; historyAbort = undefined; readHistoryOnly = false; });
+    return readJob;
   }
   async function runRead(signal, { authors = AUTHORS, contextCache = {}, retainedPosts = [], resetTargets = [], onCheckpoint,
-    telegramLeads = null, telegramAttempts = {}, knownHistoryIds = [], onTelegramAttempt, onTelegramHistory } = {}) {
+    telegramLeads = null, telegramAttempts = {}, knownHistoryIds = [], onTelegramAttempt, onTelegramHistory, historyOnly = false } = {}) {
     if (!Array.isArray(authors) || !authors.length || authors.some(author => !AUTHORS.includes(author))) throw new Error('X_UNSUPPORTED_AUTHOR');
     // Scan originals for every monitored author before replies so one busy reply feed cannot starve the other author.
     const TIMELINES = ['posts', 'replies'].flatMap(kind => authors.map(author => ({author, kind,
@@ -197,7 +220,9 @@
     if (!await owner.cleanup({ force: true })) throw new Error('X_TAB_BLOCKED');
     signal.throwIfAborted();
     let tab, currentUrl = TIMELINES[0].url, currentStage = "navigation";
-    const deadline = Date.now() + authors.length * 90000;
+    // Navigation may take 15s and the conversation reader up to 24s. Give
+    // each historical page room for both; a live scan can still interrupt it.
+    const deadline = Date.now() + (historyOnly ? 90000 : authors.length * 90000);
     const diagnostics = { readerBuild: root.chrome?.runtime?.getManifest?.()?.version || 'local', posts: 0, contexts: 0, conversations: 0, conversationFailures: 0, pages: 0, stopReason: "unknown", timelines: [],
       bodyUnavailableCount: 0, bodyUnavailable: [], bodyUnavailableLatestAt: null, mediaOnlyCount: 0 };
     const unavailableBodies = new Map(), unavailableCounts = new Map(), mediaOnlyCounts = new Map();
@@ -434,7 +459,7 @@
       }).filter(item => authors.includes(item.author.toLowerCase()) && recentResetRoot(item));
       // Bounded global pick: least recently checked first (never-checked = 0),
       // then newest, so an older visible root cannot be starved by a newer one.
-      const knownPicks = [...new Map(knownRoots.map(item => [item.id, item])).values()]
+      const knownPicks = historyOnly ? [] : [...new Map(knownRoots.map(item => [item.id, item])).values()]
         .sort((a, b) => (Number(cache[a.id]?.followUpsCheckedAt) || 0) - (Number(cache[b.id]?.followUpsCheckedAt) || 0) ||
           Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 3);
       for (const known of knownPicks) {
@@ -442,7 +467,7 @@
       }
       // X may expose a reply-only stream here; scan original posts separately
       // so a busy reply timeline cannot bury the latest reset announcement.
-      for (const [timelineIndex, timeline] of TIMELINES.entries()) {
+      for (const [timelineIndex, timeline] of (historyOnly ? [] : TIMELINES).entries()) {
         let bodyQuality = {};
         try {
           const result = await page(timeline.url);
@@ -501,8 +526,8 @@
         diagnostics.telegram = { state: secondary?.state || 'unavailable', leads: ids.length, missing: ids.filter(id => !complete(id)).length, attempted: 0, recovered: 0 };
         for (const id of ids) {
           if (complete(id) || diagnostics.telegram.attempted >= 2 || Date.now() - (Number(telegramAttempts[id]) || 0) < 30 * 60000) continue;
-          const until = Math.min(deadline - 20000, Date.now() + 20000);
-          if (!tab || until - Date.now() < 15000) break;
+          const until = Math.min(deadline - (historyOnly ? 3000 : 20000), Date.now() + (historyOnly ? 42000 : 20000));
+          if ((!tab && !historyOnly) || until - Date.now() < 15000) break;
           try {
             // Persist before navigation so worker termination cannot repeatedly
             // open the same unavailable or misleading status every poll.
@@ -510,11 +535,18 @@
             diagnostics.telegram.attempted++;
             const result = await page('https://x.com/thsottiaux/status/' + id, until);
             const target = (result?.rows || []).find(row => row.id === id && String(row.author || '').toLowerCase() === 'thsottiaux');
+            if (historyOnly && !target) throw new Error(result?.bodyUnavailableCount ? 'X_BODY_UNAVAILABLE' : 'X_NO_PUBLIC_POSTS');
             const published = Date.parse(target?.createdAt), age = Date.now() - published;
-            if (!Number.isFinite(published) || age < -300000 || age > 365 * day) continue;
+            if (!Number.isFinite(published) || age < -300000 || age > 365 * day) {
+              if (historyOnly) diagnostics.telegram.error = 'invalid-post';
+              continue;
+            }
             const item = normalize([target], age > 7 * day ? published : Date.now()).find(row => row.id === id && row.author.toLowerCase() === 'thsottiaux' && !row.truncated);
-            if (result?.targetId !== id || !item) continue;
-            if (age > 7 * day) {
+            if (result?.targetId !== id || !item) {
+              if (historyOnly) diagnostics.telegram.error = target?.truncated ? 'body-unavailable' : 'invalid-post';
+              continue;
+            }
+            if (historyOnly || age > 7 * day) {
               if (onTelegramHistory && await onTelegramHistory(conversationContext(item, result, published))) diagnostics.telegram.recovered++;
             } else {
               collected.set(id, conversationContext(item, result));
@@ -528,6 +560,7 @@
           }
         }
       }
+      if (historyOnly) return { items: [], diagnostics, contextCache: {}, retainedPosts: [] };
       const items = authors.flatMap(author => [...collected.values()].filter(item => item.author.toLowerCase() === author).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 160)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, authors.length * 160);
       if (!items.length) throw Object.assign(lastError || new Error("X_NO_PUBLIC_POSTS"), { diagnostics });
       diagnostics.posts = items.length;

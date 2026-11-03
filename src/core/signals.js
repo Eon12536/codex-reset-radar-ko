@@ -757,6 +757,29 @@
     }).filter(item => !contextOnly.has(item.id));
   }
 
+  // A bounded, explicit future reset statement followed by “banked” is a
+  // credit announcement, not evidence that a credit has already arrived.
+  function bankedForecast(item) {
+    const text = normalizedText(item);
+    if (!publicIdentity(item) || item.truncated || UNRELATED.test(text) || includesAny(text, EXCLUSIONS) || isNegated(text)) return false;
+    return /\b(?:will be|are going to be|are planned as)\s+(?:\w+\s+){0,2}resets?\s*(?:…|\.{2,}|—|,|:|;)\s*banked\b/.test(text) &&
+      !/\b(?:not|never|no|won't|will not|if|maybe|might|could)\b[^.!?\n]{0,80}\b(?:resets?|banked)\b/.test(text);
+  }
+
+  // Short public announcements can omit the word "give" or, in Tibo's
+  // numbered day-series, even the word "reset". Neither proves an account
+  // has received a credit; that still requires the account balance check.
+  function bankedGrant(item) {
+    const text = normalizedText(item);
+    if (!isLead(item) || !publicIdentity(item) || item.truncated || /\?/.test(text) ||
+        UNRELATED.test(text) || includesAny(text, EXCLUSIONS) || isNegated(text) ||
+        /\b(?:not|never|no|won't|will not|if|unless|maybe|might|could|should|demand|want|need|wish|hope|please|yesterday|ago|last (?:week|month|year)|bank(?:ing|s)?|loan|interest|savings|mortgage)\b/.test(text)) return false;
+    const shortGrant = /^banked resets?\s+(?:for (?:y'all|everyone|you all|all)\s*[-–—,:.! ]+)?enjoy[!.\s]*$/.test(text);
+    const daySeries = /^day\s+[1-9]\d{0,2}\s*\/\s*banked\s+[1-9]\d?\s*\/\s*[1-9]\d?[!.\s]*$/.test(text) &&
+      String(item.author).replace(/^@/, '').toLowerCase() === 'thsottiaux';
+    return shortGrant || daySeries;
+  }
+
   function reports(items, options = {}) {
     const now = options.now ?? Date.now();
     const unique = new Map();
@@ -767,7 +790,8 @@
       if (!isLead(item) ||
           !at || at > now + 300000 || now - at > 7 * 86400000) continue;
       const text = normalizedText(item);
-      if (classify(item, options).actionable) continue;
+      const bankedAnnouncement = bankedForecast(item), shortBankedGrant = bankedGrant(item);
+      if (!bankedAnnouncement && !shortBankedGrant && classify(item, options).actionable) continue;
       const update = resetUpdate(item);
       // "Reset should be reflected for everyone" reports propagation, unlike
       // the suggestion "we should reset". Keep this exception narrowly scoped.
@@ -777,7 +801,7 @@
       const followUp = resetGrantFollowUp(item);
       const shortCompletion = shortResetCompletion(item);
       const resetCompletion = resetCompletedFollowUp(item) || Boolean(shortCompletion);
-      const grant = Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
+      const grant = bankedAnnouncement || shortBankedGrant || Boolean(followUp) || relevant.some(part => /\b(?:banked resets?|reset credits?)\b/.test(part) &&
         /\b(?:load(?:ing|ed)?|giv(?:e|en|ing)|gave|grant(?:ed|ing)?|add(?:ed|ing)?|issu(?:ed|ing)|deposited|receiv(?:e|ed|ing))\b/.test(part));
       // A concrete processed statement needs reset-specific surrounding context;
       // earlier unrelated speculation is not itself a completion assertion.
@@ -802,9 +826,9 @@
           ...(dayReset ? { announcement: 'day-series' } : {}),
           ...(shortCompletion ? { completionLink: shortCompletion.inferred ? 'inferred' : 'verified' } : {}),
           ...(shortCompletion?.contextInferred ? { completionContext: 'inferred' } : {}),
-          ...(followUp ? { grantStage: followUp } : {}),
+          ...(followUp || bankedAnnouncement ? { grantStage: followUp || 'forecast' } : {}),
           ...(update && !grant && !completed ? { updateStatus: update } : {}),
-          reason: followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
+          reason: bankedAnnouncement ? '리셋권 관련 예고 · 지급 완료와 내 계정 반영은 미확인' : followUp === 'confirmed' ? '인용 원문의 리셋권 지급 반영 확인 · 내 계정 보유는 별도 확인' :
             followUp === 'timing' ? '리셋권 지급 시간 안내 · 원문 시간 표현 기준 · 정확한 시각 미확정' :
             grant ? '리셋권 지급 안내 · 자동 한도 리셋과 구분' : dayReset ? '일차별 소식의 리셋 공지 · 리셋 종류·시각·내 계정 반영은 별도 확인' : shortCompletion?.inferred ? '완료 표현을 앞선 리셋 예고와 연결 추정 · 직접 답글 관계·내 계정 반영은 별도 확인' : shortCompletion?.contextInferred ? '인용한 일정의 완료 공지 · 리셋 원글 연결은 후속 문맥 추정 · 내 계정 반영은 별도 확인' : completed ? '작성자가 리셋 완료를 알림 · 내 계정 반영은 잔여량 조회로 확인' :
             update === 'resolved' ? '리셋 반영 문제 수정 안내 · 추가 리셋 지급·내 계정 반영은 별도 확인' : '리셋 반영 문제 조사·보완 안내 · 추가 리셋 여부·시각 미확정' } });
@@ -948,7 +972,7 @@
 
   root.RadarSignals = Object.freeze({
     isLead, authorName, avatarUrl, pollOptions, resetHeadline, resetAnchor, timingStatement, clockDeadline, resetDiscussion, eventContext, hasEventTime,
-    inferredTimingContext, linkTimingFollowUps, resetMetaphor, isInferredReset, isResetForecast,
+    inferredTimingContext, linkTimingFollowUps, resetMetaphor, isInferredReset, isResetForecast, bankedForecast, bankedGrant,
     classify,
     classifyHint,
     hintCandidates,

@@ -44,7 +44,7 @@ test('three categories are mutually exclusive and every source is counted exactl
   const rows = [row({ candidate: true, rule: 'reset-review' }, 'Maybe reset Codex limits?'), row({ actionable: true }),
     row({ report: 'completed-reset' }), row({ candidate: true, rule: 'reset-metaphor' }, 'Time to refuel Codex soon.')];
   const counts = c.RadarDailyNews.resetCounts(rows);
-  assert.deepEqual(JSON.parse(JSON.stringify(counts)), { forecast: 1, completed: 1, inferred: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(counts)), { forecast: 1, completed: 1, inferred: 2, grant: 0 });
   assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), rows.length);
   assert.equal(c.RadarDailyNews.statusKind(row({ candidate: true, rule: 'semantic-reset', semanticCategory: 'uncertain' }, 'Maybe reset Codex limits?')), 'inferred');
   assert.equal(c.RadarDailyNews.statusKind(row({ report: 'completed-reset', completionLink: 'inferred' })), 'inferred');

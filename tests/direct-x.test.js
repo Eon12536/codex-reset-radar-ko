@@ -87,7 +87,7 @@ function reader({ permission = true, finalUrl = POST_PAGE, normalizeUrl = url =>
         : (typeof conversation === 'function' ? conversation(url) : conversation) || { rows: [row('123', 'thsottiaux', 'Maybe dust off the reset button next Tuesday.')], targetId: '123' } }]; } } };
   const chromeUrl = () => url;
   const Clock = now === undefined && !conversationDelayMs && !timelineDelayMs ? Date : class extends Date { static now() { return (now ?? Date.now()) + elapsed; } };
-  const context = vm.createContext({ chrome, URL, Date: Clock, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
+  const context = vm.createContext({ chrome, URL, AbortController, AbortSignal, Date: Clock, crypto: require('node:crypto').webcrypto, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync(require.resolve('../src/core/signals'), 'utf8'), context);
   if (withNews) {
     vm.runInContext(fs.readFileSync(require.resolve('../src/core/time'), 'utf8'), context);
@@ -1017,6 +1017,65 @@ test('a Telegram lead older than seven days is verified on X and sent only to hi
   assert.ok(!result.items.some(item => item.id === id), 'historical post must not enter live alert processing');
   assert.equal(r.calls.filter(call => call[0] === 'create').length, 1);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('history-only recovery verifies older direct links without another timeline scan and closes its sole reader', async () => {
+  const now = Date.now(), id = '2110595484180214059';
+  const old = { ...row(id, 'thsottiaux', 'Day 10/ Reset'), createdAt: new Date(now - 10 * 86400000).toISOString() };
+  const r = reader({ now, conversation: url => url.endsWith('/' + id) ? { targetId: id, rows: [old] } : { rows: [] } });
+  const saved = [];
+  const result = await r.core.read(new AbortController().signal, { historyOnly: true,
+    telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }), onTelegramHistory: async item => { saved.push(item.id); return true; } });
+  assert.deepEqual(saved, [id]);
+  assert.equal(result.diagnostics.telegram.recovered, 1);
+  assert.equal(result.items.length, 0);
+  assert.equal(r.calls.filter(call => call[0] === 'create').length, 1);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  assert.ok(!r.calls.some(call => call[0] === 'update' && /with_replies/.test(call[1].url)));
+});
+
+test('history-only recovery opens no tab if every lead is already saved', async () => {
+  const id = '2110595484180214059', r = reader();
+  await r.core.read(new AbortController().signal, { historyOnly: true, knownHistoryIds: [id],
+    telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }) });
+  assert.equal(r.calls.filter(call => call[0] === 'create').length, 0);
+});
+
+test('historical recovery reports an inaccessible target and closes the reader', async () => {
+  const id = '2110595484180214059', r = reader({ conversation: () => ({ targetId: id, rows: [], stopReason: 'target-missing' }) });
+  const result = await r.core.read(new AbortController().signal, { historyOnly: true,
+    telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }) });
+  assert.equal(result.diagnostics.telegram.attempted, 1);
+  assert.equal(result.diagnostics.telegram.recovered, 0);
+  assert.equal(result.diagnostics.telegram.error, 'no-posts');
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('historical recovery reports an unloaded body instead of silent success', async () => {
+  const id = '2110595484180214059', r = reader({ conversation: () => ({ targetId: id, rows: [], bodyUnavailableCount: 1 }) });
+  const result = await r.core.read(new AbortController().signal, { historyOnly: true,
+    telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }) });
+  assert.equal(result.diagnostics.telegram.error, 'body-unavailable');
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('a new live scan interrupts historical recovery before opening its own tab', async () => {
+  const id = '2110595484180214059';
+  let started;
+  const reached = new Promise(resolve => { started = resolve; });
+  const r = reader({ scriptRunner: async url => {
+    if (url.endsWith('/' + id)) { started(); return new Promise(() => {}); }
+    return { rows: [row('123', 'thsottiaux', 'Normal recent public post')] };
+  } });
+  const history = r.core.read(new AbortController().signal, { historyOnly: true,
+    telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }) });
+  await reached;
+  const live = r.core.read(new AbortController().signal);
+  await assert.rejects(history);
+  const result = await live;
+  assert.equal(result.items[0].id, '123');
+  const actions = r.calls.filter(call => ['create', 'remove'].includes(call[0])).map(call => call[0]);
+  assert.deepEqual(actions, ['create', 'remove', 'create', 'remove']);
 });
 
 test('slow reset follow-ups leave time for all timelines and report deferred checks', async () => {

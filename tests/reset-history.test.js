@@ -26,16 +26,52 @@ test('old detected reset remains in display history without becoming an active o
   assert.equal(w.local.notificationHistory?.['signal:1001'], priorReceipt);
 });
 
-test('history rejects untrusted links and never evicts existing records when full', () => {
+test('history rejects untrusted links and keeps adding beyond the former item limit', () => {
   const w = makeWorker(), history = w.context.RadarResetHistory;
   const safe = post('9999', Date.now()); safe.assessment = { actionable: true };
   const bad = { ...safe, url: 'https://x.com.evil.test/thsottiaux/status/9999' };
   assert.equal(history.merge({}, [{ item: bad }]).items.length, 0);
-  const existing = { items: Array.from({ length: history.MAX_ITEMS }, (_, i) => ({ id: String(i + 100000) })) };
+  const existing = { items: Array.from({ length: 1000 }, (_, i) => ({ id: String(i + 100000) })), full: true };
   const result = history.merge(existing, [{ item: safe }]);
-  assert.equal(result.items.length, history.MAX_ITEMS);
-  assert.equal(result.full, true);
+  assert.equal(result.items.length, 1001);
+  assert.equal(result.full, false);
   assert.equal(result.items[0].id, '100000');
+});
+
+test('monthly groups include only selected local calendar month and preserve all records', () => {
+  const w = makeWorker(), history = w.context.RadarResetHistory;
+  const old = post('1001', Date.parse('2026-09-15T03:00:00Z'));
+  const current = post('1002', Date.parse('2026-10-15T03:00:00Z'));
+  old.assessment = current.assessment = { actionable: true };
+  const state = { resetHistory: history.merge({}, [{ item: old }, { item: current }]) };
+  const settings = { monitorSignals: true, monitorLeadSource: true, resetOnly: true };
+  const sept = w.context.RadarDailyNews.groups(state, settings, '2026-09');
+  const oct = w.context.RadarDailyNews.groups(state, settings, '2026-10');
+  assert.deepEqual(Array.from(sept, g => g.items[0].item.id), ['1001']);
+  assert.deepEqual(Array.from(oct, g => g.items[0].item.id), ['1002']);
+  assert.equal(state.resetHistory.items.length, 2);
+});
+
+test('default month range follows the selected country and handles year boundaries', () => {
+  const w = makeWorker(), daily = w.context.RadarDailyNews;
+  w.context.RadarI18n.setLocale('ko-KR');
+  assert.deepEqual(Array.from(daily.recentMonths(Date.parse('2026-10-31T15:30:00Z'))), ['2026-11', '2026-10']);
+  assert.deepEqual(Array.from(daily.recentMonths(Date.parse('2026-12-31T15:30:00Z'))), ['2027-01', '2026-12']);
+  w.context.RadarI18n.setLocale('en-US');
+  assert.deepEqual(Array.from(daily.recentMonths(Date.parse('2026-10-31T15:30:00Z'))), ['2026-10', '2026-09']);
+});
+
+test('default range includes current and previous months while explicit month shows only that month', () => {
+  const w = makeWorker(), history = w.context.RadarResetHistory, daily = w.context.RadarDailyNews;
+  const dates = ['2026-09-15', '2026-10-15', '2026-11-01'];
+  const items = dates.map((date, i) => ({ ...post(String(1100 + i), Date.parse(date + 'T03:00:00Z')), assessment: { actionable: true } }));
+  const state = { resetHistory: history.merge({}, items.map(item => ({ item }))) };
+  const settings = { monitorSignals: true, monitorLeadSource: true, resetOnly: true };
+  const recent = daily.groups(state, settings, ['2026-11', '2026-10']);
+  const selected = daily.groups(state, settings, '2026-09');
+  assert.deepEqual(Array.from(recent, group => group.items[0].item.id), ['1102', '1101']);
+  assert.deepEqual(Array.from(selected, group => group.items[0].item.id), ['1100']);
+  assert.equal(state.resetHistory.items.length, 3);
 });
 
 test('archived entries stay hidden when public monitoring is disabled', () => {

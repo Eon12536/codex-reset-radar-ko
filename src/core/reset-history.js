@@ -1,7 +1,6 @@
 (function initResetHistory(root) {
   // Display-only ledger: never used as a source for live classifications or
   // notifications. Do not silently evict previously recorded posts.
-  const MAX_BYTES = 2 * 1024 * 1024, MAX_ITEMS = 1000;
   function clean(item) {
     if (!item || item.source?.id !== 'codex-lead' || item.truncated || typeof item.text !== 'string' || !item.text.trim() || item.text.length > 6000) return null;
     const id = String(item.id || ''), author = String(item.author || '').replace(/^@/, '').toLowerCase();
@@ -12,6 +11,7 @@
     const assessment = { actionable: a.actionable === true, candidate: a.candidate === true,
       ...(typeof a.rule === 'string' ? { rule: a.rule.slice(0, 80) } : {}),
       ...(typeof a.report === 'string' ? { report: a.report.slice(0, 80) } : {}),
+      ...(typeof a.grantStage === 'string' ? { grantStage: a.grantStage.slice(0, 30) } : {}),
       ...(typeof a.completionLink === 'string' ? { completionLink: a.completionLink.slice(0, 30) } : {}),
       ...(typeof a.completionContext === 'string' ? { completionContext: a.completionContext.slice(0, 30) } : {}),
       ...(typeof a.timingLink === 'string' ? { timingLink: a.timingLink.slice(0, 30) } : {}),
@@ -25,9 +25,7 @@
   function merge(existing, rows, observed = []) {
     const previous = Array.isArray(existing?.items) ? existing.items : [];
     const saved = new Map(previous.filter(item => item && typeof item.id === "string").map(item => [item.id, item]));
-    let usedBytes = 6 + [...saved.values()].reduce((sum, item) => sum + JSON.stringify(item).length * 3 + 3, 0);
     const byKey = new Map((rows || []).map(row => [row.key, row]));
-    let full = Boolean(existing?.full);
     for (const row of rows || []) {
       if (row.topic || row.event || row.change) continue;
       const item = clean(row.item);
@@ -44,12 +42,7 @@
         if (old.timingStale) item.timingStale = true;
       }
       if (old && JSON.stringify(old) === JSON.stringify(item)) continue;
-      if (!old && saved.size >= MAX_ITEMS) { full = true; continue; }
-      // Conservative upper bound for UTF-8 encoded JSON, without evicting old records.
-      const nextBytes = usedBytes - (old ? JSON.stringify(old).length * 3 + 3 : 0) + JSON.stringify(item).length * 3 + 3;
-      if (nextBytes > MAX_BYTES) { full = true; continue; }
       saved.set(item.id, item);
-      usedBytes = nextBytes;
     }
     // Preserve records but stop displaying stale claims when X supplies an
     // edited body; invalidate linked schedules if their source was edited.
@@ -64,7 +57,7 @@
           saved.set(key, { ...parent, timingStale: true });
       }
     }
-    return { version: 1, items: [...saved.values()], full };
+    return { version: 1, items: [...saved.values()], full: false };
   }
   function rows(state, settings) {
     if (!settings.monitorSignals || !settings.monitorLeadSource) return [];
@@ -101,6 +94,6 @@
     }
     return result;
   }
-  root.RadarResetHistory = Object.freeze({ merge, rows, classifyRows, MAX_ITEMS, MAX_BYTES });
+  root.RadarResetHistory = Object.freeze({ merge, rows, classifyRows });
   if (typeof module !== 'undefined') module.exports = root.RadarResetHistory;
 })(globalThis);

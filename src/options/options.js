@@ -351,6 +351,7 @@ async function renderTelegramConnection() {
   const scan = signalSnapshot?.leadStatus?.directScan?.telegram;
   control('telegramPermission').textContent = connected ? '연결 해제' : '텔레그램 연결';
   control('telegramConnectionState').textContent = !connected ? '연결 꺼짐 · 권한 허용 후 자동으로 보조 확인합니다.' :
+    signalSnapshot?.leadStatus?.directError === 'tab-blocked' ? '연결됨 · X 확인 탭 정리 대기 중이라 원문 확인이 제한됩니다. 아래 탭 복구 상태를 확인해 주세요.' :
     scan?.state === 'ok' ? `연결됨 · 후보 ${scan.leads}개 · 빠진 글 ${scan.missing}개 · 원문 확인 ${scan.recovered}개` :
     scan?.state === 'unavailable' ? '채널을 읽지 못했습니다. 다음 확인 때 다시 시도합니다.' : '연결됨 · 다음 공개 소식 확인 때 확인합니다.';
 }
@@ -365,8 +366,34 @@ control('telegramPermission').addEventListener('click', async () => {
   finally { button.disabled = false; }
 });
 renderTelegramConnection();
+async function renderHistoryRecovery() {
+  if (control('restoreResetHistory').disabled) return;
+  const { manualHistoryLeads, historyRecoveryStatus } = await chrome.storage.local.get(['manualHistoryLeads', 'historyRecoveryStatus']);
+  if (!Array.isArray(manualHistoryLeads) || !manualHistoryLeads.length) return;
+  const status = historyRecoveryStatus;
+  control('historyRestoreState').textContent = status
+    ? `원문 후보 ${manualHistoryLeads.length}개 · 최근 확인 ${status.attempted || 0}개 · 기록 추가 ${status.recovered || 0}개` +
+      (status.error ? ' · ' + msg('collectorReason_' + status.error, undefined, 'X 확인에 문제가 있어 다시 시도합니다.') : ' · 남은 후보는 자동으로 이어서 확인합니다.')
+    : `원문 후보 ${manualHistoryLeads.length}개 준비 · 자동 확인 대기 중`;
+}
+void renderHistoryRecovery();
+control('restoreResetHistory').addEventListener('click', async () => {
+  const button = control('restoreResetHistory'), status = control('historyRestoreState');
+  button.disabled = true;
+  try {
+    status.textContent = '후보를 가져와 X 원문을 확인 중입니다. 최대 수 분 걸릴 수 있습니다.';
+    const result = await chrome.runtime.sendMessage({ type: 'RESTORE_RESET_HISTORY' });
+    const error = result?.historyError || result?.directError;
+    status.textContent = result?.ok ? `원문 후보 ${result.leads}개 · 이번 확인 ${result.attempted}개 · 기록 추가 ${result.recovered}개` +
+      (error ? ' · ' + msg('collectorReason_' + error, undefined, 'X 확인에 문제가 있어 다시 시도합니다.') : ' · 남은 후보는 자동으로 이어서 확인합니다.') :
+      result?.error === 'monitoring-off' ? '먼저 공개 소식 감시와 X 직접 확인을 켜 주세요.' :
+      result?.error === 'x-permission' ? '먼저 X 접근을 허용해 주세요.' : '복구 요청에 실패했습니다. 연결과 탭 정리 상태를 확인해 주세요.';
+  } catch { status.textContent = '후보를 가져오지 못했습니다. 인터넷 연결과 X 확인 탭 상태를 확인해 주세요.'; }
+  finally { button.disabled = false; }
+});
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.signalSnapshot) void renderTelegramConnection();
+  if (area === 'local' && (changes.historyRecoveryStatus || changes.manualHistoryLeads)) void renderHistoryRecovery();
 });
 
 async function changeChatCounter() {
