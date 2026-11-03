@@ -1,89 +1,86 @@
-# Codex Reset Radar · 리셋 레이더
+# Codex 리셋 레이더 · 한국어
 
-Version 0.2.144 recognizes concise public banked-reset announcements and numbered Tibo day-series posts.
+Codex 사용량과 리셋 소식을 한곳에서 확인하는 **Chrome·Edge 확장 프로그램**입니다. OpenAI·Tibo·VB의 공개 글에서 리셋 관련 소식을 찾아 보여주고, 선택적으로 연결한 계정의 사용량과 Banked reset 리셋권 상태를 확인합니다.
 
-Version 0.2.126 prevents another reader tab from opening after a browser restart when an unmarked tab could be the previous reader. Ambiguous tabs are not closed automatically; collection resumes after the ambiguity is resolved.
+**OpenAI 공식 제품이 아닌 커뮤니티 파생판입니다.** 공개 글 분류와 Chat 사용량은 추정이 포함될 수 있으며, 공지가 개인 계정에 반영됐는지는 계정 잔여량을 별도로 확인해야 합니다.
 
-Version 0.2.125 recognizes the October 28 completion with its verified quoted reset-timing context, while retaining strict negation and unrelated-post safeguards.
+[최신 버전 다운로드](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest) · [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml) · [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
 
-Version 0.2.124 preserves verified reply and quote evidence across incomplete or failed rechecks, retries unresolved completions sooner, restores missing retry alarms, and processes saved public posts after partial collection failures. Edited posts still invalidate stale relationships. No new permissions or external services are required.
+## 화면 미리보기
 
-Version 0.2.123 recognizes additional publicly verified reset completion language, including processed resets and bounded quoted follow-ups. The reader rechecks late-loading quote cards, and relative two-hour promises use verified or explicitly inferred reset context without inventing an execution time. Historical retention and daily alert limits remain unchanged.
+<img src="docs/images/popup-preview.jpg" alt="Codex 리셋 레이더 팝업: 남은 사용량, 리셋 소식, Chat 사용량과 리셋권 상태" width="340">
 
-Public news is grouped into one card per detection day, with summaries, explicit deadlines and every retained source link. Windows public-news alerts are limited to one accepted toast per selected-country calendar day; later findings update the popup silently. Account recovery, Banked credit and expiry alerts remain separate. Verified timing replies support bounded release asides; literal PST and publication-based relative dates are preserved. A ready on-device model no longer needs a popup setup shortcut.
-
-The default check interval is 15 minutes. Official public news, reset-only filtering, reset candidates, startup/wake recovery and credit expiry alerts are enabled; quiet hours are off. Community reports and history-based estimates default off. On upgrade, these two community sources are switched off once and the old 30-minute interval becomes 15 minutes; custom 60/120-minute intervals and later saved choices survive. Account/Chat access stays opt-in.
-
-OpenAI · Tibo · VB의 리셋 소식, Codex 잔여량과 Banked reset 리셋권을 확인하는 Chrome/Edge 확장프로그램입니다. **OpenAI 공식 제품이 아닌 커뮤니티 파생판**입니다.
-
-## 설치와 업데이트
-
-1. [최신 배포](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 배포된 ZIP을 내려받아 압축을 풉니다. 이 소스의 패키지 이름은 `CodexReset-Radar-KO-0.2.144.zip`이며 공개 배포 버전과 다를 수 있습니다.
-2. `chrome://extensions/` 또는 `edge://extensions/`에서 개발자 모드를 켭니다.
-3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
-4. 확장을 고정합니다. X 직접 확인은 항상 켜짐이며, 설정의 **X 접근 허용·확인**에서 처음 한 번 접근을 허용합니다. 개인 계정 조회는 별도로 켜고 연결합니다.
-
-업데이트는 기존 설치 폴더에 최신 파일을 덮어쓴 다음 확장 관리에서 **새로고침**하세요. 같은 확장을 삭제하지 않고 업데이트하면 로컬 설정·읽음·집계 기록을 유지합니다. ChatGPT 탭도 새로고침하세요. ZIP 설치는 자동 업데이트되지 않습니다.
+실제 확장 팝업 레이아웃의 미리보기이며, 숫자와 게시글은 **예시 데이터**입니다. 실제 계정 상태나 실제 알림 수신을 나타내지 않습니다.
 
 ## 주요 기능
 
-- 일부 계정의 리셋 반영 문제 조사·보완 및 인용된 수정 완료 안내 알림 (0.2.64)
+### 리셋 소식 탐지
 
-- Codex 5시간·주간 잔여량, 리셋 시각, 리셋권 보유·만료 상태
-- X 공지가 없어도 계정의 Banked reset 증가를 별도로 감지
-- 주간 `%` 배지와 미확인 `!`: 리셋권 영역에서 확인하거나 24시간이 지나면 해제
-- 리셋 관련 글만 기본 표시·알림, 검증된 답글 문맥·설문·완료 연결 지원
-- 작성자 사진, 게시 날짜·시각, 원문 링크, 긴 글 말줄임
-- 일반 출시·행사 후보는 설정에서 리셋 전용 필터를 끈 경우에만 표시
-- 8개국·7개 언어, 대표 지역 시간대 자동 변환, 라이트·다크 테마
-- 일반 Chat 모델별 기록과 추정 잔여량
-- Free·Go·Plus부터 Pro·Business·Enterprise·Edu까지 전체 요금제 표시, 현재 계정의 요금제 선택 상태 표시
-- 알림 대기열, 전송 재시도, Chrome 재시작·절전 복귀 후 확인
+- OpenAI·Tibo·VB의 공개 글과 확인 가능한 답글에서 리셋 예고, 완료 표현, 리셋 추정과 리셋권 공지를 구분합니다.
+- 리셋 관련 글을 날짜별로 묶어 요약하고 작성자·게시 시각·원문 링크를 표시합니다. 확인된 일정 표현은 선택한 국가의 시간대로 변환합니다.
+- 리셋권 공지는 계정에 실제로 리셋권이 지급됐다는 증거와 구분합니다. 모호한 내용은 추정으로 표시될 수 있습니다.
+- **지금 확인** 버튼으로 수동 조회할 수 있으며, 기본 확인 주기는 15분입니다. Chrome 시작과 절전 복귀 시에도 확인을 시도합니다.
+- 확장이 연 X 확인 탭은 조회가 끝나면 정리를 시도합니다. 사용자가 선택·고정·이동했거나 소유권이 불명확한 탭은 보호합니다.
 
-## 사용 전 알아두기
+### 사용량과 리셋권
 
-**X 계정 없이도 기본 공개 피드와 계정 사용량 조회를 사용할 수 있습니다.** 하지만 피드가 오래되거나 중단되면 최신 글을 얻지 못합니다. X 직접 확인은 항상 켜짐이며 공개 소식 감시 중 정기·시작·절전 복귀 확인에 포함됩니다. 처음 한 번 설정의 **X 접근 허용·확인**에서 브라우저 접근을 허용해야 하며 X에서 로그인을 요구할 수 있습니다. 제공처와 X 화면의 접근 제한 때문에 모든 글의 탐지를 보장하지는 않습니다. 이미지·영상 속 발언은 분석하지 않습니다.
+- 계정 연결을 선택하면 Codex **5시간·주간 잔여량**, 조회 가능한 초기화 시각과 Banked reset 보유·만료 상태를 표시합니다.
+- 리셋권 만료 알림이 켜져 있고 만료 시각을 확인할 수 있으면 기본적으로 **3일·2일·1일 전**에 안내합니다. 만료가 가까우면 확장 아이콘에도 표시합니다.
+- Chat 모델별 집계와 요금제 확인은 선택 기능입니다. Chat 수치는 확인한 기록에 기반한 **추정치**이며 공식 잔여 횟수가 아닙니다. 삭제된 대화·다른 기기·계정별 정책 등에 따라 차이가 날 수 있습니다.
 
-**Chat 숫자는 서버가 보증한 잔여량이 아닌, 확인한 기록에 기반한 추정치**입니다. 삭제·임시 대화, 조회 범위, 요금제와 초기화 시점 차이가 영향을 줍니다. 현재 정량 한도가 확인되지 않은 Pro $200·$500에는 임의 퍼센트를 만들지 않습니다. Pro $200은 목록에 하나만 표시하며, 과거 9/27 기준의 저장된 선택도 현재 항목으로 연결합니다. 사용 기록은 보존하고 과거 한도로 현재 잔여량을 계산하지 않습니다.
+### 기록과 보조 확인
 
-Windows 알림은 Chrome 실행, 확장 알림 설정, Windows 알림 허용과 방해 금지 설정의 영향을 받습니다. Chrome의 알림 접수가 실제 Windows 표시·소리를 보장하지는 않습니다.
+- 확인된 리셋 소식은 기기에 누적합니다. 기본 화면에는 이번 달과 지난달을 표시하며, **기간설정**에서 연도와 월을 선택할 수 있습니다.
+- 선택적으로 Telegram 공개 채널의 X 글 번호를 보조 후보로 사용합니다. 채널 문구만으로 공지를 확정하지 않고 X 원문을 다시 확인합니다.
+- 설정의 **예전 리셋 글 복구**는 공개 기록 사이트에서 Tibo 원문 링크를 후보로 가져온 뒤 X 원문 확인을 시도합니다. 모든 과거 글의 복구는 보장되지 않습니다.
 
-정기 확인은 로컬 규칙과 읽기 전용 HTTP 요청을 사용합니다. **AI API나 Codex 추론 토큰을 사용하지 않습니다.**
+### 알림
 
-## 새 모델과 한도 변경
+- 공개 소식은 기본적으로 **선택 국가의 하루에 한 번** Windows/Chrome 알림을 보냅니다. 같은 날 추가된 글은 팝업에 반영됩니다.
+- 잔여량 회복, 리셋권 지급·만료 알림은 공개 소식의 하루 알림과 별도로 설정할 수 있습니다. 과거에 복구한 글은 새 알림으로 다시 보내지 않습니다.
+- Chrome이 실행 중이어야 확인할 수 있습니다. Windows 알림 허용·방해 금지 설정과 Chrome 알림 설정에 따라 표시나 소리가 달라질 수 있습니다.
 
-계정에서 조회하는 Codex 잔여량·리셋 시각·리셋권 상태는 조회 때 갱신됩니다. Chat 모델 분류와 요금제별 수치 기준은 확장에 포함된 표를 사용하므로, 새 모델·정책 변경 시 확인과 새 버전 배포가 필요합니다. 모델 출시 소식 탐지는 이 표를 자동 수정하지 않습니다.
+## 설치
 
-Chat 메시지 한도와 Work/Codex 사용량, API 토큰 한도는 서로 다른 기준입니다. [OpenAI 공식 안내](https://help.openai.com/en/articles/20001354-gpt-56-and-gpt-6-pro-in-chatgpt)를 확인하며, 공개되지 않았거나 계정별로 다른 수치를 임의로 적용하지 않습니다. 현재 GitHub ZIP 설치는 새 파일을 덮어쓰고 확장을 새로고침하는 수동 업데이트 방식입니다.
+1. [최신 릴리스](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.144.zip`을 다운로드하고 압축을 풉니다.
+2. Chrome에서 `chrome://extensions/`, Edge에서 `edge://extensions/`를 열고 **개발자 모드**를 켭니다.
+3. **압축해제된 확장 프로그램을 로드합니다**를 선택하고 `manifest.json`이 들어 있는 폴더를 지정합니다.
+4. 브라우저 도구 모음에 확장을 고정합니다. X 직접 확인은 설정에서 접근을 한 번 허용해야 하며, X 로그인 상태가 필요할 수 있습니다.
+5. 개인 사용량과 리셋권을 보려면 설정에서 계정 조회를 선택하고 ChatGPT 계정을 연결합니다.
 
-## 피드백
+## 업데이트
 
-- [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml)
-- [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
+최신 ZIP의 파일을 기존 설치 폴더에 덮어쓴 다음 확장 관리에서 **새로고침**하세요. 같은 확장을 삭제하지 않고 업데이트하면 기존 로컬 설정과 기록을 유지할 수 있습니다. ZIP으로 설치한 확장은 자동 업데이트되지 않습니다.
 
-버전·브라우저·재현 순서와 공개 원문 링크를 알려주세요. 스크린샷의 개인 정보는 가리고 토큰·쿠키·계정 ID·대화 본문·원본 API 응답은 올리지 마세요.
+## 사용 조건과 한계
 
-[자세한 한국어 설명서](README.ko.md) · [개인정보 처리](PRIVACY.md) · [기여 방법](CONTRIBUTING.md) · [제3자 고지](THIRD_PARTY_NOTICES.md)
+- X 로그인 상태, 페이지 구조 변경, 네트워크 문제와 접근 제한에 따라 글 수집이 실패하거나 일부 소식을 놓칠 수 있습니다. 모든 공지의 탐지를 보장하지 않습니다.
+- 리셋의 정확한 시각이나 종류가 원문에 없으면 확정하지 않습니다. 상대 날짜와 시간대는 원문·게시일에 근거한 해석으로, 실제 실행 시점과 다를 수 있습니다.
+- Chrome 내장 **기기 AI**를 사용할 수 있는 경우 공개 글의 의미 판정을 보조합니다. 지원 기기와 모델 준비가 필요하며 AI도 틀릴 수 있습니다. 이 기능은 유료 Claude API나 Codex 추론 토큰을 사용하지 않습니다.
+- Chat 모델 분류와 한도 기준은 확장에 포함된 표를 사용합니다. 새 모델이나 정책이 나오면 자동으로 정확한 수치가 갱신되는 것은 아니며 확장 업데이트가 필요할 수 있습니다.
 
-## 개발 및 검증
+## 권한과 개인정보
 
-Node.js 20.11 이상에서 실행합니다.
+확장 기능에 필요한 권한과 사용 목적은 다음과 같습니다.
 
-```sh
-npm ci
-npm run verify
-```
+| 권한 | 용도 |
+| --- | --- |
+| 알람·알림 | 정기 확인과 브라우저 알림 |
+| 저장소·확장 저장소 | 설정, 확인 상태와 공개 소식 기록을 기기에 보관 |
+| X 접근·스크립트 실행 | 사용자가 허용한 경우 공개 글·답글 확인 |
+| Telegram 접근 | 사용자가 연결한 경우 공개 채널에서 X 글 번호를 보조 확인 |
+| ChatGPT 및 공개 소스 접근 | 선택한 계정 정보와 공개 소식 조회 |
 
-`verify`는 패키징·확장 구문/권한 검사·회귀 테스트를 실행합니다. 결과 ZIP은 `dist/`에 생성됩니다. 의존성 설치 스크립트는 `.npmrc`에서 기본 차단하고 공식 npm 레지스트리를 사용합니다.
+X·Telegram·공개 기록 사이트를 이용할 때 해당 서비스에 접속 IP 등 통상적인 연결 정보가 전달될 수 있습니다. 보관·전송과 선택 권한의 자세한 내용은 [개인정보 처리 안내](PRIVACY.md)를 확인하세요.
 
-화면 확인: `node scripts/preview-server.mjs` 실행 후 `http://127.0.0.1:4173/src/popup/popup.html`. 이 화면은 **예시 데이터**이며 실제 계정·Windows 알림 검증을 대신하지 않습니다.
+## 피드백과 기여
 
-## 출처 및 라이선스
+문제를 발견하면 [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml)에 확장 버전, 브라우저, 재현 순서와 공개 원문 링크를 남겨 주세요. 아이디어는 [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)으로 환영합니다.
 
-[whmc76/codex-reset-radar](https://github.com/whmc76/codex-reset-radar) v0.2.2 기반 파생판이며 원본과 기존 기여자의 MIT 고지를 유지합니다. [LICENSE](LICENSE)와 [제3자 자산 고지](THIRD_PARTY_NOTICES.md)를 확인하세요.
+스크린샷을 공유할 때는 개인정보를 가리고, 토큰·쿠키·계정 ID·대화 본문·원본 API 응답은 올리지 마세요. [상세 한국어 설명과 변경 이력](README.ko.md) · [기여 방법](CONTRIBUTING.md)
 
-0.2.97 decouples inference retries from X collection. Retrying cached public posts never changes collection timestamps or creates X tabs. Inference is bounded at 45 seconds per post / 90 seconds per pass; repeat failures back off for 1–30 minutes without becoming negative classifications. The UI exposes the failing phase and error details; model availability is distinct from successful classification.
+## 개발과 라이선스
 
-0.2.97 removes the artificial six/eight-post AI batch cap and three-conversation cap. Work drains within the existing 90-second AI / 270-second X limits. Deterministic alerts precede AI startup, and new positive AI results are delivered at checkpoints. Remaining work is scheduled from its earliest retry time with a 30-second minimum. Processing and failure recovery can still leave pending items; they are never labelled completed.
+Node.js 20.11 이상에서 `npm ci` 후 `npm run verify`를 실행합니다. 패키징·확장 검사·회귀 테스트가 실행되고 ZIP이 `dist/`에 생성됩니다. `node scripts/preview-server.mjs`의 화면은 예시 데이터이며 실제 Windows 알림 검증을 대신하지 않습니다.
 
-0.2.98 fixes a reproduced race found in Claude review: a second AI-only retry could swallow a pending fresh-post request while the mutation lock was released. Fresh requests now wait through AI-only jobs and still perform collection.
+이 프로젝트는 [whmc76/codex-reset-radar](https://github.com/whmc76/codex-reset-radar) 기반 커뮤니티 파생판입니다. [MIT 라이선스](LICENSE)와 [제3자 자산 고지](THIRD_PARTY_NOTICES.md)를 확인하세요.
