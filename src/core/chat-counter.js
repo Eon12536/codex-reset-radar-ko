@@ -53,6 +53,19 @@
   function currentPlan(id) {
     return id === 'pro200' ? 'pro200Current' : id;
   }
+  function accountFamily(profile, tokenFamily, now = Date.now()) {
+    const evidence = profile?.familyEvidence;
+    // Scoped by the caller's salted user/account key. A later token-family
+    // change supersedes this short-lived quota observation.
+    if (evidence?.source === 'usage' && evidence.tokenFamily === tokenFamily &&
+        Number.isFinite(evidence.at) && evidence.at <= now && now - evidence.at < 30 * 60000 &&
+        family(evidence.family) !== 'unknown') return family(evidence.family);
+    // An expired conflicting observation is not proof of a downgrade. Keep
+    // the plan unconfirmed until a fresh quota response or changed claim.
+    if (evidence?.source === 'usage' && evidence.tokenFamily === tokenFamily &&
+        family(evidence.family) !== 'unknown' && evidence.family !== tokenFamily) return 'unknown';
+    return tokenFamily === 'unknown' && !evidence ? profile?.family || 'unknown' : tokenFamily;
+  }
   function verifiedPlan(profile, accountFamily, now = Date.now()) {
     const id = currentPlan(profile?.plan);
     const plan = PLANS[id];
@@ -155,6 +168,9 @@
     const account = data.chatAccount;
     const connected = data.settings?.monitorChat && account?.status === 'connected' && account.checkedAt <= now && now - account.checkedAt < 5 * 60000;
     const profile = connected ? data.chatCounters?.[account.key] : null;
+    const quota = profile?.familyEvidence;
+    const familySource = quota?.source === 'usage' && quota.tokenFamily === account?.tokenFamily &&
+      quota.at <= now && now - quota.at < 30 * 60000 && quota.family === account?.family ? 'usage' : 'session';
     const evidence = connected ? planEvidence(profile, account.family, now) : { plan: null, source: null, at: null };
     const plan = evidence.plan;
     const label = plan ? PLANS[plan].label : ({ pro: 'Pro · 세부 요금제 미확인', business: 'Business · 세부 요금제 미확인',
@@ -163,7 +179,7 @@
     const planCheck = profile?.planCheck;
     const count = summary(profile, plan, now, linked);
     return { connected: Boolean(connected), plan, label, count, meters: meters(count, plan),
-      accountKey: connected ? account.key : null, planSource: evidence.source, planCheckedAt: evidence.at,
+      accountKey: connected ? account.key : null, planSource: evidence.source, planCheckedAt: evidence.at, familySource,
       modelCounts: modelCounts(profile, now, linked), family: account?.family || 'unknown',
       codexReset: linked ? profile?.codexReset || null : null,
       planCheck: planCheck?.status === 'running' && now - planCheck.checkedAt > 60000
@@ -203,6 +219,6 @@
       }
     };
   }
-  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, identity, currentPlan, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
+  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, identity, currentPlan, accountFamily, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
   if (typeof module !== 'undefined') module.exports = root.RadarChatCounter;
 })(globalThis);

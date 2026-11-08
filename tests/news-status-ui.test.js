@@ -36,7 +36,7 @@ function row(id, assessment = {}, extra = {}) {
       url: 'https://x.com/thsottiaux/status/' + id, createdAt: '2026-10-23T04:46:19Z', assessment }, ...extra };
 }
 
-test('a compact daily card retains its date, summary, four chips, one schedule and every source link', () => {
+test('a compact daily card retains its date, summary, five chips, one schedule and every source link', () => {
   const c = setup();
   const items = [row('801'), row('802', { actionable: true }), row('803', { report: 'completed-reset' }), row('809', { candidate: true, rule: 'reset-metaphor' }), row('810', { report: 'credit-grant' })];
   items[0].item.text = 'Maybe reset Codex limits?';
@@ -45,8 +45,9 @@ test('a compact daily card retains its date, summary, four chips, one schedule a
   assert.match(find(card, 'daily-news-date')[0].textContent, /2026.*10.*25/);
   assert.match(find(card, 'daily-news-summary')[0].textContent, /5건 탐지/);
   const header = find(card, 'news-status-chips')[0];
-  assert.equal(header.children.length, 4);
-  assert.deepEqual(header.children.map(chip => chip.className.split(' ').at(-1)), ['is-forecast', 'is-completed', 'is-inferred', 'is-grant']);
+  assert.equal(header.children.length, 5);
+  assert.deepEqual(header.children.map(chip => chip.className.split(' ').at(-1)), ['is-forecast', 'is-completed', 'is-inferred', 'is-grant', 'is-muted']);
+  assert.match(header.textContent, /신모델 출시 0/);
   assert.doesNotMatch(header.textContent, /리셋 언급/); assert.match(header.textContent, /리셋 추정 2/); assert.match(header.textContent, /리셋 예고/); assert.match(header.textContent, /리셋 완료/); assert.match(header.textContent, /리셋권 1/);
   const sources = find(card, 'daily-news-sources')[0];
   assert.equal(sources.children.length, 5);
@@ -57,7 +58,7 @@ test('a compact daily card retains its date, summary, four chips, one schedule a
   }
   assert.match(sources.children[4].textContent, /리셋권 지급/);
   assert.match(sources.children[1].textContent, /리셋 예고/);
-  assert.equal(find(card, 'news-status-chip').length, 4);
+  assert.equal(find(card, 'news-status-chip').length, 5);
   assert.equal(find(card, 'news-schedule-box').length, 1);
   assert.equal(find(card, 'daily-news-quote').length, 0);
 });
@@ -67,7 +68,7 @@ test('zero status counts stay labelled and a known daily clock is shown once wit
   const time = c.RadarNews.schedule(reply);
   const items = [row('807', { actionable: true }, { timingSchedule: time }), row('808')];
   const card = c.createDailyNewsCard({ day: '2026-10-23', items, ...c.RadarDailyNews.summary(items) }, { resetOnly: true });
-  assert.equal(find(card, 'news-status-chip').length, 4);
+  assert.equal(find(card, 'news-status-chip').length, 5);
   assert.match(find(card, 'is-completed')[0].textContent, /0/);
   const box = find(card, 'news-schedule-box')[0];
   assert.match(box.textContent, /10\/24.*3:00.*이전/);
@@ -89,6 +90,54 @@ test('each source schedule box uses its verified clock and keeps unresolved ment
     const mention = c.createNewsRow(unknown, [verified, unknown], compact);
     assert.match(find(mention, 'news-schedule-box')[0].textContent, /리셋 시각 미확인/);
   }
+});
+
+test('unresolved reset timing retains the exact source wording without inventing a timestamp', () => {
+  const c = setup(), soon = row('821', { actionable: true });
+  soon.item.text = 'We will reset Codex usage limits soon.';
+  const info = c.RadarDailyNews.verifiedTime(soon);
+  assert.equal(info.verified, false); assert.match(info.text, /원문 시간 표현.*reset Codex usage limits soon/);
+  assert.equal(info.at, undefined);
+  const card = c.createDailyNewsCard({ day: '2026-10-23', items: [soon], ...c.RadarDailyNews.summary([soon]) }, { resetOnly: true });
+  const box = find(card, 'news-schedule-box')[0];
+  assert.match(box.textContent, /Tibo.*원문 시간 표현.*soon/);
+  assert.match(box.textContent, /리셋 시각 미확인/);
+  assert.equal(box.children.filter(child => child.tagName === 'TIME').length, 0);
+  const single = find(c.createNewsRow(soon, [soon]), 'news-schedule-box')[0];
+  assert.match(single.textContent, /원문 시간 표현.*soon/);
+});
+
+test('unrelated event timing, untrusted evidence and truncated bodies never become reset timing text', () => {
+  const c = setup();
+  for (const text of ['The launch is tomorrow; a reset is under consideration.', 'We shipped yesterday. Reset is under consideration.',
+    'Launch tomorrow and reset is under consideration.', 'A reset may happen. The event is next week.']) {
+    const item = row('822'); item.item.text = text;
+    assert.equal(c.RadarDailyNews.timeExpression(item), '', text);
+  }
+  const valid = row('823'); valid.item.text = 'Reset should happen sometime this week.';
+  assert.match(c.RadarDailyNews.timeExpression(valid), /this week/);
+  valid.item.url = 'https://evil.test/status/823'; assert.equal(c.RadarDailyNews.timeExpression(valid), '');
+  valid.item.url = 'https://x.com/thsottiaux/status/823'; valid.item.truncated = true;
+  assert.equal(c.RadarDailyNews.timeExpression(valid), '');
+});
+
+test('verified time remains a time element rather than an unverified quotation', () => {
+  const c = setup(), reply = require('./fixtures/tibo-day18-oct23.json').posts[1];
+  const verified = row('824', { actionable: true }, { timingSchedule: c.RadarNews.schedule(reply) });
+  const card = c.createDailyNewsCard({ day: '2026-10-23', items: [verified], ...c.RadarDailyNews.summary([verified]) }, { resetOnly: true });
+  const box = find(card, 'news-schedule-box')[0];
+  assert.equal(box.children.filter(child => child.tagName === 'TIME').length, 1);
+  assert.doesNotMatch(box.textContent, /원문 시간 표현|미확인/);
+});
+
+test('a verified time and a separate unresolved timing quote both remain visible', () => {
+  const c = setup(), reply = require('./fixtures/tibo-day18-oct23.json').posts[1];
+  const verified = row('825', { actionable: true }, { timingSchedule: c.RadarNews.schedule(reply) });
+  const unsure = row('826', { candidate: true }); unsure.item.text = 'Reset may be coming sometime next week.';
+  const items = [verified, unsure];
+  const box = find(c.createDailyNewsCard({ day: '2026-10-23', items, ...c.RadarDailyNews.summary(items) }, { resetOnly: true }), 'news-schedule-box')[0];
+  assert.equal(box.children.filter(child => child.tagName === 'TIME').length, 1);
+  assert.match(box.textContent, /원문 시간 표현.*next week/);
 });
 
 test('verified schedule helpers preserve the same instant across all selected countries', () => {

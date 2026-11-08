@@ -12,6 +12,15 @@ if (manifest.version !== packageJson.version) errors.push('Manifest and package 
 if (manifest.version_name !== undefined && manifest.version_name !== manifest.version)
   errors.push('Chrome display version must match manifest.version; omit version_name to prevent stale version labels');
 if (!readme.includes(`CodexReset-Radar-KO-${manifest.version}.zip`)) errors.push('README download filename must use the current version');
+for (const [file, pattern] of [
+  ['src/background.js', /const NOTIFICATION_BUILD = "([^"]+)"/],
+  ['src/options/notification-test.js', /const BUILD = "([^"]+)"/],
+  ['src/popup/popup.html', /id="popupBuildVersion"[^>]*>v([^<]+)/],
+  ['src/options/options.html', /class="version">v([^<]+)/]
+]) {
+  const version = pattern.exec(fs.readFileSync(path.join(root, file), 'utf8'))?.[1];
+  if (version !== manifest.version) errors.push(`Stale display/diagnostic version in ${file}`);
+}
 
 function exists(relativePath) {
   if (!fs.existsSync(path.join(root, relativePath))) errors.push(`Missing: ${relativePath}`);
@@ -106,6 +115,7 @@ exists("src/chat-counter.js");
 exists("src/core/chat-counter.js");
 exists("src/core/direct-x.js");
 exists("src/x-reader.js");
+exists("src/x-wrapper-reader.js");
 if (manifest.web_accessible_resources?.length) errors.push("Hardened build must not expose extension resources to pages");
 if (manifest.permissions.includes("tabs")) errors.push("Broad tabs permission is not needed");
 if (fs.existsSync(path.join(root, "src/content.js"))) errors.push("Legacy content script must not be packaged");

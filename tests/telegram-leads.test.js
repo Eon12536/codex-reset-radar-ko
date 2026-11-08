@@ -10,11 +10,46 @@ test('Telegram parsing extracts only recent canonical X IDs, never channel text 
   const parse = w.context.RadarTelegramLeads.parse;
   const html = `<a href="https://x.com/i/status/${id}?s=20">Done</a>
     <a href="https://x.com/thsottiaux/status/${id}">duplicate</a>
+    <a href="https://x.com/codex_resets/status/${id}">repost is still only a candidate</a>
     <a href="https://x.com.evil.test/i/status/${id}">evil</a>
     <a href="https://x.com/other/status/${id}">other author</a>
     <a href="https://x.com/i/status/1">old</a>`;
   assert.deepEqual(Array.from(parse(html, NOW)), [id]);
+  assert.deepEqual(Array.from(parse(`<a href="https://x.com/codex_resets/status/${id}">wrapper</a>`, NOW)), [id]);
+  assert.deepEqual(Array.from(parse(`<a href="https://x.com/codex_resets/status/${id}">wrapper</a>`, NOW, { directOnly: true })), []);
   assert.deepEqual(Array.from(parse('x'.repeat(2 * 1024 * 1024 + 1), NOW)), []);
+});
+
+test('full history and Telegram queues both survive merging, interleave, and deduplicate', () => {
+  const combine = makeWorker().context.RadarTelegramLeads.combine;
+  const historical = Array.from({ length: 40 }, (_, i) => String(2110000000000000000n + BigInt(i)));
+  const channel = Array.from({ length: 40 }, (_, i) => String(2116000000000000000n + BigInt(i)));
+  const result = combine(channel, historical);
+  assert.equal(result.ids.length, 80); assert.equal(result.telegramIds.length, 40);
+  assert.equal(result.ids[0], historical[39]); assert.equal(result.ids[1], channel[39]);
+  assert.ok(channel.every(id => result.ids.includes(id)));
+  const duplicate = combine([channel[0], historical[0], 'bad'], [historical[0]]);
+  assert.equal(duplicate.ids.length, 2); assert.equal(duplicate.telegramIds.length, 2);
+});
+
+test('forty saved history leads cannot erase a fresh Telegram candidate in the real refresh path', async () => {
+  const historic = Array.from({ length: 40 }, (_, i) => String(2110000000000000000n + BigInt(i)));
+  const w = makeWorker({ stored: { manualHistoryLeads: historic, settings: { monitorSignals: true, monitorLeadSource: true,
+    monitorDirectX: true, monitorAccount: false, semanticEnabled: false, monitorStatusSource: false,
+    monitorHistorySource: false, monitorCommunitySource: false } }, fetcher: async url =>
+      url === 'https://t.me/s/codex_resets' ? new Response(`<a href="https://x.com/i/status/${id}">x</a>`,
+        { headers: { 'content-type': 'text/html' } }) : json({ items: [] }) });
+  w.context.Date = class extends Date { static now() { return NOW; } };
+  w.context.chrome.permissions.contains = async () => true;
+  let received;
+  w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async (_signal, options) => {
+    received = await options.telegramLeads;
+    return { items: [], diagnostics: { timelines: [] } };
+  } };
+  await w.context.refreshSignals();
+  assert.equal(received.ids.length, 41); assert.ok(received.ids.includes(id));
+  assert.deepEqual(Array.from(received.telegramIds), [id]);
+  assert.equal(w.local.manualHistoryLeads.length, 40);
 });
 
 test('Telegram access requires optional permission and never includes credentials', async () => {

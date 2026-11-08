@@ -13,6 +13,7 @@ importScripts(
   "core/semantic.js",
   "core/semantic-queue.js",
   "core/signals.js",
+  "core/model-release.js",
   "core/news.js",
   "core/events.js",
   "core/schedule.js",
@@ -54,7 +55,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.144";
+const NOTIFICATION_BUILD = "0.2.155";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -389,6 +390,7 @@ async function injectChatCounter(inject = true) {
 }
 
 let chatAccountJob;
+let chatPlanAccountJob;
 const chatBindings = new Map();
 const chatPlanTabs = new Map();
 const chatPlanWaiters = new Map();
@@ -420,8 +422,8 @@ async function refreshChatAccount({ force = false } = {}) {
         if (epoch !== stateEpoch || !(await loadSettings()).monitorChat) return { status: "off" };
         const { chatCounters = {} } = await chrome.storage.local.get("chatCounters");
         const profile = chatCounters[key] || {};
-        const family = identity.family === "unknown" ? profile.family || "unknown" : identity.family;
-        const account = { key, family, status: "connected", checkedAt: Date.now() };
+        const family = RadarChatCounter.accountFamily(profile, identity.family);
+        const account = { key, family, tokenFamily: identity.family, status: "connected", checkedAt: Date.now() };
         // Keep dated evidence for a labelled, bounded fallback during page outages.
         // A family/account change cannot apply another account's allowance.
         chatCounters[key] = { ...profile, family, updatedAt: Date.now() };
@@ -438,6 +440,55 @@ async function refreshChatAccount({ force = false } = {}) {
     } finally { activeRequests.delete(controller); }
   })().finally(() => { chatAccountJob = null; });
   return chatAccountJob;
+}
+
+async function refreshChatPlanAccount({ force = false } = {}) {
+  if (chatPlanAccountJob) return chatPlanAccountJob;
+  chatPlanAccountJob = (async () => {
+    const epoch = stateEpoch;
+    const account = await refreshChatAccount({ force: true });
+    const settings = await loadSettings();
+    if (account.status !== 'connected' || !settings.monitorChat || !settings.monitorAccount) return account;
+    const { chatCounters = {}, chatCounterSalt } = await chrome.storage.local.get(['chatCounters', 'chatCounterSalt']);
+    const check = chatCounters[account.key]?.familyCheck;
+    if (!force && check?.tokenFamily === account.tokenFamily && check.at <= Date.now() && Date.now() - check.at < 60000) return account;
+    const controller = new AbortController(); activeRequests.add(controller);
+    let evidence = null;
+    try {
+      const token = await getToken(controller.signal);
+      const identity = RadarChatCounter.identity(token);
+      if (!identity || !chatCounterSalt || await RadarRecovery.accountKey(token, null, chatCounterSalt) !== account.key)
+        return await refreshChatAccount({ force: true });
+      // Plan-only verification reuses the existing allowed quota endpoint. It
+      // never runs recovery, credit, notification or local counter reset logic.
+      const raw = await trustedChatGptFetch(USAGE_URL, token, controller.signal);
+      const family = RadarChatCounter.family(RadarUsage.normalizeUsage(raw)?.plan);
+      const scopes = [raw?.account_id, raw?.accountId].filter(value => value !== undefined && value !== null);
+      if (family !== 'unknown' && scopes.every(value => value === identity.account))
+        evidence = { source: 'usage', family, tokenFamily: identity.family, at: Date.now() };
+      // Recheck identity after the network wait; a response for A cannot alter B.
+      const latest = await refreshChatAccount({ force: true });
+      if (latest.key !== account.key || latest.tokenFamily !== identity.family) return latest;
+    } catch { /* A quota outage must not be treated as a subscription change. */ }
+    finally { activeRequests.delete(controller); }
+    return mutate(async () => {
+      const currentSettings = await loadSettings();
+      const current = await chrome.storage.local.get(['chatAccount', 'chatCounters']);
+      if (epoch !== stateEpoch || !currentSettings.monitorChat || !currentSettings.monitorAccount ||
+          current.chatAccount?.status !== 'connected' || current.chatAccount.key !== account.key ||
+          current.chatAccount.tokenFamily !== account.tokenFamily) return current.chatAccount || { status: 'unverified' };
+      const profile = current.chatCounters?.[account.key];
+      if (!profile) return current.chatAccount;
+      const next = { ...profile, familyCheck: { at: Date.now(), tokenFamily: account.tokenFamily,
+        status: evidence ? 'confirmed' : 'unavailable' }, ...(evidence ? { familyEvidence: evidence } : {}) };
+      const family = RadarChatCounter.accountFamily(next, account.tokenFamily);
+      const result = { ...current.chatAccount, family };
+      await chrome.storage.local.set({ chatAccount: result,
+        chatCounters: { ...current.chatCounters, [account.key]: { ...next, family } } });
+      return result;
+    });
+  })().finally(() => { chatPlanAccountJob = null; });
+  return chatPlanAccountJob;
 }
 
 async function chatCountStatus(sender) {
@@ -523,7 +574,7 @@ async function connectChatAccount({ active = true } = {}) {
 async function chooseChatPlan(message) {
   const epoch = stateEpoch;
   const plan = RadarChatCounter.currentPlan(message.plan);
-  const account = await refreshChatAccount({ force: true });
+  const account = plan === 'auto' ? await refreshChatPlanAccount({ force: true }) : await refreshChatAccount({ force: true });
   if (account.status !== 'connected' || account.key !== message.accountKey ||
       (plan !== 'auto' && RadarChatCounter.PLANS[plan]?.family !== account.family)) return { ok: false };
   if (plan === 'auto') {
@@ -574,7 +625,7 @@ async function refreshChatPlan(expectedAccountKey = null) {
 async function runChatPlan(expectedAccountKey = null) {
   const epoch = stateEpoch;
   if (!(await loadSettings()).monitorChat) return { ok: true, skipped: true };
-  const account = await refreshChatAccount({ force: true });
+  const account = await refreshChatPlanAccount({ force: true });
   if (account.status !== 'connected') return { ok: false, code: 'auth' };
   if (expectedAccountKey && account.key !== expectedAccountKey) return { ok: false, code: 'changed' };
   if (!['pro', 'business', 'unknown'].includes(account.family)) return { ok: true, status: 'no-fixed-budget' };
@@ -811,6 +862,25 @@ async function storeAccountSnapshot(usage, credits, epoch, identity) {
         for (const event of fresh) profile = RadarChatCounter.resetAfterCodex(profile, event);
         chatResetPatch.chatCounters = { ...chatCounters, [chatKey]: profile };
       }
+    }
+  }
+  // The live quota response can carry a newer subscription than session JWT
+  // claims. Reuse this already-authorized request, without opening more tabs.
+  const chatIdentity = RadarChatCounter.identity(identity?.token);
+  const quotaFamily = RadarChatCounter.family(usage?.plan);
+  const quotaAccount = identity?.rawUsage?.account_id || identity?.rawUsage?.accountId;
+  if (usage && key && settings.monitorChat && chatIdentity && quotaFamily !== 'unknown' &&
+      (!quotaAccount || quotaAccount === chatIdentity.account)) {
+    const chat = await chrome.storage.local.get(['chatCounterSalt', 'chatCounters', 'chatAccount']);
+    const chatKey = chat.chatCounterSalt && await RadarRecovery.accountKey(identity.token, null, chat.chatCounterSalt);
+    const profiles = chatResetPatch.chatCounters || chat.chatCounters || {};
+    if (chatKey && profiles[chatKey]) {
+      chatResetPatch.chatCounters = { ...profiles, [chatKey]: { ...profiles[chatKey], family: quotaFamily,
+        familyEvidence: { source: 'usage', family: quotaFamily, tokenFamily: chatIdentity.family, at: Date.now() } } };
+      // A late response for A may update A's profile, never B's active display.
+      if (chat.chatAccount?.status === 'connected' && chat.chatAccount.key === chatKey &&
+          chat.chatAccount.tokenFamily === chatIdentity.family)
+        chatResetPatch.chatAccount = { ...chat.chatAccount, family: quotaFamily };
     }
   }
   const activeSignal = RadarSignals.isActive(current.signalSnapshot?.signal)
@@ -1162,7 +1232,7 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
       if (source.kind === "x-page") {
         const { directXContextCache = {}, directXPendingPosts = [], hintSnapshot, signalSnapshot, telegramLeadAttempts = {}, resetHistory, manualHistoryLeads = [] } = await chrome.storage.local.get(["directXContextCache", "directXPendingPosts", "hintSnapshot", "signalSnapshot", "telegramLeadAttempts", "resetHistory", "manualHistoryLeads"]);
         const telegramLeads = RadarTelegramLeads.load(controller.signal).catch(() => ({ state: 'unavailable', ids: [] })).then(result => ({
-          ...result, ids: [...new Set([...(Array.isArray(manualHistoryLeads) ? manualHistoryLeads : []), ...result.ids])].slice(0, 40)
+          ...result, ...RadarTelegramLeads.combine(result.ids, manualHistoryLeads)
         }));
         let direct;
         try { direct = await RadarDirectX.read(controller.signal, { contextCache: directXContextCache, retainedPosts: directXPendingPosts,
@@ -1223,7 +1293,7 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
       if (epoch !== stateEpoch) return { ok: true, skipped: true };
       const currentSettings = await loadSettings();
       if (!currentSettings.monitorSignals) return { ok: true, skipped: true };
-      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState", "notificationHistory", "pendingNotifications", "resetHistory"]);
+      const state = await chrome.storage.local.get(["seenSignalIds", "accountSnapshot", "signalSnapshot", "hintSnapshot", "scheduleSnapshot", "publicResumeCheck", "publicAlertState", "notificationHistory", "pendingNotifications", "resetHistory", "modelReleaseHistory"]);
       const leadResults = successful.filter(result => ["codex-lead", "x-direct"].includes(result.source.id));
       const latestPostAt = Math.max(0, ...leadResults.flatMap(result => result.items
         .filter(item => String(item.author || "").replace(/^@/, "").toLowerCase().match(/^(thsottiaux|reach_vb|openai)$/))
@@ -1285,6 +1355,8 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
         other: publicItems.filter(item => !classifiedIds.has(item.id)).length };
       const snapshot = {
         signal,
+        modelReleases: currentSettings.monitorLeadSource ? RadarModelRelease.merge(state.signalSnapshot?.modelReleases, items)
+          .filter(item => RadarModelRelease.detect(item) && Date.parse(item.createdAt) >= Date.now() - 8 * 86400000) : [],
         activeSignals,
         reports,
         timingReplies: currentSettings.monitorLeadSource ? RadarNews.timingReplies([...(state.signalSnapshot?.timingReplies || []), ...existingSignals, ...items])
@@ -1330,6 +1402,7 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
       // A full local store must never prevent the live scan or its alerts.
       if (currentSettings.monitorLeadSource) {
         try {
+          await chrome.storage.local.set({ modelReleaseHistory: RadarModelRelease.merge(state.modelReleaseHistory, items) });
           const before = RadarDailyNews.entries(state, currentSettings);
           const current = RadarDailyNews.entries({ signalSnapshot: snapshot, hintSnapshot: { items: hints }, scheduleSnapshot: schedule }, currentSettings);
           const directItems = leadResults.find(result => result.source.id === 'x-direct')?.items || [];
@@ -1369,6 +1442,14 @@ async function runSignalRefresh(quiet, collectionRetry = false) {
       }
       await reconcileEventNotifications(eventAlerts, currentSettings, epoch);
       for (const notice of RadarEvents.notices(eventAlerts)) await maybeNotifyEvent(notice, currentSettings, epoch);
+      for (const model of snapshot.modelReleases) {
+        if (epoch !== stateEpoch) break;
+        const { notificationHistory = {} } = await chrome.storage.local.get('notificationHistory');
+        if (RadarPublicAlerts.allowed(model, publicAlertState, notificationHistory))
+          await createNotification('model:' + model.id, { title: '신모델 출시 · ' + RadarModelRelease.detect(model).model,
+            message: model.text.slice(0, 240), buttons: [{ title: '하루 요약 보기' }] }, currentSettings,
+          { publicItem: model, bypassQuiet: publicResumeBypassesQuiet(model, publicAlertState, currentSettings) });
+      }
       await updateBadge(currentSettings.monitorAccount ? state.accountSnapshot : null, signal, advice);
       return { ok: true, signal: Boolean(signal), leadVerified, collectionVerified, directOk, directError, directScan, catchUp, epoch };
     });
@@ -1836,11 +1917,37 @@ async function sendNativeNotification(id, options) {
   }
 }
 
+// Chrome acceptance per queued occurrence. Durable on the pending entry when
+// storage allows; this in-memory copy covers transient write failures. It is
+// removed on acknowledgement and keyed by occurrence, so an explicitly reused
+// ID (even with the same timestamp) is a new occurrence and still sends.
+const acceptedOccurrences = new Map();
+let dailyAcceptedDay = null;
+function notificationOccurrence(pending) { return pending?.occurrence ?? pending?.queuedAt; }
+function notificationAccepted(pending) {
+  return Number.isFinite(pending?.acceptedAt) ||
+    (acceptedOccurrences.has(pending?.id) && acceptedOccurrences.get(pending.id) === notificationOccurrence(pending));
+}
+async function markNotificationAccepted(id, occurrence) {
+  if (occurrence === undefined || occurrence === null) return;
+  acceptedOccurrences.set(id, occurrence);
+  try {
+    const { pendingNotifications = [] } = await chrome.storage.local.get('pendingNotifications');
+    const same = item => item.id === id && notificationOccurrence(item) === occurrence;
+    if (pendingNotifications.some(same)) await chrome.storage.local.set({ pendingNotifications:
+      pendingNotifications.map(item => same(item) ? { ...item, acceptedAt: Date.now() } : item) });
+  } catch { /* The in-memory receipt covers this worker; retries only acknowledge. */ }
+}
+
 let dailyNewsDelivery = Promise.resolve();
-async function deliverNotification(id, options) {
+async function deliverNotification(id, options, occurrence) {
   const settings = await loadSettings();
-  if (!settings.dailyResetDigest || !RadarDailyNews.publicId(id)) return sendNativeNotification(id, options);
-  const job = dailyNewsDelivery.then(() => deliverDailyNews(id, settings));
+  if (!settings.dailyResetDigest || !RadarDailyNews.publicId(id)) {
+    await sendNativeNotification(id, options);
+    await markNotificationAccepted(id, occurrence);
+    return;
+  }
+  const job = dailyNewsDelivery.then(() => deliverDailyNews(id, settings, occurrence));
   dailyNewsDelivery = job.catch(() => {});
   return job;
 }
@@ -1849,13 +1956,14 @@ const DAILY_NEWS_KEYS = ['signalSnapshot', 'hintSnapshot', 'scheduleSnapshot', '
   'pendingNotifications', 'notificationHistory', 'dailyNewsDelivery'];
 function dailyNewsEnabled(row, settings, state) {
   if (row.archivedTiming) return false; // Historical evidence is displayed, not a new active forecast alert.
+  if (row.topic === 'model-release') return settings.monitorSignals && settings.monitorLeadSource;
   if (row.topic === 'event' || row.event) return settings.monitorSignals && settings.monitorLeadSource && settings.notifyHints && !settings.resetOnly;
   if (row.change) return scheduleNotificationEnabled(row.change, settings);
   if (row.item.assessment?.report) return reportNotificationEnabled(row.item, settings, state.scheduleSnapshot, state.pendingNotifications);
   if (row.item.assessment?.candidate) return hintNotificationEnabled(row.item, settings);
   return signalNotificationEnabled(row.item, settings);
 }
-async function deliverDailyNews(id, settings) {
+async function deliverDailyNews(id, settings, occurrence) {
   const state = await chrome.storage.local.get(DAILY_NEWS_KEYS);
   const day = RadarDailyNews.dayKey(), toastId = 'daily-reset:' + day;
   const records = RadarDailyNews.prune(state.dailyNewsDelivery);
@@ -1867,7 +1975,11 @@ async function deliverDailyNews(id, settings) {
   const acceptedHistory = Object.fromEntries(Object.entries(state.notificationHistory || {}).filter(([key]) => !pendingIds.has(key)));
   const previous = Object.entries(acceptedHistory).filter(([key, at]) =>
     RadarDailyNews.publicId(key) && Number.isFinite(at) && RadarDailyNews.dayKey(at) === day);
-  if (Object.hasOwn(visible, toastId) || previous.length) {
+  // A daily toast accepted by Chrome whose record write failed: the accepted
+  // queued occurrence (durable) or this worker's memory proves it already rang.
+  const acceptedToday = dailyAcceptedDay === day || (state.pendingNotifications || []).some(pending =>
+    RadarDailyNews.publicId(pending.id) && Number.isFinite(pending.acceptedAt) && RadarDailyNews.dayKey(pending.acceptedAt) === day);
+  if (Object.hasOwn(visible, toastId) || previous.length || acceptedToday) {
     // Recover an interrupted acknowledgement, or an upgrade after today's
     // individually accepted public alerts. Neither should ring a second time.
     records[day] = { sentAt: Date.now(), ids: [] };
@@ -1890,6 +2002,8 @@ async function deliverDailyNews(id, settings) {
     ...rows.slice(0, 3).map(row => `${RadarDailyNews.author(row)} · ${RadarDailyNews.status(row)} · ${RadarTime.formatDateTime(row.item.createdAt, RadarTime.countryZone().zone)}\n${RadarDailyNews.brief(row)}`)].join('\n');
   await sendNativeNotification(toastId, { title: RadarDailyNews.headline(summary, settings.resetOnly),
     message, buttons: [{ title: en ? 'Open daily summary' : '하루 요약 보기' }] });
+  dailyAcceptedDay = day;
+  await markNotificationAccepted(id, occurrence);
   records[day] = { sentAt: Date.now(), ids: rows.map(row => row.key).slice(0, 1000),
     signatures: Object.fromEntries(rows.slice(0, 1000).map(row => [row.key, RadarDailyNews.signature(row)])),
     sourceSignatures: Object.fromEntries(rows.slice(0, 1000).map(row => [row.key, RadarDailyNews.sourceSignature(row)])) };
@@ -1970,13 +2084,14 @@ async function queueNotification(id, options, accountKey = null, publicItem = nu
     return false;
   }
   const publicReceipt = RadarPublicAlerts.publicId(id) ? RadarPublicAlerts.receipt(publicItem, publicAlertState) : null;
+  const occurrence = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
   await chrome.storage.local.set({
     pendingNotifications: [...pendingNotifications.filter(item => item.id !== id),
-      { id, options, queuedAt: Date.now(), ...(accountKey ? { accountKey } : {}),
+      { id, options, queuedAt: Date.now(), occurrence, ...(accountKey ? { accountKey } : {}),
         ...(accountResumed ? { accountResumed: true } : {}),
         ...(publicReceipt ? { publicReceipt } : {}) }].slice(-100)
   });
-  return true;
+  return occurrence;
 }
 
 async function acknowledgeNotification(id) {
@@ -1985,6 +2100,7 @@ async function acknowledgeNotification(id) {
     notificationHistory: { ...notificationHistory, [id]: Date.now() },
     pendingNotifications: pendingNotifications.filter(item => item.id !== id)
   });
+  acceptedOccurrences.delete(id);
 }
 
 async function retryPublicDelivery(id) {
@@ -2015,11 +2131,12 @@ async function deferPublicDelivery(id) {
 async function createNotification(id, options, settings, { bypassQuiet = false, accountKey = null, publicItem = null, accountResumed = false } = {}) {
   const fullOptions = notificationOptions(options);
   // Persist before any Chrome call, and keep the original age on retries.
-  if (!await queueNotification(id, fullOptions, accountKey, publicItem, accountResumed)) return;
+  const occurrence = await queueNotification(id, fullOptions, accountKey, publicItem, accountResumed);
+  if (!occurrence) return;
   if (await deferPublicDelivery(id)) return;
   if (!bypassQuiet && RadarTime.isQuietHours(settings)) return;
   try {
-    await deliverNotification(id, fullOptions);
+    await deliverNotification(id, fullOptions, occurrence);
     await acknowledgeNotification(id);
   }
   catch {
@@ -2490,6 +2607,12 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
   async function release(pending) {
     // An account query can finish before the parallel public wake scan. Keep
     // cached public entries queued until that scan has reconciled fresh posts.
+    // Chrome already accepted this exact occurrence; only bookkeeping remains.
+    // Never call the native API again (the user may have dismissed it).
+    if (notificationAccepted(pending)) {
+      try { await acknowledgeNotification(pending.id); } catch { /* Retried on the next flush. */ }
+      return true;
+    }
     if (RadarPublicAlerts.publicId(pending.id) && signalJob) return true;
     const receiptValid = RadarPublicAlerts.validReceipt({ id: pending.publicReceipt?.itemId,
       createdAt: pending.publicReceipt?.publishedAt }, pending.publicReceipt, pending.queuedAt);
@@ -2585,6 +2708,12 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       pending.options = { ...pending.options, ...eventNotificationOptions(notice) };
       bypassQuiet = publicResumeBypassesQuiet(notice.event.item, publicAlertState, settings, pending);
     }
+    if (pending.id.startsWith('model:')) {
+      const { signalSnapshot } = await chrome.storage.local.get('signalSnapshot');
+      const item = (signalSnapshot?.modelReleases || []).find(item => pending.id === 'model:' + item.id);
+      if (!settings.monitorSignals || !settings.monitorLeadSource || !RadarModelRelease.detect(item) || !queuedPublicAllowed(item, publicAlertState, pending)) return false;
+      bypassQuiet = publicResumeBypassesQuiet(item, publicAlertState, settings, pending);
+    }
     if (pending.id.startsWith('report:')) {
       if (!settings.monitorSignals || !settings.monitorLeadSource || !settings.notifyOfficialReset) return false;
       const { signalSnapshot, scheduleSnapshot } = await chrome.storage.local.get(['signalSnapshot', 'scheduleSnapshot']);
@@ -2600,7 +2729,7 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
       // A crash after Chrome accepted but before local acknowledgement must
       // not replace a still-visible notification and ring it a second time.
       const visible = await chrome.notifications.getAll();
-      if (!Object.hasOwn(visible, pending.id)) await deliverNotification(pending.id, pending.options);
+      if (!Object.hasOwn(visible, pending.id)) await deliverNotification(pending.id, pending.options, notificationOccurrence(pending));
       await acknowledgeNotification(pending.id);
     } catch { await retryPublicDelivery(pending.id); }
     return true;
@@ -2613,9 +2742,10 @@ async function flushPendingNotifications({ recoveryVerified = false, creditsVeri
   }
 }
 
-chrome.notifications.onClicked.addListener(id => id.startsWith('daily-reset:') ? openDailyNews() : id.startsWith('event:') ? openEvent(id) : id.startsWith('report:') ? openReport(id.slice(7)) : id.startsWith("schedule:") ? openSchedule(id) : id.startsWith("hint:") ? openHint(id.slice(5)) : id.startsWith("signal:") ? openEvidence(id.slice(7)) : chrome.runtime.openOptionsPage());
+chrome.notifications.onClicked.addListener(id => id.startsWith('daily-reset:') || id.startsWith('model:') ? openDailyNews() : id.startsWith('event:') ? openEvent(id) : id.startsWith('report:') ? openReport(id.slice(7)) : id.startsWith("schedule:") ? openSchedule(id) : id.startsWith("hint:") ? openHint(id.slice(5)) : id.startsWith("signal:") ? openEvidence(id.slice(7)) : chrome.runtime.openOptionsPage());
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
   if (notificationId.startsWith('daily-reset:') && buttonIndex === 0) return openDailyNews();
+  if (notificationId.startsWith('model:') && buttonIndex === 0) return openDailyNews();
   if (notificationId.startsWith('event:') && buttonIndex === 0) return openEvent(notificationId);
   if (notificationId.startsWith('report:') && buttonIndex === 0) return openReport(notificationId.slice(7));
   if (notificationId.startsWith("schedule:") && [0, 1].includes(buttonIndex)) return openSchedule(notificationId, buttonIndex === 1);
@@ -2643,7 +2773,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "SET_CHAT_PLAN_CHOICE") return chooseChatPlan(message);
     if (message.type === "CHAT_COUNT_RECORD") return recordChatCount(message, sender);
     if (message.type === "CHAT_PLAN_OBSERVED") return observeChatPlan(message, sender);
-    if (message.type === "REFRESH_CHAT_ACCOUNT") return { ok: (await refreshChatAccount({ force: true })).status === "connected" };
+    if (message.type === "REFRESH_CHAT_ACCOUNT") return { ok: (await refreshChatPlanAccount()).status === "connected" };
     if (message.type === "OPEN_CHAT_CONNECTION") return connectChatAccount();
     if (message.type === "SYNC_CHAT_HISTORY") return refreshChatHistory();
     if (message.type === "ENABLE_CHAT_COUNTER") {
@@ -2701,7 +2831,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "OPEN_EVIDENCE") return openEvidence();
     if (message.type === "OPEN_HINT") return openHint();
     if (message.type === "OPEN_NEWS") {
-      const data = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "scheduleSnapshot", "resetHistory"]);
+      const data = await chrome.storage.local.get(["signalSnapshot", "hintSnapshot", "scheduleSnapshot", "resetHistory", "modelReleaseHistory"]);
       const entries = RadarDailyNews.displayEntries(data, await loadSettings());
       const news = message.id === undefined ? entries[0] : entries.find(entry => entry.key === message.id);
       const url = RadarSecurity.evidenceUrl(news?.item);

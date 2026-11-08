@@ -68,7 +68,7 @@ test('an older popup read completing after a newer refresh cannot restore stale 
   w.context.msg = (...args) => w.context.RadarI18n.t(...args);
   w.context.renderNews = data => painted.push(data.lastCheckedAt);
   w.context.renderUnreadBadges = view => receipts.push(view.receipt);
-  for (const name of ['renderChat', 'renderSchedule', 'renderForecast', 'renderWindow', 'renderCredits', 'renderBankedArrival', 'renderAdvice'])
+  for (const name of ['renderChat', 'renderSchedule', 'renderForecast', 'renderWindow', 'renderCredits', 'renderBankedArrival', 'renderAdvice', 'renderQuotaWarning'])
     w.context[name] = () => {};
   const source = fs.readFileSync(require.resolve('../src/popup/popup.js'), 'utf8');
   const render = source.slice(source.indexOf('async function render()'), source.indexOf('$("openSettings").addEventListener'));

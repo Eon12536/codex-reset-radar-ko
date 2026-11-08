@@ -17,17 +17,36 @@ function page({ creditGrantState, credits = { availableCount: 3 }, monitorAccoun
       ...(read ? { badgeReadAt: NOW } : {}) } } }, creditGrantState } });
   w.context.Date = class extends Date { static now() { return NOW; } };
   const elements = Object.fromEntries(['weeklyUnread', 'newsUnread', 'creditsUnread', 'bankedArrivalUnread',
-    'bankedArrival', 'bankedArrivalTitle', 'bankedArrivalMeta', 'viewBankedCredits'].map(id => [id,
+    'bankedArrival', 'bankedArrivalTitle', 'bankedArrivalMeta', 'viewBankedCredits', 'quotaWarning'].map(id => [id,
       { hidden: true, textContent: '', dataset: {}, setAttribute(name, value) { this[name] = value; } }]));
   w.context.document = { getElementById: id => elements[id] };
-  vm.runInContext("(function(){ const $ = id => document.getElementById(id); const msg = (...args) => RadarI18n.t(...args); let displayedBadgeReceipt = null;" + renderSource + "globalThis.BadgeUi = { renderBankedArrival, renderUnreadBadges }; })();", w.context);
+  vm.runInContext("(function(){ const $ = id => document.getElementById(id); const msg = (...args) => RadarI18n.t(...args); let displayedBadgeReceipt = null;" + renderSource + "globalThis.BadgeUi = { renderBankedArrival, renderUnreadBadges, renderQuotaWarning }; })();", w.context);
   const labels = [];
   w.context.chrome.action.setBadgeText = async ({ text }) => labels.push(text);
   return { ...w, elements, labels,
     view() { return w.context.RadarBadge.view(w.local, w.context.RadarSettings.sanitize(w.local.settings)); },
-    render() { const unread = this.view(); w.context.BadgeUi.renderBankedArrival(unread, w.local.settings); w.context.BadgeUi.renderUnreadBadges(unread); return unread; },
+    render() { const unread = this.view(); w.context.BadgeUi.renderBankedArrival(unread, w.local.settings); w.context.BadgeUi.renderUnreadBadges(unread); w.context.BadgeUi.renderQuotaWarning(w.local, w.context.RadarSettings.sanitize(w.local.settings), unread); return unread; },
     ack() { return w.send({ type: 'ACK_VISIBLE_BADGES', receipt: this.view().receipt }, w.sender('popup')); } };
 }
+
+test('quota warning identifies expiring credit and disappears when warning is disabled or no longer due', () => {
+  const p = page({ read: true, credits: { availableCount: 1, credits: [{ expiresAt: NOW + 48 * 3600000 }] } });
+  p.render();
+  assert.equal(p.elements.quotaWarning.hidden, false);
+  assert.match(p.elements.quotaWarning.textContent, /리셋권 만료 임박/);
+  p.local.settings.notifyCreditExpiry = false;
+  p.render(); assert.equal(p.elements.quotaWarning.hidden, true);
+  p.local.settings.notifyCreditExpiry = true;
+  p.local.accountSnapshot.credits.credits[0].expiresAt = NOW + 96 * 3600000;
+  p.render(); assert.equal(p.elements.quotaWarning.hidden, true);
+});
+
+test('quota warning identifies unread public news without claiming a credit expiry', () => {
+  const p = page(); p.render();
+  assert.equal(p.elements.quotaWarning.hidden, false);
+  assert.match(p.elements.quotaWarning.textContent, /새 리셋 소식/);
+  assert.doesNotMatch(p.elements.quotaWarning.textContent, /만료/);
+});
 function markers(p, visible) {
   for (const id of ['weeklyUnread', 'newsUnread', 'creditsUnread', 'bankedArrivalUnread'])
     assert.equal(p.elements[id].hidden, !visible, id);

@@ -161,6 +161,60 @@ test('an accepted but unacknowledged visible toast is not sent a second time aft
   assert.ok(w.local.notificationHistory['hint:251']);
 });
 
+test('a dismissed accepted toast only retries acknowledgement after its history write fails', async () => {
+  for (const restart of [false, true]) {
+    let failAck = true, creates = 0;
+    const w = worker({ storageHook: async (area, operation, value) => {
+      if (area === 'local' && operation === 'set' && failAck && value.notificationHistory?.['hint:251']) {
+        failAck = false; throw new Error('Acknowledgement storage unavailable');
+      }
+    } });
+    const create = w.context.chrome.notifications.create;
+    w.context.chrome.notifications.create = async (...args) => { creates++; return create(...args); };
+    await w.context.refreshSignals();
+    assert.equal(creates, 1);
+    assert.ok(w.local.pendingNotifications.some(item => item.id === 'hint:251'));
+    delete w.notifications['hint:251'];
+    const next = restart ? makeWorker({ stored: w.local }) : w;
+    next.context.chrome.notifications.create = async () => { creates++; };
+    await next.context.mutate(() => next.context.flushPendingNotifications());
+    assert.equal(creates, 1, restart ? 'restart after dismissal' : 'same worker after dismissal');
+    assert.equal(next.local.pendingNotifications.length, 0);
+    assert.ok(next.local.notificationHistory['hint:251']);
+  }
+});
+
+test('the live worker remembers Chrome acceptance while acknowledgement storage is temporarily unavailable', async () => {
+  let accepted = false, failWrites = true, creates = 0;
+  const w = worker({ storageHook: async (area, operation) => {
+    if (accepted && failWrites && area === 'local' && operation === 'set') throw new Error('Storage temporarily unavailable');
+  } });
+  const create = w.context.chrome.notifications.create;
+  w.context.chrome.notifications.create = async (...args) => { creates++; accepted = true; return create(...args); };
+  await w.context.refreshSignals().catch(() => {});
+  assert.equal(creates, 1);
+  assert.ok(w.local.pendingNotifications.some(item => item.id === 'hint:251'));
+  failWrites = false;
+  delete w.notifications['hint:251'];
+  await w.context.mutate(() => w.context.flushPendingNotifications());
+  assert.equal(creates, 1);
+  assert.equal(w.local.pendingNotifications.length, 0);
+});
+
+test('acceptance of an old queue occurrence never suppresses an explicitly requested new occurrence', async () => {
+  const w = worker();
+  const fixed = Date.now();
+  w.context.Date = class extends Date { static now() { return fixed; } };
+  const settings = await w.context.loadSettings();
+  let creates = 0;
+  w.context.chrome.notifications.create = async () => { creates++; };
+  for (let i = 0; i < 2; i++) {
+    await w.context.mutate(() => w.context.createNotification('radar-reused-id', { title: 'Requested reminder', message: String(i) }, settings));
+    assert.equal(w.local.pendingNotifications.length, 0);
+  }
+  assert.equal(creates, 2);
+});
+
 test('rechecking preserves queue time and badge expiry without dropping an authorized undelivered alert', async () => {
   const w = worker();
   w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };

@@ -9,6 +9,16 @@
     const selectedDuringCreate = new Set(), selectedDuringRestore = new Set();
     const error = name => new Error(prefix + '_' + name);
     const tokenValid = token => typeof token === 'string' && /^[a-f0-9-]{36}$/.test(token);
+    function compactLegacyLease(value) {
+      // Older scans could persist more than 12 distinct visited routes. Only
+      // migrate nonce-bearing, otherwise valid leases; malformed/duplicate
+      // records still block creation and can never authorize closing a tab.
+      if (!recovery || !tokenValid(value?.token) || !Array.isArray(value.urls) ||
+          value.urls.length <= 12 || value.urls.length > 256 ||
+          new Set(value.urls).size !== value.urls.length || !value.urls.every(accepts)) return value;
+      const compact = { ...value, urls: value.urls.slice(-12) };
+      return valid(compact) ? compact : value;
+    }
     const legacyOwnerless = guard => guard?.version === undefined && guard?.blocked === true &&
       guard.reason === 'session-lost' && !Object.hasOwn(guard, 'lease') && !Object.hasOwn(guard, 'pending');
     function marked(url, token = tab?.token) {
@@ -34,7 +44,8 @@
     }
     async function recoverLease(guard, sessionValue) {
       if (!recovery || !chrome.tabs.query || !await chrome.permissions.contains(recovery.permission)) return undefined;
-      const lease = valid(guard?.lease) && tokenValid(guard.lease.token) ? guard.lease : null;
+      const savedLease = compactLegacyLease(guard?.lease);
+      const lease = valid(savedLease) && tokenValid(savedLease.token) ? savedLease : null;
       const pending = guard?.pending;
       const attempt = pending && tokenValid(pending.token) && accepts(pending.url) &&
         Number.isFinite(pending.startedAt) && Number.isFinite(pending.expiresAt) &&
@@ -127,14 +138,18 @@
       tab = undefined; inUse = false; sameSessionOwned = false;
       await chrome.alarms.clear(alarm);
     }
-    function cleanup({ force = false, recover = false } = {}) {
-      return operation(async () => {
+    function cleanup(options) {
+      return operation(() => cleanupNow(options));
+    }
+    // Body of cleanup(); callers must already hold the operation chain.
+    async function cleanupNow({ force = false, recover = false } = {}) {
+      {
         try {
           if (force || recover) inUse = false;
           if (!tab) {
             restoring = true;
             try {
-              const value = (await chrome.storage.session.get(key))[key];
+              const value = compactLegacyLease((await chrome.storage.session.get(key))[key]);
               const guard = (await chrome.storage.local.get(guardKey))[guardKey];
               if (!value && !guard) { await chrome.alarms.clear(alarm); return true; }
               // Reload/update/browser restart clears storage.session. Tab IDs
@@ -208,7 +223,7 @@
           try { await watch(Date.now() + 60000); } catch { /* The next caller retries. */ }
           throw error('TAB_CLEANUP_FAILED');
         }
-      });
+      }
     }
     chrome?.tabs?.onActivated?.addListener(({ tabId }) => {
       if (creating) selectedDuringCreate.add(tabId);
@@ -262,7 +277,9 @@
     function navigate(id, url, signal) {
       return operation(async () => {
         if (!accepts(url) || tab?.id !== id || tab.claimed) throw error('PAGE_UNAVAILABLE');
-        if (!tab.urls.includes(url)) tab.urls.push(url);
+        // Keep the lease valid after long scans. A list longer than valid()'s
+        // limit used to become unrecoverable when the service worker restarted.
+        tab.urls = [...tab.urls.filter(previous => previous !== url), url].slice(-12);
         if (recovery) await persistGuard(false, 'owned');
         await chrome.storage.session.set({ [key]: tab });
         signal?.throwIfAborted();
@@ -280,6 +297,14 @@
           try { await chrome.tabs.get(value.id); return false; }
           catch (cause) { if (!/No tab with id|Invalid tab ID/i.test(String(cause?.message))) throw cause; }
         }
+        // Durable lease/pending proof survives lost session storage. Resolve
+        // it (close only an exactly owned nonce reader, keep protected or
+        // ambiguous tabs) before releasing the fence. Already inside the
+        // operation chain, so run the cleanup body directly (no nesting).
+        const guard = recovery ? (await chrome.storage.local.get(guardKey))[guardKey] : null;
+        if (tab || (guard && (Object.hasOwn(guard, 'lease') || Object.hasOwn(guard, 'pending'))))
+          return cleanupNow({ force: true });
+        // A genuinely ownerless fence keeps explicit manual recovery.
         await forget();
         return true;
       });

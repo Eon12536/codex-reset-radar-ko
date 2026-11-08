@@ -78,7 +78,7 @@ function worker(stored = { settings }, rows = []) {
   return w;
 }
 
-test('mixed collection keeps raw observations but displays and notifies only reset evidence despite forced AI positives', async () => {
+test('mixed collection excludes unsupported AI positives and independently notifies a confirmed model launch', async () => {
   const rows = [...negatives.map((text, i) => post(text, String(910 + i))),
     post('We will reset Codex usage limits tomorrow.', '990'),
     post('We added a banked reset to all accounts.', '991')];
@@ -87,7 +87,7 @@ test('mixed collection keeps raw observations but displays and notifies only res
   assert.equal(w.local.signalSnapshot.leadStatus.directScan.posts, rows.length);
   const news = w.context.RadarNews.list(w.local.signalSnapshot, w.local.hintSnapshot, settings);
   assert.deepEqual(Array.from(news, item => item.item.id).sort(), ['990', '991']);
-  assert.deepEqual(Object.keys(w.notifications).sort(), ['report:991', 'signal:990']);
+  assert.deepEqual(Object.keys(w.notifications).sort(), ['model:913', 'report:991', 'signal:990']);
   assert.equal(w.local.hintSnapshot.events.length, 0);
   assert.equal(w.local.semanticStatus.pending, 0);
   assert.equal(w.local.signalSnapshot.reports[0].assessment.report, 'credit-grant');

@@ -1,6 +1,6 @@
 {
   "name": "codex-reset-radar-ko",
-  "version": "0.2.144",
+  "version": "0.2.155",
   "private": true,
   "description": "한국어로 표시되는 Codex Reset Radar 파생판",
   "license": "MIT",
@@ -15,7 +15,12 @@
     "node": ">=20.11.0"
   },
   "devDependencies": {
-    "archiver": "^7.0.1",
-    "sharp": "^0.35.4"
+    "archiver": "^8.0.0",
+    "sharp": "^0.35.5"
+  },
+  "overrides": {
+    "readdir-glob": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

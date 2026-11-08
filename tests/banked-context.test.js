@@ -98,3 +98,50 @@ test('both freshly collected short announcements survive classification and the 
   assert.equal(w.context.RadarDailyNews.resetCounts(rows).grant, 2);
   assert.ok(rows.some(row => row.item.id === tiboId));
 });
+
+test('the November 1 Banked 1/2 post is shown as an inferred credit notice', () => {
+  const w = makeWorker(), c = w.context, actualId = '2116692529970311254';
+  const item = { ...post('Banked 1/2'), id: actualId, createdAt: '2026-11-01T00:43:00Z',
+    url: `https://x.com/thsottiaux/status/${actualId}` };
+  const [report] = c.RadarSignals.reports([item], { now: Date.parse('2026-11-01T01:00:00Z') });
+  assert.equal(report?.assessment.report, 'credit-grant');
+  assert.equal(report.assessment.grantStage, 'inferred');
+  assert.equal(report.assessment.confidence, 'medium');
+  assert.equal(c.RadarResetScope.allows(report, { resetOnly: true }), true);
+  assert.equal(c.RadarDailyNews.status({ item: report }), '리셋권 추정');
+  assert.equal(c.RadarDailyNews.resetCounts([{ item: report }]).grant, 1);
+  const settings = { monitorSignals: true, monitorLeadSource: true, resetOnly: true };
+  const rows = c.RadarResetHistory.classifyRows([item], settings);
+  const state = { resetHistory: c.RadarResetHistory.merge({}, rows) };
+  assert.equal(c.RadarDailyNews.displayEntries(state, settings).length, 1);
+  assert.equal(Object.keys(w.notifications).length, 0);
+});
+
+test('bare numbered banked expressions require Tibo, canonical evidence and a valid whole statement', () => {
+  const c = makeWorker().context;
+  for (const text of ['Banked 1/2?', 'Banked 1/2 not today', 'Not Banked 1/2', 'Banked account 1/2', 'Banked 0/2', 'Banked 3/2', 'Maybe Banked 1/2']) {
+    assert.equal(c.RadarSignals.bareBankedNumber(post(text)), false, text);
+  }
+  assert.equal(c.RadarSignals.bareBankedNumber({ ...post('Banked 1/2'), author: 'reach_vb', url: `https://x.com/reach_vb/status/${id}` }), false);
+  assert.equal(c.RadarSignals.bareBankedNumber({ ...post('Banked 1/2'), url: 'https://evil.example/status/' + id }), false);
+  assert.equal(c.RadarSignals.bareBankedNumber({ ...post('Banked 1/2'), truncated: true }), false);
+  assert.equal(c.RadarSignals.bareBankedNumber(post('Banked 2/2')), true);
+});
+
+test('a collected bare Banked 1/2 reaches the daily popup as credit without implying a personal balance', async () => {
+  const { json } = require('./helpers/worker');
+  const w = makeWorker({ individualPublicAlerts: false, stored: { settings: { monitorSignals: true, monitorLeadSource: true,
+    monitorDirectX: true, resetOnly: true, monitorAccount: false, semanticEnabled: false, quietHoursEnabled: false,
+    monitorStatusSource: false, monitorHistorySource: false, monitorCommunitySource: false } }, fetcher: async () => json({ items: [] }) });
+  const now = Date.parse('2026-11-01T01:00:00Z'); w.context.Date = class extends Date { static now() { return now; } };
+  const actualId = '2116692529970311254', item = { ...post('Banked 1/2'), id: actualId,
+    createdAt: '2026-11-01T00:43:00Z', url: `https://x.com/thsottiaux/status/${actualId}` };
+  w.context.RadarDirectX = { ...w.context.RadarDirectX, read: async () => ({ items: [item], diagnostics: { posts: 1,
+    timelines: ['posts', 'replies'].flatMap(kind => ['thsottiaux', 'reach_vb', 'openai'].map(author => ({ author, kind, ok: true, stopReason: 'seven-days' }))) } }) };
+  await w.context.refreshSignals();
+  const [report] = w.local.signalSnapshot.reports;
+  assert.equal(report?.id, actualId); assert.equal(report.assessment.grantStage, 'inferred');
+  const rows = w.context.RadarDailyNews.displayEntries(w.local, w.local.settings);
+  assert.equal(w.context.RadarDailyNews.resetCounts(rows).grant, 1);
+  assert.equal(w.local.accountSnapshot, undefined);
+});

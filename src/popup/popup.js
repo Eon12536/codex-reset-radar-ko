@@ -155,7 +155,8 @@ function renderNews(data, settings) {
   $('newsMonthReset').textContent = en ? 'Recent months' : '최근 2개월';
   const grouped = settings.resetOnly || settings.dailyResetDigest;
   const allEntries = grouped ? RadarDailyNews.displayEntries(data, settings) :
-    [...new Map([...RadarResetHistory.rows(data, settings), ...RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings)].map(row => [row.key, row])).values()]
+    [...new Map([...RadarResetHistory.rows(data, settings), ...RadarNews.list(data.signalSnapshot, data.hintSnapshot, settings),
+      ...RadarDailyNews.displayEntries(data, settings).filter(row => row.topic === 'model-release')].map(row => [row.key, row])).values()]
       .sort((a, b) => b.publishedAt - a.publishedAt);
   const pinnedCount = renderPinnedEvents(data, settings, allEntries);
   // Dated events live in one calendar card below the reset feed. Expired event
@@ -163,7 +164,7 @@ function renderNews(data, settings) {
   const entries = allEntries.filter(news => (news.topic !== 'event' || !news.event) && Number.isFinite(news.publishedAt) && months.includes(RadarDailyNews.dayKey(news.publishedAt).slice(0, 7)));
   const lead = data.signalSnapshot?.leadStatus;
   const timeZone = RadarTime.countryZone().zone;
-  $("signalTitle").textContent = settings.resetOnly ? "리셋 소식" : entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
+  $("signalTitle").textContent = settings.resetOnly ? "리셋·신모델 소식" : entries.length && entries[0].item.source?.id !== "codex-lead" ? "공개 리셋 소식" : "리셋·출시 소식";
   $("newsCount").textContent = entries.length || pinnedCount.news ? (entries.length + pinnedCount.news) + "건" : !settings.monitorSignals ? "꺼짐" : "";
   const scan = lead?.directScan;
   const collection = collectionCheck(data, settings);
@@ -212,20 +213,31 @@ function createDailyNewsCard(group, settings) {
   const summaryLine = document.createElement('p'); summaryLine.className = 'daily-news-summary'; summaryLine.setAttribute('data-no-translate', '');
   summaryLine.textContent = RadarDailyNews.digestText(group.items);
   const counts = RadarDailyNews.resetCounts(group.items), chips = document.createElement('div'); chips.className = 'news-status-chips daily-news-counts';
-  for (const [kind, label] of [['forecast', en ? 'Forecast' : '리셋 예고'], ['completed', en ? 'Completed' : '리셋 완료'], ['inferred', en ? 'Inferred' : '리셋 추정'], ['grant', en ? 'Credit notice' : '리셋권']]) {
-    const chip = createNewsStatusChip(null, { kind, text: `${label} ${counts[kind]}` });
+  for (const [kind, label] of [['forecast', en ? 'Forecast' : '리셋 예고'], ['completed', en ? 'Completed' : '리셋 완료'], ['inferred', en ? 'Inferred' : '리셋 추정'], ['grant', en ? 'Credit notice' : '리셋권'], ['model', en ? 'New model' : '신모델 출시']]) {
+    const chip = createNewsStatusChip(null, { kind, text: `${label} ${counts[kind] || 0}` });
     if (kind === 'grant') chip.title = en ? 'Public reset-credit posts, not your personal balance' : '공개 리셋권 관련 공지 수 · 개인 보유량 아님';
     if (!counts[kind]) chip.classList.add('is-muted'); chips.append(chip);
   }
   const schedule = document.createElement('div'), times = RadarDailyNews.dayTimes(group.items);
   schedule.className = 'news-schedule-box daily-news-schedule' + (times.length ? '' : ' is-unverified');
+  schedule.hidden = group.items.every(row => row.topic === 'model-release');
   const scheduleLabel = document.createElement('span'); scheduleLabel.className = 'news-schedule-label';
   scheduleLabel.textContent = en ? 'Reset time' : '리셋 시각'; schedule.append(scheduleLabel);
   for (const time of times) {
     const node = document.createElement('time'); node.textContent = time.text; node.title = time.detail;
     node.dateTime = new Date(time.at).toISOString(); schedule.append(node);
   }
-  if (!times.length) { const none = document.createElement('span'); none.textContent = en ? 'Reset time unverified' : '리셋 시각 미확인'; schedule.append(none); }
+  const seen = new Set();
+  for (const row of group.items) {
+    const info = RadarDailyNews.verifiedTime(row);
+    if (!info.expression || seen.has(info.expression) || seen.size >= 3) continue;
+    seen.add(info.expression);
+    const source = document.createElement('span'); source.textContent = `${RadarDailyNews.author(row)} · ${info.text}`; source.title = info.detail;
+    schedule.append(source);
+  }
+  if (!times.length) {
+    const none = document.createElement('span'); none.textContent = en ? 'Reset time unverified' : '리셋 시각 미확인'; schedule.append(none);
+  }
   const sources = document.createElement('ul'); sources.className = 'daily-news-sources daily-news-links';
   sources.setAttribute('aria-label', en ? 'Original posts' : '원문 링크');
   const labels = RadarDailyNews.sourceLabels(group.items);
@@ -287,7 +299,8 @@ function createNewsScheduleBox(news) {
   const box = document.createElement('div'); box.className = 'news-schedule-box' + (info.verified ? '' : ' is-unverified');
   const label = document.createElement('span'); label.className = 'news-schedule-label'; label.textContent = en ? 'Reset time' : '리셋 시각';
   const value = document.createElement(info.verified ? 'time' : 'span'); value.textContent = info.text;
-  if (info.verified) { value.dateTime = new Date(info.at).toISOString(); box.title = info.detail; }
+  if (info.verified) value.dateTime = new Date(info.at).toISOString();
+  if (info.detail) box.title = info.detail;
   box.append(label, value); return box;
 }
 
@@ -372,9 +385,13 @@ function renderChatMeters(view) {
   }
   select.dataset.account = view.accountKey || '';
   select.dataset.saved = view.plan || 'auto';
+  select.querySelector('option[value="auto"]').textContent = !view.plan && family === 'pro'
+    ? '자동 확인 · Pro (세부 요금제 미확인)' : '자동 확인';
   if (!select.disabled) select.value = select.dataset.saved;
   $("chatPlanSource").textContent = view.planSource === 'selected' ? '직접 선택 기준 · 변경' :
-    view.planSource === 'cached' ? '최근 확인 기준 · 재확인 필요' : view.plan ? '요금제 자동 확인 · 변경' : '한도 기준 선택';
+    view.planSource === 'cached' ? '최근 확인 기준 · 재확인 필요' :
+    view.planSource === 'account' && view.familySource === 'session' ? '로그인 정보 기준 · 재확인' :
+    view.plan ? '요금제 자동 확인 · 변경' : family === 'pro' ? 'Pro 확인 · 세부 요금제 선택' : '요금제 미확인 · 재확인';
   controls.dataset.state = view.plan ? 'success' : view.planCheck?.status === 'running' ? 'loading' : 'default';
   grid.title = '계정 기록 기반 추정입니다. 삭제·임시 대화와 공식 초기화 시각 차이로 실제 잔여량과 다를 수 있습니다.';
 }
@@ -498,6 +515,21 @@ function renderUnreadBadges(unread) {
   }
 }
 
+function renderQuotaWarning(data, settings, unread, now = Date.now()) {
+  const account = data.accountSnapshot;
+  const expiry = settings.monitorAccount && settings.notifyCreditExpiry && account?.accountKey &&
+    account.credits?.availableCount > 0 ? RadarUsage.nearestExpiry(account.credits, now) : null;
+  const expiring = Number.isFinite(expiry) && expiry > now && expiry - now <= settings.expiryWarningHours * 3600000;
+  const en = (RadarI18n.uiLanguage() || 'ko').startsWith('en');
+  const reasons = [];
+  if (expiring) reasons.push(en ? 'Reset credit expires soon' : '리셋권 만료 임박');
+  if (unread.bankedItems.length) reasons.push(en ? 'New reset credit' : '새 리셋권 지급');
+  if (unread.publicItems.length) reasons.push(en ? 'New reset news' : '새 리셋 소식');
+  const warning = $('quotaWarning');
+  warning.hidden = reasons.length === 0;
+  warning.textContent = reasons.length ? '! ' + reasons.join(' · ') : '';
+}
+
 function renderAdvice(advice) {
   const value = advice || {
     tier: "guest",
@@ -535,7 +567,7 @@ async function render() {
     "publicAlertState",
     "signalSnapshot",
     "hintSnapshot",
-    "resetHistory", "resetHistoryStorageError",
+    "resetHistory", "resetHistoryStorageError", "modelReleaseHistory",
     "scheduleSnapshot",
     "adviceSnapshot",
     "lastCheckedAt",
@@ -562,6 +594,7 @@ async function render() {
   const unread = RadarBadge.view(data, settings);
   renderBankedArrival(unread, settings);
   renderUnreadBadges(unread);
+  renderQuotaWarning(data, settings, unread);
   renderAdvice(RadarAdvice.make({
     usage: settings.monitorAccount ? data.accountSnapshot?.usage : null,
     credits: settings.monitorAccount ? data.accountSnapshot?.credits : null,

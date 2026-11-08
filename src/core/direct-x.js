@@ -5,7 +5,17 @@
   const trusted = author => AUTHORS.includes(String(author || '').toLowerCase());
   const PERMISSION = { permissions: ["scripting"], origins: ["https://x.com/*"] };
   const CLEANUP_ALARM = 'codex-reset-radar-x-tab-cleanup';
-  const scanUrl = value => typeof value === 'string' && /^https:\/\/x\.com\/(?:thsottiaux|reach_vb|OpenAI)(?:\/with_replies|\/status\/[1-9]\d{0,24})?$/i.test(value);
+  const scanUrl = value => typeof value === 'string' && /^https:\/\/x\.com\/(?:(?:thsottiaux|reach_vb|OpenAI)(?:\/with_replies|\/status\/[1-9]\d{0,24})?|codex_resets\/status\/[1-9]\d{0,24})$/i.test(value);
+  function wrapperRedirect(actual, requested, marked) {
+    try {
+      const url = new globalThis.URL(actual), from = new globalThis.URL(requested);
+      const id = /^\/thsottiaux\/status\/([1-9]\d{0,24})$/i.exec(from.pathname)?.[1];
+      return id && url.origin === 'https://x.com' && !url.username && !url.password && !url.search &&
+        (!url.hash || url.hash === new globalThis.URL(marked).hash) &&
+        url.pathname.replace(/\/$/, '').toLowerCase() === '/codex_resets/status/' + id
+        ? 'https://x.com/codex_resets/status/' + id : null;
+    } catch { return null; }
+  }
   function sameReaderPage(actual, expected) {
     try {
       const current = new globalThis.URL(actual), requested = new globalThis.URL(expected);
@@ -44,7 +54,7 @@
     closeSelectedReader: true, sameReaderPage, readerRedirect,
     recovery: { marker: 'radar-x-reader', permission: PERMISSION, urls: AUTHORS.flatMap(author =>
       ['https://x.com/' + author, 'https://x.com/' + author + '/with_replies', 'https://x.com/' + author + '/status/*'])
-      .concat(['https://x.com/OpenAI', 'https://x.com/OpenAI/with_replies', 'https://x.com/OpenAI/status/*', 'https://x.com/home', 'https://x.com/i/timeline', 'https://x.com/i/flow/login*']) } });
+      .concat(['https://x.com/OpenAI', 'https://x.com/OpenAI/with_replies', 'https://x.com/OpenAI/status/*', 'https://x.com/codex_resets/status/*', 'https://x.com/home', 'https://x.com/i/timeline', 'https://x.com/i/flow/login*']) } });
   let readJob, readHistoryOnly = false, historyAbort;
   const day = 86400000;
   const CONTEXT_SCHEMA = '2:' + (root.chrome?.runtime?.getManifest?.()?.version || 'local');
@@ -210,6 +220,14 @@
   async function runRead(signal, { authors = AUTHORS, contextCache = {}, retainedPosts = [], resetTargets = [], onCheckpoint,
     telegramLeads = null, telegramAttempts = {}, knownHistoryIds = [], onTelegramAttempt, onTelegramHistory, historyOnly = false } = {}) {
     if (!Array.isArray(authors) || !authors.length || authors.some(author => !AUTHORS.includes(author))) throw new Error('X_UNSUPPORTED_AUTHOR');
+    // Observe the already-started lookup without blocking primary collection.
+    // Disabled, empty or failed channels must not consume its time budget.
+    let secondarySnapshot;
+    const secondaryJob = telegramLeads ? Promise.resolve(telegramLeads).then(
+      result => (secondarySnapshot = result || { ids: [] }),
+      () => (secondarySnapshot = { state: 'unavailable', ids: [] })) : null;
+    const secondaryIds = result => Array.isArray(result?.ids)
+      ? [...new Set(result.ids.filter(id => typeof id === 'string' && /^[1-9]\d{0,24}$/.test(id)))].slice(0, 80) : [];
     // Scan originals for every monitored author before replies so one busy reply feed cannot starve the other author.
     const TIMELINES = ['posts', 'replies'].flatMap(kind => authors.map(author => ({author, kind,
       url: 'https://x.com/' + (author === 'openai' ? 'OpenAI' : author) + (kind === 'replies' ? '/with_replies' : '')})));
@@ -255,7 +273,7 @@
         })]);
       } finally { clearTimeout(timer); if (abort) signal.removeEventListener("abort", abort); }
     }
-    async function page(url, until = deadline) {
+    async function page(url, until = deadline, allowWrapper = false) {
       currentStage = "navigation";
       signal.throwIfAborted();
       if (until <= Date.now()) throw new Error("X_TIMEOUT");
@@ -274,7 +292,7 @@
       }
       currentStage = "loading";
       await new Promise((resolve, reject) => {
-        let settled = false;
+        let settled = false, redirecting = false, adoptedWrapper = false;
         const finish = error => {
           if (settled) return; settled = true;
           clearTimeout(timer); chrome.tabs.onUpdated.removeListener(onUpdated);
@@ -282,11 +300,23 @@
           error ? reject(error) : resolve();
         };
         const abort = () => finish(new Error("X_ABORTED"));
-        const checkReady = () => chrome.tabs.get(tab.id).then(current => {
-          if (settled) return;
+        const checkReady = () => chrome.tabs.get(tab.id).then(async current => {
+          if (settled || redirecting) return;
           if (current.active || current.pinned || current.windowId !== owner.tab?.windowId || owner.tab?.claimed ||
-              (current.pendingUrl && !sameReaderPage(current.pendingUrl, currentUrl))) return finish(new Error("X_PAGE_UNAVAILABLE"));
+              (current.pendingUrl && !sameReaderPage(current.pendingUrl, currentUrl) &&
+                !(allowWrapper && wrapperRedirect(current.pendingUrl, url, currentUrl)))) return finish(new Error("X_PAGE_UNAVAILABLE"));
           if (current.url?.startsWith("https://x.com/i/flow/login")) return finish(new Error("X_LOGIN_REQUIRED"));
+          // Only a same-ID Telegram redirect may be adopted, in this owned,
+          // inactive tab. Register its exact route/nonce before reading it.
+          const wrapper = allowWrapper && wrapperRedirect(current.url, url, currentUrl);
+          if (wrapper && !adoptedWrapper && !sameReaderPage(current.url, currentUrl)) {
+            adoptedWrapper = true;
+            redirecting = true;
+            currentUrl = owner.url(wrapper);
+            try { await owner.navigate(tab.id, wrapper, signal); }
+            finally { redirecting = false; }
+            return checkReady();
+          }
           const requested = sameReaderPage(current.url, currentUrl);
           // tabs.update/create can return while the old document still says
           // complete. Its completion event must not certify the new page.
@@ -294,7 +324,7 @@
           const previous = previousUrl && sameReaderPage(current.url, previousUrl);
           const initial = !previousUrl && (!current.url || current.url === "about:blank");
           if (!requested && !previous && !initial) finish(new Error("X_PAGE_UNAVAILABLE"));
-        }, finish);
+        }).catch(finish);
         const onUpdated = (id, change) => { if (id === tab.id && (change.status || change.url)) void checkReady(); };
         const timer = setTimeout(() => finish(new Error("X_TIMEOUT")), Math.max(1, Math.min(15000, until - Date.now())));
         chrome.tabs.onUpdated.addListener(onUpdated);
@@ -309,7 +339,8 @@
       if (!sameReaderPage(current.url, currentUrl)) throw new Error("X_PAGE_UNAVAILABLE");
       currentStage = "reading";
       if (until <= Date.now()) throw new Error("X_TIMEOUT");
-      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: ["src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 24000, until);
+      const wrapper = allowWrapper && /^https:\/\/x\.com\/codex_resets\/status\//i.test(currentUrl);
+      const result = await bounded(chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", files: [wrapper ? "src/x-wrapper-reader.js" : "src/x-reader.js"] }), TIMELINES.some(t => t.url === url) ? 32000 : 24000, until);
       signal.throwIfAborted();
       const afterRead = await chrome.tabs.get(tab.id);
       if (!sameReaderPage(afterRead.url, currentUrl) || (afterRead.pendingUrl && !sameReaderPage(afterRead.pendingUrl, currentUrl)) || afterRead.active || afterRead.pinned || afterRead.windowId !== owner.tab?.windowId || owner.tab?.claimed) throw new Error("X_PAGE_UNAVAILABLE");
@@ -318,6 +349,13 @@
     const cache = Object.fromEntries(Object.entries(contextCache || {}).filter(([id, entry]) =>
       /^[1-9]\d{0,24}$/.test(id) && (entry?.checkedAt || entry?.queuedAt) > Date.now() - 7 * day));
     const collected = new Map(archivePosts(retainedPosts).filter(item => authors.includes(item.author.toLowerCase())).map(item => [item.id, item]));
+    const knownHistory = new Set(Array.isArray(knownHistoryIds) ? knownHistoryIds.filter(id => typeof id === 'string') : []);
+    const completeLead = id => {
+      const resolved = cache[id]?.resolvedLeadId;
+      const originalId = typeof resolved === 'string' && /^[1-9]\d{0,24}$/.test(resolved) ? resolved : id;
+      const item = collected.get(originalId);
+      return knownHistory.has(originalId) || Boolean(item && !item.truncated && item.text?.trim());
+    };
     diagnostics.retainedPosts = collected.size;
     function compactCache() {
       const entries = Object.entries(cache).sort((a, b) => (b[1].checkedAt || b[1].queuedAt) - (a[1].checkedAt || a[1].queuedAt));
@@ -462,15 +500,20 @@
       const knownPicks = historyOnly ? [] : [...new Map(knownRoots.map(item => [item.id, item])).values()]
         .sort((a, b) => (Number(cache[a.id]?.followUpsCheckedAt) || 0) - (Number(cache[b.id]?.followUpsCheckedAt) || 0) ||
           Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 3);
+      const auxiliaryReserve = () => secondaryJob && authors.includes('thsottiaux') &&
+        (secondarySnapshot === undefined || secondaryIds(secondarySnapshot).some(id =>
+          !completeLead(id) && Date.now() - (Number(telegramAttempts[id]) || 0) >= 30 * 60000)) ? 45000 : 0;
       for (const known of knownPicks) {
-        await checkResetFollowUps(known, TIMELINES.length * 20000);
+        await checkResetFollowUps(known, TIMELINES.length * 32000 + auxiliaryReserve());
       }
       // X may expose a reply-only stream here; scan original posts separately
       // so a busy reply timeline cannot bury the latest reset announcement.
       for (const [timelineIndex, timeline] of (historyOnly ? [] : TIMELINES).entries()) {
         let bodyQuality = {};
         try {
-          const result = await page(timeline.url);
+          const remaining = TIMELINES.length - timelineIndex;
+          const timelineBudget = Math.max(1000, Math.min(42000, (deadline - Date.now() - auxiliaryReserve()) / remaining));
+          const result = await page(timeline.url, Date.now() + timelineBudget);
           const { missing, countOnly, count: missingCount } = bodyQualityOf(result, timeline.author);
           for (const row of missing) if (!collected.get(row.id)?.text?.trim())
             unavailableBodies.set(row.id, { id: row.id, author: timeline.author, createdAt: row.createdAt });
@@ -497,7 +540,7 @@
           // Its own page and short timing replies share this same owned tab.
           if (timeline.kind === 'posts' || !diagnostics.resetFollowUps?.some(check => check.author.toLowerCase() === timeline.author && check.state === 'verified')) {
             const latest = rows.filter(recentResetRoot).filter(item => checkedRoots.get(item.id) !== rootKey(item)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
-            if (latest) await checkResetFollowUps(latest, (TIMELINES.length - timelineIndex - 1) * 20000);
+            if (latest) await checkResetFollowUps(latest, (TIMELINES.length - timelineIndex - 1) * 32000 + auxiliaryReserve());
           }
         } catch (error) {
           signal.throwIfAborted(); lastError = error;
@@ -516,49 +559,68 @@
       // owned tab after the primary timelines; never trust channel text or labels.
       if (telegramLeads && authors.includes('thsottiaux')) {
         let secondaryTimer;
-        const secondary = await Promise.race([telegramLeads, new Promise(resolve => {
+        const secondary = await Promise.race([secondaryJob, new Promise(resolve => {
           secondaryTimer = setTimeout(() => resolve({ state: 'pending', ids: [] }), 1000);
         })]).finally(() => clearTimeout(secondaryTimer));
         signal.throwIfAborted();
-        const ids = Array.isArray(secondary?.ids) ? [...new Set(secondary.ids.filter(id => typeof id === 'string' && /^[1-9]\d{0,24}$/.test(id)))].slice(0, 40) : [];
-        const knownHistory = new Set(Array.isArray(knownHistoryIds) ? knownHistoryIds.filter(id => typeof id === 'string') : []);
-        const complete = id => { const item = collected.get(id); return knownHistory.has(id) || Boolean(item && !item.truncated && item.text?.trim()); };
-        diagnostics.telegram = { state: secondary?.state || 'unavailable', leads: ids.length, missing: ids.filter(id => !complete(id)).length, attempted: 0, recovered: 0 };
-        for (const id of ids) {
-          if (complete(id) || diagnostics.telegram.attempted >= 2 || Date.now() - (Number(telegramAttempts[id]) || 0) < 30 * 60000) continue;
-          const until = Math.min(deadline - (historyOnly ? 3000 : 20000), Date.now() + (historyOnly ? 42000 : 20000));
+        const ids = secondaryIds(secondary);
+        const channelIds = Array.isArray(secondary?.telegramIds) ? [...new Set(secondary.telegramIds.filter(id => ids.includes(id)))].slice(0, 40) : ids;
+        const channelSet = new Set(channelIds);
+        diagnostics.telegram = { state: secondary?.state || 'unavailable', leads: channelIds.length, missing: channelIds.filter(id => !completeLead(id)).length,
+          attempted: 0, recovered: 0, channelAttempted: 0, channelRecovered: 0 };
+        // Never let candidates that repeatedly fail monopolize the first two
+        // slots every polling cycle. Stable ordering preserves source fairness
+        // and recency among candidates attempted equally long ago.
+        const orderedIds = [...ids].sort((a, b) => (Number(telegramAttempts[a]) || 0) - (Number(telegramAttempts[b]) || 0));
+        for (const id of orderedIds) {
+          if (completeLead(id) || diagnostics.telegram.attempted >= 2 || Date.now() - (Number(telegramAttempts[id]) || 0) < 30 * 60000) continue;
+          const until = Math.min(deadline - (historyOnly ? 3000 : 10000), Date.now() + 42000);
           if ((!tab && !historyOnly) || until - Date.now() < 15000) break;
           try {
             // Persist before navigation so worker termination cannot repeatedly
             // open the same unavailable or misleading status every poll.
             if (onTelegramAttempt) await onTelegramAttempt(id);
             diagnostics.telegram.attempted++;
-            const result = await page('https://x.com/thsottiaux/status/' + id, until);
-            const target = (result?.rows || []).find(row => row.id === id && String(row.author || '').toLowerCase() === 'thsottiaux');
+            if (channelSet.has(id)) diagnostics.telegram.channelAttempted++;
+            let originalId = id;
+            let result = await page('https://x.com/thsottiaux/status/' + id, until, true);
+            if (result?.wrapperId === id) {
+              const match = /^https:\/\/x\.com\/thsottiaux\/status\/([1-9]\d{0,24})$/.exec(result.originalUrl || '');
+              if (!match || match[1] === id) { diagnostics.telegram.error = 'original-unresolved'; continue; }
+              originalId = match[1];
+              result = await page(result.originalUrl, until);
+            }
+            const target = (result?.rows || []).find(row => row.id === originalId && String(row.author || '').toLowerCase() === 'thsottiaux');
             if (historyOnly && !target) throw new Error(result?.bodyUnavailableCount ? 'X_BODY_UNAVAILABLE' : 'X_NO_PUBLIC_POSTS');
             const published = Date.parse(target?.createdAt), age = Date.now() - published;
             if (!Number.isFinite(published) || age < -300000 || age > 365 * day) {
-              if (historyOnly) diagnostics.telegram.error = 'invalid-post';
+              diagnostics.telegram.error = 'invalid-post';
               continue;
             }
-            const item = normalize([target], age > 7 * day ? published : Date.now()).find(row => row.id === id && row.author.toLowerCase() === 'thsottiaux' && !row.truncated);
-            if (result?.targetId !== id || !item) {
-              if (historyOnly) diagnostics.telegram.error = target?.truncated ? 'body-unavailable' : 'invalid-post';
+            const item = normalize([target], age > 7 * day ? published : Date.now()).find(row => row.id === originalId && row.author.toLowerCase() === 'thsottiaux' && !row.truncated);
+            if (result?.targetId !== originalId || !item) {
+              diagnostics.telegram.error = target?.truncated ? 'body-unavailable' : 'invalid-post';
               continue;
             }
             if (historyOnly || age > 7 * day) {
-              if (onTelegramHistory && await onTelegramHistory(conversationContext(item, result, published))) diagnostics.telegram.recovered++;
+              if (onTelegramHistory && await onTelegramHistory(conversationContext(item, result, published))) {
+                knownHistory.add(originalId);
+                diagnostics.telegram.recovered++; if (channelSet.has(id)) diagnostics.telegram.channelRecovered++;
+              }
             } else {
-              collected.set(id, conversationContext(item, result));
+              collected.set(originalId, conversationContext(item, result));
               diagnostics.telegram.recovered++;
-              await checkpoint();
+              if (channelSet.has(id)) diagnostics.telegram.channelRecovered++;
             }
+            if (originalId !== id) cache[id] = { checkedAt: Date.now(), resolvedLeadId: originalId };
+            await checkpoint();
           } catch (error) {
             signal.throwIfAborted();
             diagnostics.telegram.error = failureReason(error);
             break; // Never navigate a tab whose ownership or page state is uncertain.
           }
         }
+        diagnostics.telegram.missing = channelIds.filter(id => !completeLead(id)).length;
       }
       if (historyOnly) return { items: [], diagnostics, contextCache: {}, retainedPosts: [] };
       const items = authors.flatMap(author => [...collected.values()].filter(item => item.author.toLowerCase() === author).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 160)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, authors.length * 160);

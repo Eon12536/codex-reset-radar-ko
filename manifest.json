@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Codex 리셋 레이더 · 한국어",
-  "version": "0.2.144",
+  "version": "0.2.155",
   "description": "OpenAI·Tibo·VB의 리셋·출시·행사 소식, Codex 잔여량과 리셋권을 확인하고 브라우저 알림을 받습니다. 8개국·7개 언어를 지원합니다.",
   "default_locale": "ko",
   "minimum_chrome_version": "120",

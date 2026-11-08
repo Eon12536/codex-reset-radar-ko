@@ -63,12 +63,44 @@ function browser({ stored, tab, failRemove = false, failGet = false, failSet = f
     });
     vm.runInContext(fs.readFileSync(require.resolve('../src/core/tab-owner'), 'utf8'), context);
     vm.runInContext(source, context);
-    return context.RadarDirectX;
+    return { ...context.RadarDirectX, makeOwner: context.RadarTabOwner.create };
   }
   return { load, session, local, tabs, alarms, calls, faults, listeners, maxTabs: () => maxTabs,
     stopWorker: () => { for (const timer of timers) clearTimeout(timer); timers.clear(); } };
 }
 const read = core => core.read(new AbortController().signal, { authors: ['thsottiaux'] });
+
+test('a long scan can recover its owned tab after worker or browser-session loss', async () => {
+  for (const loseSession of [false, true]) {
+    const b = browser();
+    const owner = b.load().makeOwner({ key: KEY, alarm: 'test-cleanup', prefix: 'X', closeSelectedReader: true,
+      accepts: url => /^https:\/\/x\.com\/thsottiaux\/status\/\d+$/.test(url),
+      matches: (url, urls) => urls.some(candidate => url.split('#')[0] === candidate),
+      recovery: { marker: 'radar-x-reader', permission: {}, urls: [PAGE + '/status/*'] } });
+    const opened = await owner.open(PAGE + '/status/100', Date.now() + 240000);
+    for (let id = 101; id < 140; id++) await owner.navigate(opened.id, PAGE + '/status/' + id);
+    assert.ok(b.session[KEY].urls.length <= 12);
+    if (loseSession) delete b.session[KEY];
+    b.stopWorker();
+    assert.equal(await b.load().cleanup({ force: true }), true);
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.calls.filter(call => call[0] === 'create').length, 1);
+  }
+});
+
+test('nonce-bearing oversized legacy leases recover without closing selected unrelated tabs', async () => {
+  const token = '12345678-1234-1234-1234-123456789abc';
+  const urls = Array.from({ length: 30 }, (_, index) => PAGE + '/status/' + (100 + index));
+  for (const loseSession of [false, true]) for (const pinned of [false, true]) {
+    const stored = lease({ token, urls });
+    const b = browser({ stored, tab: { id: 7, url: urls.at(-1) + '#radar-x-reader=' + token, pinned } });
+    b.local[KEY + 'GuardV1'] = { version: 2, blocked: false, lease: stored };
+    if (loseSession) delete b.session[KEY];
+    assert.equal(await b.load().cleanup({ force: true }), !pinned);
+    assert.equal(b.tabs.size, pinned ? 1 : 0);
+    b.stopWorker();
+  }
+});
 
 test('same-session inactive reader redirected to the same Codex Resets status closes without stranding its fence', async () => {
   const id = '2116692584248623511', requested = PAGE + '/status/' + id;
@@ -739,6 +771,41 @@ test('recovery refuses an open protected tab and only resumes after it has close
   await read(core);
   assert.equal(b.tabs.size, 0);
   assert.equal(b.local[core.GUARD_KEY], undefined);
+});
+
+test('explicit resume recovers a durable-only lease or pending marker before allowing another reader', async () => {
+  const token = '12345678-1234-1234-1234-123456789abc';
+  for (const kind of ['lease', 'pending']) {
+    const previous = lease({ token });
+    const b = browser({ tab: { id: 7, url: PAGE + '#radar-x-reader=' + token } });
+    const core = b.load();
+    b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'session-lost',
+      ...(kind === 'lease' ? { lease: previous } : { pending: { token, url: PAGE, startedAt: previous.startedAt, expiresAt: previous.expiresAt } }) };
+    assert.equal(await core.resume(), true, kind);
+    assert.equal(b.tabs.has(7), false, 'resume must close the owned reader before forgetting its proof');
+    await read(core);
+    assert.equal(b.maxTabs(), 1, 'no overlapping old and new reader');
+    assert.equal(b.tabs.size, 0);
+    assert.equal(b.local[core.GUARD_KEY], undefined);
+    b.stopWorker();
+  }
+});
+
+test('explicit resume keeps durable proof when the recovered reader is protected or cannot close', async () => {
+  const token = '12345678-1234-1234-1234-123456789abc';
+  for (const patch of [{ pinned: true }, { windowId: 2 }, { pendingUrl: 'https://example.com/' },
+    { url: 'https://example.com/' }, { failRemove: true }]) {
+    const b = browser({ failRemove: Boolean(patch.failRemove), tab: { id: 7,
+      url: PAGE + '#radar-x-reader=' + token, ...patch } });
+    const core = b.load();
+    b.local[core.GUARD_KEY] = { version: 2, blocked: true, reason: 'session-lost', lease: lease({ token }) };
+    assert.equal(await core.resume().catch(() => false), false, JSON.stringify(patch));
+    assert.ok(b.local[core.GUARD_KEY]);
+    assert.equal(b.tabs.has(7), true);
+    await assert.rejects(read(core));
+    assert.equal(b.calls.filter(call => call[0] === 'create').length, 0);
+    b.stopWorker();
+  }
 });
 
 test('lost-session recovery is restricted to explicit confirmation on the options page', async () => {

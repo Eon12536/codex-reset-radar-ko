@@ -1,9 +1,9 @@
 (function initPublicAlerts(root) {
   const DAY = 86400000;
-  const publicId = id => /^(signal|hint|report|schedule|event):/.test(id || '');
+  const publicId = id => /^(signal|hint|report|schedule|event|model):/.test(id || '');
 
   function notificationKeys(itemId, ids = []) {
-    const keys = ['signal:', 'hint:', 'report:', 'event:'].map(prefix => prefix + itemId);
+    const keys = ['signal:', 'hint:', 'report:', 'event:', 'model:'].map(prefix => prefix + itemId);
     // Schedule keys include both the original post and the changed post, plus
     // a revision fingerprint. Only the changed post shares this notification.
     return [...keys, ...ids.filter(id => /^schedule:[^:]+:[^:]+:[a-f0-9]+$/.test(id) &&

@@ -22,6 +22,67 @@ function worker({ stored, rows = [post('801'), post('802')], country = 'ko-KR', 
   return { ...w, source, clock, calls };
 }
 
+test('new model release is included in one daily toast and retained after the live list changes', async () => {
+  const announcement = post('811', 'Introducing GPT-5.1 today.');
+  const w = worker({ rows: [announcement] });
+  await w.context.refreshSignals();
+  assert.deepEqual(w.calls, ['daily-reset:2026-10-23']);
+  assert.match(w.notifications[w.calls[0]].message, /신모델 출시[\s\S]*GPT-5\.1/);
+  assert.equal(w.context.RadarDailyNews.groups(w.local, w.local.settings)[0].counts.model, 1);
+  w.source.rows = [];
+  await w.context.refreshSignals();
+  assert.equal(w.context.RadarDailyNews.groups(w.local, w.local.settings)[0].counts.model, 1);
+  assert.equal((await w.send({ type: 'OPEN_NEWS', id: 'codex-lead:811' }, w.sender('popup'))).ok, true);
+  assert.equal(w.tabs.at(-1).url, 'https://x.com/thsottiaux/status/811');
+  assert.equal(w.calls.length, 1);
+});
+
+test('a dismissed daily toast is not repeated when saving its daily delivery record fails', async () => {
+  for (const restart of [false, true]) {
+    let failRecord = true;
+    const w = worker({ rows: [post('801')], storageHook: async (area, operation, value) => {
+      if (area === 'local' && operation === 'set' && failRecord && value.dailyNewsDelivery?.['2026-10-23']) {
+        failRecord = false; throw new Error('Daily delivery record temporarily unavailable');
+      }
+    } });
+    await w.context.refreshSignals();
+    assert.equal(w.calls.length, 1);
+    assert.ok(w.local.pendingNotifications.length > 0);
+    for (const id of Object.keys(w.notifications)) delete w.notifications[id];
+    const next = restart ? worker({ stored: w.local, rows: [post('801')] }) : w;
+    await next.context.mutate(() => next.context.flushPendingNotifications());
+    assert.equal(restart ? next.calls.length : w.calls.length - 1, 0);
+    assert.equal(next.local.pendingNotifications.length, 0);
+    next.source.rows.push(post('802'));
+    await next.context.refreshSignals();
+    assert.equal(restart ? next.calls.length : w.calls.length - 1, 0, 'later news must preserve the same daily receipt');
+  }
+});
+
+test('a model release queued in quiet hours survives a later scan without that post', async () => {
+  const announcement = post('812', 'Introducing GPT-5.1 today.');
+  const w = worker({ rows: [announcement] });
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => true };
+  await w.context.refreshSignals();
+  assert.ok(w.local.pendingNotifications.some(item => item.id === 'model:812'));
+  w.source.rows = [];
+  await w.context.refreshSignals();
+  w.context.RadarTime = { ...w.context.RadarTime, isQuietHours: () => false };
+  await w.context.flushPendingNotifications();
+  assert.deepEqual(w.calls, ['daily-reset:2026-10-23']);
+  assert.equal(w.local.pendingNotifications.length, 0);
+});
+
+test('one post announcing a model and a reset counts in both categories without losing the reset', async () => {
+  const w = worker({ rows: [post('813', 'Introducing GPT-5.1 today! We will reset Codex usage limits tomorrow.')] });
+  await w.context.refreshSignals();
+  const group = w.context.RadarDailyNews.groups(w.local, w.local.settings)[0];
+  assert.equal(group.items.length, 1);
+  assert.equal(group.counts.model, 1);
+  assert.equal(group.counts.forecast, 1);
+  assert.equal(w.calls.length, 1);
+});
+
 test('existing installs default to one native daily toast with several source links in one daily group', async () => {
   const w = worker(); await w.context.refreshSignals();
   assert.equal(w.local.settings.dailyResetDigest, true);

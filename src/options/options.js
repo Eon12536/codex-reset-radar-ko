@@ -352,7 +352,10 @@ async function renderTelegramConnection() {
   control('telegramPermission').textContent = connected ? '연결 해제' : '텔레그램 연결';
   control('telegramConnectionState').textContent = !connected ? '연결 꺼짐 · 권한 허용 후 자동으로 보조 확인합니다.' :
     signalSnapshot?.leadStatus?.directError === 'tab-blocked' ? '연결됨 · X 확인 탭 정리 대기 중이라 원문 확인이 제한됩니다. 아래 탭 복구 상태를 확인해 주세요.' :
-    scan?.state === 'ok' ? `연결됨 · 후보 ${scan.leads}개 · 빠진 글 ${scan.missing}개 · 원문 확인 ${scan.recovered}개` :
+    scan?.state === 'ok' ? `연결됨 · 채널 링크 ${scan.leads}개 · 목록에 없는 링크 ${scan.missing}개 · 직접 원문 확인 ${scan.channelRecovered ?? scan.recovered}개` +
+      (scan.error ? ' · 최근 원문 확인 실패: ' + (scan.error === 'original-unresolved' ? '인용된 Tibo 원문 주소 미확인' :
+        scan.error === 'invalid-post' ? '원문 작성자·글 번호·게시 시각 미확인' : msg('collectorReason_' + scan.error, undefined, 'X 접근 상태 확인 필요')) : '') +
+      (scan.missing ? ' · 일부 링크는 인용 글일 수 있어 원문 연결을 추가로 확인해야 합니다.' : '') :
     scan?.state === 'unavailable' ? '채널을 읽지 못했습니다. 다음 확인 때 다시 시도합니다.' : '연결됨 · 다음 공개 소식 확인 때 확인합니다.';
 }
 control('telegramPermission').addEventListener('click', async () => {

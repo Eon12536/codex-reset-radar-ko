@@ -570,10 +570,10 @@ function article(post, { quoted = false, emoji = false, moreText, moreQuoted = f
   return node;
 }
 
-async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navigate = false, timerDelay = 0, hydrateAt = 0 } = {}) {
+async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navigate = false, timerDelay = 0, hydrateAt = 0, now = Date.now() } = {}) {
   let step = 0, scrolls = 0, elapsed = 0;
   const directions = [];
-  class Clock extends Date { static now() { return Date.now() + elapsed; } }
+  class Clock extends Date { static now() { return now + elapsed; } }
   const location = { origin: 'https://x.com', pathname };
   const context = vm.createContext({ location, Date: Clock,
     document: { querySelectorAll: () => snapshots[Math.min(step, snapshots.length - 1)] },
@@ -587,19 +587,21 @@ async function domRead(snapshots, { pathname = '/thsottiaux/with_replies', navig
 
 test('a public parent wrapped in a clickable outer container is read without borrowing quote cards', async () => {
   const [parent, child] = require('./fixtures/tibo-day18-oct23.json').posts;
+  const now = Date.parse(child.createdAt) + 60000;
   const { result } = await domRead([[article(parent, { wrapped: true, quoted: true }), article(child)]],
-    { pathname: '/thsottiaux/status/' + child.id });
-  const checked = Direct.conversationContext(Direct.normalize([child])[0], result);
+    { pathname: '/thsottiaux/status/' + child.id, now });
+  const checked = Direct.conversationContext(Direct.normalize([child], now)[0], result, now);
   assert.equal(checked.replyContext?.id, parent.id);
   assert.equal(checked.replyContext?.text, parent.text);
 });
 
 test('absolute and shared public timestamp links keep the rendered reset parent identity', async () => {
   const [parent, child] = require('./fixtures/tibo-day18-oct23.json').posts;
+  const now = Date.parse(child.createdAt) + 60000;
   for (const statusHref of [parent.url, parent.url + '?s=20', `/${parent.author}/status/${parent.id}/?s=20#source`]) {
     const { result } = await domRead([[article(parent, { statusHref }), article(child)]],
-      { pathname: '/thsottiaux/status/' + child.id });
-    assert.equal(Direct.conversationContext(Direct.normalize([child])[0], result).replyContext?.id, parent.id, statusHref);
+      { pathname: '/thsottiaux/status/' + child.id, now });
+    assert.equal(Direct.conversationContext(Direct.normalize([child], now)[0], result, now).replyContext?.id, parent.id, statusHref);
   }
 });
 
@@ -993,6 +995,87 @@ test('Telegram claim without an exact matching Tibo X article is never promoted 
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
+test('Telegram repost resolves to a separately verified original, persists its mapping and closes the single reader', async () => {
+  const wrapper = '2114592894044766612', original = row('2114588174249071102', 'thsottiaux', 'But today is a reset.');
+  const options = { normalizeUrl: url => url.replace('/thsottiaux/status/' + wrapper, '/codex_resets/status/' + wrapper),
+    conversation: url => url.includes('/codex_resets/') ? { wrapperId: wrapper, originalUrl: original.url }
+      : { targetId: original.id, rows: [original] } };
+  const r = reader(options);
+  const result = await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids: [wrapper] }) });
+  assert.equal(result.diagnostics.telegram.recovered, 1);
+  assert.ok(result.items.some(item => item.id === original.id));
+  assert.ok(!result.items.some(item => item.id === wrapper));
+  assert.equal(result.contextCache[wrapper].resolvedLeadId, original.id);
+  assert.ok(r.calls.some(call => call[0] === 'script' && call[1].files[0] === 'src/x-wrapper-reader.js'));
+  assert.equal(r.calls.filter(call => call[0] === 'create').length, 1);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  const next = reader(options);
+  const again = await next.core.read(new AbortController().signal, { contextCache: result.contextCache,
+    retainedPosts: result.retainedPosts, telegramLeads: Promise.resolve({ state: 'ok', ids: [wrapper] }) });
+  assert.equal(again.diagnostics.telegram.attempted, 0, 'verified wrapper must not consume a slot on every scan');
+});
+
+test('repost text, foreign destinations and wrong original identity cannot become reset evidence', async () => {
+  const wrapper = '2114592894044766612';
+  for (const destination of [null, 'https://evil.test/thsottiaux/status/2114588174249071102',
+    'https://x.com/thsottiaux/status/2114588174249071102', 'https://x.com/i/chat']) {
+    const r = reader({ normalizeUrl: url => url.replace('/thsottiaux/status/' + wrapper, '/codex_resets/status/' + wrapper),
+      conversation: url => url.includes('/codex_resets/') ? { wrapperId: wrapper, originalUrl: destination,
+        rows: [row(wrapper, 'codex_resets', 'All usage reset')] }
+        : { targetId: '2114588174249071102', rows: [row('2114588174249071102', 'someone', 'Reset done')] } });
+    const result = await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids: [wrapper] }) });
+    assert.equal(result.diagnostics.telegram.recovered, 0);
+    assert.ok(!result.items.some(item => item.id === wrapper || item.id === '2114588174249071102'));
+    assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  }
+});
+
+test('an old repost recovers only the separately verified original into display history', async () => {
+  const now = Date.now(), wrapper = '2114592894044766612';
+  const original = { ...row('2114588174249071102', 'thsottiaux', 'But today is a reset.'), createdAt: new Date(now - 10 * 86400000).toISOString() };
+  const r = reader({ now, normalizeUrl: url => url.replace('/thsottiaux/status/' + wrapper, '/codex_resets/status/' + wrapper),
+    conversation: url => url.includes('/codex_resets/') ? { wrapperId: wrapper, originalUrl: original.url }
+      : { targetId: original.id, rows: [original] } });
+  const saved = [];
+  const result = await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids: [wrapper] }),
+    onTelegramHistory: async item => { saved.push(item.id); return true; } });
+  assert.deepEqual(saved, [original.id]);
+  assert.ok(!result.items.some(item => [original.id, wrapper].includes(item.id)));
+  assert.equal(result.diagnostics.telegram.missing, 0);
+  assert.equal(result.contextCache[wrapper].resolvedLeadId, original.id);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('slow primary timelines reserve time to verify a missing Telegram original', async () => {
+  const original = row('2114588174249071102', 'thsottiaux', 'But today is a reset.');
+  const r = reader({ authors: Array.from(Direct.AUTHORS), timelineDelayMs: 32000,
+    conversation: () => ({ targetId: original.id, rows: [original] }) });
+  const result = await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids: [original.id] }) });
+  assert.equal(result.diagnostics.timelines.length, 6);
+  assert.equal(result.diagnostics.telegram.recovered, 1);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('an empty secondary channel leaves time to verify known reset timing before slow timelines', async () => {
+  const now = Date.now();
+  const parent = { ...row('2114200152701575656', 'thsottiaux', 'Day 20/ Rest and reset'), createdAt: new Date(now - 3600000).toISOString() };
+  const timing = { ...row('2114200291319124163', 'thsottiaux', 'By midnight PST'), createdAt: new Date(now - 3500000).toISOString() };
+  for (const secondary of [{ state: 'disabled', ids: [] }, { state: 'ok', ids: [] },
+    { state: 'unavailable', ids: [] }, { state: 'ok', ids: ['bad-id'] },
+    { state: 'ok', ids: [parent.id] }, { state: 'ok', ids: ['2113492187770175603'] },
+    { state: 'ok', ids: ['2114588174249071102'] }, new Error('secondary fetch failed')]) {
+    const r = reader({ now, timelineDelayMs: 40000, timeline: { rows: [parent] }, conversation: url =>
+      url.endsWith('/' + parent.id) ? { targetId: parent.id, rows: [parent], followUps: [timing] }
+        : { targetId: timing.id, rows: [parent, timing] } });
+    const result = await r.core.read(new AbortController().signal, { retainedPosts: [parent], resetTargets: [parent],
+      knownHistoryIds: ['2113492187770175603'], telegramAttempts: { '2114588174249071102': now },
+      telegramLeads: secondary instanceof Error ? Promise.reject(secondary) : Promise.resolve(secondary) });
+    assert.ok(result.diagnostics.resetFollowUps?.some(check => check.id === parent.id && check.verified === 1), secondary.state);
+    assert.ok(result.items.some(item => item.id === timing.id && item.replyContext?.id === parent.id));
+    assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+  }
+});
+
 test('recently attempted missing Telegram IDs do not trigger repeated reader navigation', async () => {
   const id = '2114599388454481930';
   const r = reader();
@@ -1001,6 +1084,20 @@ test('recently attempted missing Telegram IDs do not trigger repeated reader nav
   assert.equal(result.diagnostics.telegram.missing, 1);
   assert.equal(result.diagnostics.telegram.attempted, 0);
   assert.ok(!r.calls.some(call => call[0] === 'update' && call[1].url.includes('/status/' + id)));
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
+});
+
+test('untried Telegram candidates precede older repeated failures after cooldown', async () => {
+  const ids = ['2114599388454481930', '2114599388454481931', '2114599388454481932'];
+  const r = reader({ conversation: url => {
+    const id = url.split('/').at(-1);
+    return { targetId: id, rows: [row(id, 'thsottiaux', 'Public update')] };
+  } });
+  const attempts = [];
+  await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids }),
+    telegramAttempts: { [ids[0]]: Date.now() - 31 * 60000, [ids[1]]: Date.now() - 30 * 60000 },
+    onTelegramAttempt: async id => attempts.push(id) });
+  assert.equal(attempts[0], ids[2]);
   assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
@@ -1039,6 +1136,19 @@ test('history-only recovery opens no tab if every lead is already saved', async 
   await r.core.read(new AbortController().signal, { historyOnly: true, knownHistoryIds: [id],
     telegramLeads: Promise.resolve({ state: 'ok', ids: [id] }) });
   assert.equal(r.calls.filter(call => call[0] === 'create').length, 0);
+});
+
+test('a fresh channel candidate beyond forty saved history ids still reaches the owned reader', async () => {
+  const id = '2116692529970311254', known = Array.from({ length: 40 }, (_, i) => String(2110000000000000000n + BigInt(i)));
+  const current = { ...row(id, 'thsottiaux', 'Banked 1/2'), createdAt: new Date().toISOString() };
+  const r = reader({ conversation: url => url.endsWith('/' + id) ? { targetId: id, rows: [current] } : { rows: [] } });
+  const result = await r.core.read(new AbortController().signal, { telegramLeads: Promise.resolve({ state: 'ok', ids: [...known, id], telegramIds: [id] }), knownHistoryIds: known });
+  assert.equal(result.diagnostics.telegram.leads, 1);
+  assert.equal(result.diagnostics.telegram.channelAttempted, 1);
+  assert.equal(result.diagnostics.telegram.channelRecovered, 1);
+  assert.ok(result.items.some(item => item.id === id));
+  assert.equal(r.calls.filter(call => call[0] === 'create').length, 1);
+  assert.deepEqual(r.calls.at(-1), ['remove', 33]);
 });
 
 test('historical recovery reports an inaccessible target and closes the reader', async () => {

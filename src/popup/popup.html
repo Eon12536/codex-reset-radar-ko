@@ -36,7 +36,7 @@
       <p id="themeStatus" class="theme-status" role="status" aria-live="polite"></p>
 
       <section class="quota-panel" aria-labelledby="quotaTitle">
-        <div class="section-heading"><h1 id="quotaTitle">남은 사용량</h1><button id="connectAccount" class="text-action" type="button" hidden>계정 연결</button></div>
+        <div class="section-heading"><h1 id="quotaTitle">남은 사용량</h1><span id="quotaWarning" class="quota-warning" role="status" hidden></span><button id="connectAccount" class="text-action" type="button" hidden>계정 연결</button></div>
         <div class="quota-grid">
           <div id="fiveHourRow" class="quota-row">
             <span class="quota-name" data-i18n="fiveHours">5시간</span>
@@ -58,7 +58,7 @@
 
       <section id="scanControls" class="scan-controls" aria-label="탐지 상태와 지금 확인">
       <div class="scan-toolbar">
-        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.144</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
+        <div class="status-copy"><span class="status-line"><span id="healthDot" class="health-dot"></span><span id="notificationState">알림 켜짐</span><small id="popupBuildVersion" data-no-translate>v0.2.155</small></span><span id="lastChecked" class="last-checked">아직 확인하지 않음</span></div>
         <button id="refreshButton" class="refresh-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7v4h-4M5 17v-4h4M7.2 8.1A6.5 6.5 0 0 1 18 10.5M16.8 15.9A6.5 6.5 0 0 1 6 13.5"/></svg><span data-i18n="refreshNow">지금 확인</span></button>
       </div>
       <p id="newsFreshness" class="news-status muted" role="status"></p>
@@ -133,6 +133,7 @@
     <script src="../core/reset-scope.js"></script>
     <script src="../core/semantic.js"></script>
     <script src="../core/signals.js"></script>
+    <script src="../core/model-release.js"></script>
     <script src="../core/news.js"></script>
     <script src="../core/events.js"></script>
     <script src="../core/chat-counter.js"></script>

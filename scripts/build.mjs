@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import sharp from "sharp";
 import { execFileSync } from "node:child_process";
 
@@ -30,7 +30,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), 
 const zipPath = path.join(dist, `codex-reset-radar-ko-v${packageJson.version}.zip`);
 await new Promise((resolve, reject) => {
   const output = fs.createWriteStream(zipPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = new ZipArchive({ zlib: { level: 9 } });
   output.on("close", resolve);
   archive.on("error", reject);
   archive.pipe(output);

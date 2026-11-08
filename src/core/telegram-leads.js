@@ -13,7 +13,7 @@
       try {
         const url = new root.URL(match[1]);
         if (url.protocol !== 'https:' || !['x.com', 'twitter.com'].includes(url.hostname.toLowerCase()) || url.port || url.username || url.password) continue;
-        const path = (directOnly ? /^\/thsottiaux\/status\/([1-9]\d{0,24})\/?$/i : /^\/(?:i(?:\/web)?|thsottiaux)\/status\/([1-9]\d{0,24})\/?$/i).exec(url.pathname);
+        const path = (directOnly ? /^\/thsottiaux\/status\/([1-9]\d{0,24})\/?$/i : /^\/(?:i(?:\/web)?|thsottiaux|codex_resets)\/status\/([1-9]\d{0,24})\/?$/i).exec(url.pathname);
         if (!path) continue;
         const id = path[1];
         const posted = Number((BigInt(id) >> 22n) + 1288834974657n);
@@ -24,6 +24,18 @@
       } catch { /* Reject malformed or oversized links. */ }
     }
     return [...found].sort((a, b) => BigInt(a) > BigInt(b) ? -1 : 1).slice(0, 40);
+  }
+  // Keep live channel links and user-requested original history links in
+  // separate bounded inputs. Interleave them so neither full queue hides the
+  // other; actual original author/body must still be verified on X.
+  function combine(channel, history) {
+    const valid = value => typeof value === 'string' && /^[1-9]\d{0,24}$/.test(value);
+    const recent = list => [...new Set((Array.isArray(list) ? list : []).filter(valid))]
+      .sort((a, b) => BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0).slice(0, 40);
+    const telegramIds = recent(channel), historyIds = recent(history), ids = [], seen = new Set();
+    const add = id => { if (id && !seen.has(id)) { seen.add(id); ids.push(id); } };
+    for (let i = 0; i < Math.max(telegramIds.length, historyIds.length); i++) { add(historyIds[i]); add(telegramIds[i]); }
+    return { ids, telegramIds };
   }
   async function load(signal) {
     if (!await root.chrome.permissions.contains({ origins: [ORIGIN] })) return { state: 'permission', ids: [] };
@@ -51,6 +63,6 @@
       return { state: 'unavailable', ids: [] };
     }
   }
-  root.RadarTelegramLeads = Object.freeze({ ORIGIN, URL, parse, load });
+  root.RadarTelegramLeads = Object.freeze({ ORIGIN, URL, parse, combine, load });
   if (typeof module !== 'undefined') module.exports = root.RadarTelegramLeads;
 })(globalThis);
