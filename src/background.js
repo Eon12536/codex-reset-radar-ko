@@ -55,7 +55,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.156";
+const NOTIFICATION_BUILD = "0.2.157";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -284,7 +284,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
 }
 
 const CHAT_SCRIPT_ID = "radar-chat-counter";
-const CHAT_PLAN_READER_VERSION = 2;
+const CHAT_PLAN_READER_VERSION = 3;
 let chatHistoryJob;
 async function cleanChatHistory(settings) {
   const { chatCounters = {} } = await chrome.storage.local.get('chatCounters');
@@ -582,7 +582,8 @@ async function chooseChatPlan(message) {
   if (account.status !== 'connected' || account.key !== message.accountKey ||
       (plan !== 'auto' && RadarChatCounter.PLANS[plan]?.family !== account.family)) return { ok: false };
   if (plan === 'auto') {
-    if (RadarChatCounter.PLANS[account.family]?.family === account.family) {
+    if (RadarChatCounter.PLANS[account.family]?.family === account.family &&
+        !await chrome.permissions.contains({ permissions: ['scripting'] })) {
       return mutate(async () => {
         const { chatAccount, chatCounters = {} } = await chrome.storage.local.get(['chatAccount', 'chatCounters']);
         if (epoch !== stateEpoch || !(await loadSettings()).monitorChat || chatAccount?.key !== account.key ||
@@ -634,11 +635,11 @@ async function runChatPlan(expectedAccountKey = null) {
   if (expectedAccountKey && account.key !== expectedAccountKey) return { ok: false, code: 'changed' };
   if (!chrome.tabs.get || !chrome.tabs.remove || !await chrome.permissions.contains({ permissions: ['scripting'] })) return { ok: false, code: 'permission' };
   const controller = new AbortController(); activeRequests.add(controller);
-  let tabId, timer;
+  let tabId, timer, readerTimer, finished = false, readerStatus = null, readerAttempts = 0;
   const mark = async status => mutate(async () => {
     const { chatCounters = {}, chatAccount } = await chrome.storage.local.get(['chatCounters', 'chatAccount']);
     if (epoch !== stateEpoch || chatAccount?.key !== account.key || !(await loadSettings()).monitorChat) return;
-    chatCounters[account.key] = { ...chatCounters[account.key], planCheck: { status, checkedAt: Date.now(), readerVersion: CHAT_PLAN_READER_VERSION } };
+    chatCounters[account.key] = { ...chatCounters[account.key], planCheck: { status, ...(readerStatus ? { readerStatus } : {}), checkedAt: Date.now(), readerVersion: CHAT_PLAN_READER_VERSION } };
     await chrome.storage.local.set({ chatCounters });
   });
   try {
@@ -648,11 +649,42 @@ async function runChatPlan(expectedAccountKey = null) {
     if (!connection.ok || !Number.isInteger(tabId) || epoch !== stateEpoch || connection.accountKey !== account.key) {
       await mark('stopped'); return { ok: false, code: 'stopped' };
     }
+    // Do not rely solely on a previously registered content observer. After
+    // reload/registration failures it may never start, leaving a visible Pro
+    // card unread. Read only this owned tab, with a bounded hydration retry.
+    const readBilling = async () => {
+      if (finished || controller.signal.aborted || !chatPlanTabs.has(tabId) || !chrome.scripting?.executeScript || readerAttempts >= 23) return;
+      readerAttempts++;
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (!RadarChatCounter.billingUrl(tab.url)) { readerStatus = 'wrong-page'; return; }
+        const results = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED',
+          files: ['src/core/chat-counter.js', 'src/chat-plan-reader.js'] });
+        if (finished || controller.signal.aborted || !chatPlanTabs.has(tabId)) return;
+        const result = results.find(item => item.frameId === 0 && typeof item.documentId === 'string');
+        const value = result?.result;
+        readerStatus = value?.status === 'read' ? 'read' : value?.status === 'wrong-page' ? 'wrong-page' : 'card-pending';
+        if (!value || !RadarChatCounter.billingUrl(value.url) || !RadarChatCounter.planFromHeading(value.heading)) return;
+        const sender = { id: chrome.runtime.id, tab: { id: tabId }, frameId: 0,
+          documentId: result.documentId, url: value.url };
+        const status = await chatCountStatus(sender);
+        if (finished || controller.signal.aborted || !status.enabled) return;
+        const message = { type: 'CHAT_PLAN_OBSERVED', scope: status.scope, heading: value.heading,
+          ...(value.modern === true ? { currentPlan: true } : {}) };
+        if (!RadarSecurity.allowedMessage(message, sender, chrome.runtime)) return;
+        const accepted = await observeChatPlan(message, sender);
+        if (!accepted.ok) readerStatus = 'account-changed';
+      } catch { readerStatus = 'reader-unavailable'; }
+      finally {
+        if (!finished && !controller.signal.aborted && chatPlanTabs.has(tabId)) readerTimer = setTimeout(readBilling, 2000);
+      }
+    };
     const result = await new Promise(resolve => {
       chatPlanWaiters.set(tabId, resolve);
       timer = setTimeout(() => resolve({ ok: false, code: 'timeout' }), 45000);
       controller.signal.addEventListener('abort', () => resolve({ ok: false, code: 'stopped' }), { once: true });
       if (controller.signal.aborted) resolve({ ok: false, code: 'stopped' });
+      void readBilling();
       // Covers the rare case that the content script finished before registration.
       chrome.storage.local.get('chatCounters').then(({ chatCounters }) => {
         if (!chatPlanTabs.has(tabId) && chatCounters?.[account.key]?.planCheck?.status === 'confirmed') resolve({ ok: true });
@@ -660,9 +692,12 @@ async function runChatPlan(expectedAccountKey = null) {
     });
     if (!result.ok) await mark(result.code);
     return result;
-  } catch { await mark('error'); return { ok: false, code: 'error' }; }
+  } catch (error) {
+    readerStatus = /^CHAT_PLAN_(?:TAB_BLOCKED|TAB_CLEANUP_FAILED|TAB_CREATE_PENDING)$/.test(String(error?.message)) ? 'tab-blocked' : readerStatus;
+    await mark('error'); return { ok: false, code: 'error' };
+  }
   finally {
-    clearTimeout(timer); activeRequests.delete(controller);
+    finished = true; clearTimeout(timer); clearTimeout(readerTimer); activeRequests.delete(controller);
     try {
       if (Number.isInteger(tabId)) {
         chatPlanWaiters.delete(tabId); chatPlanTabs.delete(tabId);

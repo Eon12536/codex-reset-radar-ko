@@ -1,6 +1,6 @@
 // This module intentionally has no dependency on the rest of the settings UI.
 (() => {
-  const BUILD = "0.2.156";
+  const BUILD = "0.2.157";
   const button = document.getElementById("testNotification");
   const status = document.getElementById("notificationTestStatus");
   const worker = document.getElementById("notificationWorkerStatus");

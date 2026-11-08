@@ -320,7 +320,6 @@ async function openNews(id, button) {
 function renderChat(data, settings) {
   const view = RadarChatCounter.view({ ...data, settings });
   const count = view.count;
-  const needsTier = ['pro', 'business', 'unknown'].includes(view.family);
   $("chatCountValue").hidden = !view.connected || !view.meters.length;
   $("chatCountValue").textContent = "추정";
   renderChatMeters(view);
@@ -340,8 +339,10 @@ function renderChat(data, settings) {
     settings.syncChatResetWithCodex ? settings.monitorAccount ? "Codex 리셋 확인 시 카운터 함께 초기화" : "리셋 연동 대기 · 설정에서 내 잔여량 조회를 켜세요" : "Codex 리셋 연동 꺼짐";
   $("chatResetNote").title = "로컬 카운터 동기화입니다. Chat 서버의 실제 리셋·잔여량을 확인한 값은 아닙니다.";
   $("chatCountStatus").textContent = view.planCheck?.status === 'running' ? '요금제 확인 중…' :
-    view.connected && needsTier && ['timeout', 'error', 'stopped', 'failed'].includes(view.planCheck?.status) ?
-      view.plan ? '자동 확인 실패 · 기존 기준으로 표시 중' : '자동 확인 실패 · 위에서 요금제를 선택해 주세요.' :
+    view.connected && ['timeout', 'error', 'stopped', 'failed'].includes(view.planCheck?.status) ?
+      '구독 재확인 실패 · ' + ({ 'tab-blocked': '이전 확인 탭 정리 필요', 'wrong-page': '결제 페이지 연결 확인 필요',
+        'card-pending': '현재 구독 카드 미표시', 'reader-unavailable': '확인 페이지 읽기 실패',
+        'account-changed': '계정 연결 재확인 필요' }[view.planCheck?.readerStatus] || '확인 응답 없음') :
       view.connected && view.plan && !view.meters.length ? msg('chatQuotaUnknown') : '';
 }
 
