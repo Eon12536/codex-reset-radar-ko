@@ -6,13 +6,47 @@ Codex 사용량과 리셋 소식을 한곳에서 확인하는 **Chrome·Edge 확
 
 **OpenAI 공식 제품이 아닌 커뮤니티 파생판입니다.** 공개 글 분류와 Chat 사용량은 추정이 포함될 수 있으며, 공지가 개인 계정에 반영됐는지는 계정 잔여량을 별도로 확인해야 합니다.
 
-[최신 버전 다운로드](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest) · [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml) · [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
+[최신 버전 다운로드](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest) · [처음 사용하는 분을 위한 사용법](docs/USAGE.md) · [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml) · [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
 
-## 화면 미리보기
+## 실제 사용 화면
 
-<img src="docs/images/reset-news-actual-2026-11-02.png" alt="실제 확장 프로그램의 리셋 소식 화면: 날짜별 리셋 공지와 원문 링크" width="300">
+아래는 **사용자가 실제로 사용하면서 제공한 캡처**입니다. 예시 데이터로 만든 화면이 아닙니다. **2026년 11월 2일의 이전 버전 화면**으로, 현재 v0.2.157의 일부 문구·분류·화면 배치는 다를 수 있습니다. 그림 속 잔여량과 날짜는 캡처 당시 값입니다.
 
-실제 확장에서 2026년 11월 2일에 보인 리셋 소식 화면입니다. **이전 버전의 캡처**로, 이후 기간 선택 등 일부 화면이 변경되었습니다. 날짜와 글은 캡처 당시 실제로 표시된 내용입니다.
+### X 원문과 확장 팝업
+
+[![실제 사용 화면: 왼쪽 X 원문과 오른쪽 Codex 잔여량·리셋 소식 팝업](docs/images/x-and-radar-actual-v0.2.143-2026-11-02.png)](docs/images/x-and-radar-actual-v0.2.143-2026-11-02.png)
+
+오른쪽에서 5시간·주간 잔여량, **지금 확인**, 날짜별 소식과 **기간설정**을 볼 수 있습니다. 이 캡처는 v0.2.143이며, 당시 화면에 보이는 Banked 글의 ‘리셋 추정’ 분류는 이후 보완된 부분입니다. 이미지를 눌러 원본 크기로 볼 수 있습니다.
+
+### 날짜별 리셋 소식 상세
+
+<a href="docs/images/reset-news-actual-2026-11-02.png"><img src="docs/images/reset-news-actual-2026-11-02.png" alt="실제 날짜별 리셋 소식: 분류별 건수, 한국 시간의 리셋 일정, 작성자별 원문 링크" width="320"></a>
+
+날짜별 카드에 분류별 건수·리셋 일정·원문 링크를 모아 보여줍니다. 현재 버전에서는 **기간설정** 버튼으로 과거 월을 선택하고 **신모델 출시**도 별도 분류합니다. [이미지 출처와 캡처 정보](docs/images/README.md)
+
+## 처음 설치한다면
+
+1. [최신 릴리스](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)의 **Assets**에서 `CodexReset-Radar-KO-버전.zip`을 받습니다. 자동 생성된 `Source code` ZIP 대신 설치용 ZIP을 선택하세요.
+2. 계속 보관할 폴더에 압축을 풉니다. Chrome의 `chrome://extensions/` 또는 Edge의 `edge://extensions/`에서 **개발자 모드**를 켭니다.
+3. **압축해제된 확장 프로그램을 로드합니다**를 누르고 `manifest.json`이 있는 폴더를 선택합니다.
+4. 도구 모음에 확장을 고정한 뒤 **설정 → 감시 설정**에서 X 접근을 허용합니다. 같은 브라우저에서 X에 로그인해야 할 수 있습니다.
+5. 팝업의 **지금 확인**을 누르고 수집 상태를 확인합니다. **설정 → 알림 → 테스트 알림**으로 알림 연결도 확인합니다.
+
+**설치한 폴더를 삭제하거나 이동하지 마세요.** 계정 잔여량·리셋권 조회는 선택 기능이며, 원하는 사람만 본인의 ChatGPT 계정을 연결하면 됩니다. [첫 설정과 화면별 사용법 보기 →](docs/USAGE.md)
+
+## 무엇을 할 수 있나요?
+
+| 기능 | 확인할 수 있는 내용 |
+| --- | --- |
+| 리셋 공지 분류 | 리셋 예고·완료·추정·리셋권·신모델 출시를 구분 |
+| 날짜별 요약 | 같은 날의 글을 모아 요약하고 원문 링크 표시 |
+| 리셋 시간 | 원문과 확인 가능한 답글의 일정 표현을 선택한 국가 시간대로 표시 |
+| Codex 잔여량 | 계정을 연결하면 5시간·주간 잔여량과 초기화 시각 표시 |
+| 리셋권 관리 | 계정의 보유·지급·만료 상태와 기본 3일·2일·1일 전 알림 |
+| 알림 | 공개 소식 하루 요약, 계정 회복·리셋권 알림, 시작·절전 복귀 후 확인 |
+| 과거 기록 | 저장한 소식을 누적하고 이번 달·지난달 또는 선택한 월 조회 |
+| 교차 확인 | Telegram 공개 채널의 링크를 후보로 받아 빠진 X 원문 재확인 |
+| Chat 집계 | 선택적으로 요금제를 확인하고 확인한 모델 사용 기록 집계 |
 
 ## v0.2.157 주요 변경
 
