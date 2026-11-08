@@ -43,8 +43,8 @@ const WAKE_ALARM = "codex-reset-radar-wake-check";
 const INITIALIZATION_RETRY_ALARM = "codex-reset-radar-initialization-retry";
 const CHAT_PLAN_CLEANUP_ALARM = "codex-reset-radar-chat-plan-tab-cleanup";
 const chatPlanOwner = RadarTabOwner.create({ key: 'chatPlanScanTabV1', alarm: CHAT_PLAN_CLEANUP_ALARM,
-  accepts: url => url === 'https://chatgpt.com/#settings/Billing',
-  matches: url => url === 'https://chatgpt.com/#settings/Billing' || url === 'about:blank', prefix: 'CHAT_PLAN' });
+  accepts: url => RadarChatCounter.billingUrl(url),
+  matches: url => RadarChatCounter.billingUrl(url) || url === 'about:blank', prefix: 'CHAT_PLAN' });
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 const SESSION_URLS = [
@@ -55,7 +55,7 @@ const TOKEN_KEY = "sessionAccessToken";
 const TOKEN_EXPIRY_KEY = "sessionAccessTokenExpiresAt";
 const msg = (key, substitutions, fallback) => RadarI18n.t(key, substitutions, fallback);
 const SECURITY_SCHEMA = 1;
-const NOTIFICATION_BUILD = "0.2.155";
+const NOTIFICATION_BUILD = "0.2.156";
 let stateEpoch = 0;
 let mutations = Promise.resolve();
 let readyPromise;
@@ -284,6 +284,7 @@ async function saveSettings(settings, { connectChat = false } = {}) {
 }
 
 const CHAT_SCRIPT_ID = "radar-chat-counter";
+const CHAT_PLAN_READER_VERSION = 2;
 let chatHistoryJob;
 async function cleanChatHistory(settings) {
   const { chatCounters = {} } = await chrome.storage.local.get('chatCounters');
@@ -381,7 +382,7 @@ async function configureChatCounter(enabled) {
 
 async function injectChatCounter(inject = true) {
   for (const tab of await chrome.tabs.query({ url: "https://chatgpt.com/*" })) {
-    if (!RadarChatCounter.chatUrl(tab.url)) continue;
+    if (!RadarChatCounter.chatUrl(tab.url) && !RadarChatCounter.billingUrl(tab.url)) continue;
     try {
       if (inject) await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["src/core/chat-counter.js", "src/chat-counter.js"] });
       await chrome.tabs.sendMessage(tab.id, { type: "CHAT_COUNT_SYNC" });
@@ -480,7 +481,7 @@ async function refreshChatPlanAccount({ force = false } = {}) {
       const profile = current.chatCounters?.[account.key];
       if (!profile) return current.chatAccount;
       const next = { ...profile, familyCheck: { at: Date.now(), tokenFamily: account.tokenFamily,
-        status: evidence ? 'confirmed' : 'unavailable' }, ...(evidence ? { familyEvidence: evidence } : {}) };
+        status: evidence ? 'confirmed' : 'unavailable' }, ...(evidence ? { familyEvidence: RadarChatCounter.preferredFamilyEvidence(profile, evidence) } : {}) };
       const family = RadarChatCounter.accountFamily(next, account.tokenFamily);
       const result = { ...current.chatAccount, family };
       await chrome.storage.local.set({ chatAccount: result,
@@ -536,11 +537,12 @@ async function observeChatPlan(message, sender) {
   // Only a freshly opened current-plan page may supply evidence. A random open
   // pricing page, past conversation or stale billing tab cannot change a budget.
   if (!request || request.expiresAt < Date.now() || !binding || binding.scope !== message.scope || !plan ||
-      new URL(sender.url).hash !== "#settings/Billing") return { ok: false };
+      !RadarChatCounter.billingUrl(sender.url)) return { ok: false };
   const account = await refreshChatAccount({ force: true });
   const policy = RadarChatCounter.PLANS[plan];
   if (account.status !== "connected" || binding.key !== account.key ||
-      (request.key && request.key !== account.key) || (account.family !== "unknown" && account.family !== policy.family)) return { ok: false };
+      (request.key && request.key !== account.key) || (account.family !== "unknown" && account.family !== policy.family &&
+        !(message.currentPlan === true && new URL(sender.url).pathname.startsWith('/settings/billing')))) return { ok: false };
   return mutate(async () => {
     const { chatAccount, chatCounters = {} } = await chrome.storage.local.get(["chatAccount", "chatCounters"]);
     if (epoch !== stateEpoch || !(await loadSettings()).monitorChat || chatAccount?.key !== binding.key) return { ok: false };
@@ -548,7 +550,9 @@ async function observeChatPlan(message, sender) {
       chatPlanWaiters.get(sender.tab.id)?.({ ok: false, code: 'superseded' });
       return { ok: false };
     }
-    chatCounters[binding.key] = { ...chatCounters[binding.key], plan, planChoice: null, family: policy.family, planAt: Date.now(), updatedAt: Date.now(), planCheck: { status: 'confirmed', checkedAt: Date.now() } };
+    chatCounters[binding.key] = { ...chatCounters[binding.key], plan, planChoice: null, family: policy.family,
+      familyEvidence: { source: 'billing', family: policy.family, tokenFamily: account.tokenFamily, at: Date.now() },
+      planAt: Date.now(), updatedAt: Date.now(), planCheck: { status: 'confirmed', checkedAt: Date.now(), readerVersion: CHAT_PLAN_READER_VERSION } };
     await chrome.storage.local.set({ chatAccount: { ...chatAccount, family: policy.family }, chatCounters: boundedChatProfiles(chatCounters, binding.key) });
     chatPlanTabs.delete(sender.tab.id);
     await chrome.storage.session.set({ chatPlanTabsV2: Object.fromEntries(chatPlanTabs) });
@@ -562,8 +566,8 @@ async function connectChatAccount({ active = true } = {}) {
   const account = await refreshChatAccount({ force: true });
   if (!(await loadSettings()).monitorChat) return { ok: false };
   const { chatCounters = {} } = await chrome.storage.local.get('chatCounters');
-  const tab = active ? await chrome.tabs.create({ url: "https://chatgpt.com/#settings/Billing", active }) :
-    await chatPlanOwner.open('https://chatgpt.com/#settings/Billing', Date.now() + 60000);
+  const tab = active ? await chrome.tabs.create({ url: "https://chatgpt.com/settings/billing", active }) :
+    await chatPlanOwner.open('https://chatgpt.com/settings/billing', Date.now() + 60000);
   if (epoch !== stateEpoch || !(await loadSettings()).monitorChat) return { ok: false, tabId: tab.id };
   for (const [id, request] of chatPlanTabs) if (request.expiresAt < Date.now()) chatPlanTabs.delete(id);
   chatPlanTabs.set(tab.id, { key: account.key || null, choiceRevision: chatCounters[account.key]?.planChoiceRevision || null, expiresAt: Date.now() + 5 * 60000 });
@@ -628,14 +632,13 @@ async function runChatPlan(expectedAccountKey = null) {
   const account = await refreshChatPlanAccount({ force: true });
   if (account.status !== 'connected') return { ok: false, code: 'auth' };
   if (expectedAccountKey && account.key !== expectedAccountKey) return { ok: false, code: 'changed' };
-  if (!['pro', 'business', 'unknown'].includes(account.family)) return { ok: true, status: 'no-fixed-budget' };
   if (!chrome.tabs.get || !chrome.tabs.remove || !await chrome.permissions.contains({ permissions: ['scripting'] })) return { ok: false, code: 'permission' };
   const controller = new AbortController(); activeRequests.add(controller);
   let tabId, timer;
   const mark = async status => mutate(async () => {
     const { chatCounters = {}, chatAccount } = await chrome.storage.local.get(['chatCounters', 'chatAccount']);
     if (epoch !== stateEpoch || chatAccount?.key !== account.key || !(await loadSettings()).monitorChat) return;
-    chatCounters[account.key] = { ...chatCounters[account.key], planCheck: { status, checkedAt: Date.now() } };
+    chatCounters[account.key] = { ...chatCounters[account.key], planCheck: { status, checkedAt: Date.now(), readerVersion: CHAT_PLAN_READER_VERSION } };
     await chrome.storage.local.set({ chatCounters });
   });
   try {
@@ -875,12 +878,14 @@ async function storeAccountSnapshot(usage, credits, epoch, identity) {
     const chatKey = chat.chatCounterSalt && await RadarRecovery.accountKey(identity.token, null, chat.chatCounterSalt);
     const profiles = chatResetPatch.chatCounters || chat.chatCounters || {};
     if (chatKey && profiles[chatKey]) {
-      chatResetPatch.chatCounters = { ...profiles, [chatKey]: { ...profiles[chatKey], family: quotaFamily,
-        familyEvidence: { source: 'usage', family: quotaFamily, tokenFamily: chatIdentity.family, at: Date.now() } } };
+      const familyEvidence = RadarChatCounter.preferredFamilyEvidence(profiles[chatKey],
+        { source: 'usage', family: quotaFamily, tokenFamily: chatIdentity.family, at: Date.now() });
+      const family = RadarChatCounter.accountFamily({ ...profiles[chatKey], familyEvidence }, chatIdentity.family);
+      chatResetPatch.chatCounters = { ...profiles, [chatKey]: { ...profiles[chatKey], family, familyEvidence } };
       // A late response for A may update A's profile, never B's active display.
       if (chat.chatAccount?.status === 'connected' && chat.chatAccount.key === chatKey &&
           chat.chatAccount.tokenFamily === chatIdentity.family)
-        chatResetPatch.chatAccount = { ...chat.chatAccount, family: quotaFamily };
+        chatResetPatch.chatAccount = { ...chat.chatAccount, family };
     }
   }
   const activeSignal = RadarSignals.isActive(current.signalSnapshot?.signal)
@@ -2773,7 +2778,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "SET_CHAT_PLAN_CHOICE") return chooseChatPlan(message);
     if (message.type === "CHAT_COUNT_RECORD") return recordChatCount(message, sender);
     if (message.type === "CHAT_PLAN_OBSERVED") return observeChatPlan(message, sender);
-    if (message.type === "REFRESH_CHAT_ACCOUNT") return { ok: (await refreshChatPlanAccount()).status === "connected" };
+    if (message.type === "REFRESH_CHAT_ACCOUNT") {
+      const account = await refreshChatPlanAccount();
+      if (account.status === 'connected') {
+        const { chatCounters = {} } = await chrome.storage.local.get('chatCounters');
+        const profile = chatCounters[account.key];
+        const at = profile?.planCheck?.checkedAt;
+        const interval = profile?.planCheck?.status === 'confirmed' ? 30 * 60000 : 5 * 60000;
+        if (!profile?.planChoice && !(profile?.planCheck?.readerVersion === CHAT_PLAN_READER_VERSION && at <= Date.now() && Date.now() - at < interval) &&
+            await chrome.permissions.contains({ permissions: ['scripting'] })) await refreshChatPlan(account.key);
+      }
+      return { ok: account.status === 'connected' };
+    }
     if (message.type === "OPEN_CHAT_CONNECTION") return connectChatAccount();
     if (message.type === "SYNC_CHAT_HISTORY") return refreshChatHistory();
     if (message.type === "ENABLE_CHAT_COUNTER") {

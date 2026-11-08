@@ -36,12 +36,13 @@
     if (sender?.id !== runtime.id || (sender.frameId !== undefined && sender.frameId !== 0) ||
         (sender.documentLifecycle && sender.documentLifecycle !== "active")) return false;
     if (["CHAT_COUNT_STATUS", "CHAT_COUNT_RECORD", "CHAT_PLAN_OBSERVED"].includes(message.type)) {
-      if (!root.RadarChatCounter?.chatUrl(sender.url) || !Number.isInteger(sender.tab?.id)) return false;
-      const keys = message.type === "CHAT_COUNT_STATUS" ? ["type"] : message.type === "CHAT_PLAN_OBSERVED" ? ["type", "scope", "heading"] : ["type", "model", "id", "scope"];
+      const planPage = root.RadarChatCounter?.billingUrl(sender.url);
+      if ((!root.RadarChatCounter?.chatUrl(sender.url) && !(planPage && message.type !== 'CHAT_COUNT_RECORD')) || !Number.isInteger(sender.tab?.id)) return false;
+      const keys = message.type === "CHAT_COUNT_STATUS" ? ["type"] : message.type === "CHAT_PLAN_OBSERVED" ? ["type", "scope", "heading", "currentPlan"] : ["type", "model", "id", "scope"];
       if (Object.keys(message).some(key => !keys.includes(key))) return false;
       if (message.type === "CHAT_COUNT_STATUS") return true;
       if (typeof message.scope !== "string" || !/^[a-f0-9-]{36}$/.test(message.scope)) return false;
-      if (message.type === "CHAT_PLAN_OBSERVED") return typeof message.heading === "string" && message.heading.length <= 80 && Boolean(root.RadarChatCounter.planFromHeading(message.heading));
+      if (message.type === "CHAT_PLAN_OBSERVED") return (message.currentPlan === undefined || message.currentPlan === true && planPage && new URL(sender.url).pathname.startsWith('/settings/billing')) && typeof message.heading === "string" && message.heading.length <= 80 && Boolean(root.RadarChatCounter.planFromHeading(message.heading));
       return Boolean(root.RadarChatCounter.model(message.model, { family: 'pro' }) &&
         typeof message.id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(message.id));
     }

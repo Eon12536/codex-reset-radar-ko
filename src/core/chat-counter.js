@@ -37,7 +37,36 @@
     return ({ 'chatgpt pro 5x': 'pro100', 'chatgpt pro $100': 'pro100', 'chatgpt pro 100': 'pro100',
       'chatgpt pro 20x': 'pro200Current', 'chatgpt pro $200': 'pro200Current', 'chatgpt pro 200': 'pro200Current',
       'chatgpt pro $500': 'pro500', 'chatgpt pro 500': 'pro500', 'chatgpt business standard': 'businessStandard',
-      'chatgpt business premium': 'businessPremium' })[value.toLowerCase()] || null;
+      'chatgpt business premium': 'businessPremium', 'chatgpt plus': 'plus', 'chatgpt go': 'go',
+      'chatgpt free': 'free' })[value.toLowerCase()] || null;
+  }
+  function billingUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.origin === 'https://chatgpt.com' && !url.username && !url.password && !url.search &&
+        (/^\/settings\/billing\/?$/.test(url.pathname) || url.pathname === '/' && url.hash === '#settings/Billing');
+    } catch { return false; }
+  }
+  function currentBillingHeading(doc) {
+    const found = new Map();
+    // New settings UI: current plan name is a DIV next to a renewal paragraph,
+    // not an H3 tab panel. Never inspect invoice tables or broad page text.
+    for (const marker of doc.querySelectorAll('p')) {
+      if (!/^(?:플랜 자동 갱신\s*:|(?:Your )?plan (?:auto[- ]renews|renews)(?: on|:)?)\s*/i.test(marker.textContent.trim()) ||
+          marker.closest('table,[role="table"],[hidden],[aria-hidden="true"]') ||
+          marker.getClientRects && !marker.getClientRects().length) continue;
+      let card = marker.parentElement;
+      for (let depth = 0; card && depth < 4; depth++, card = card.parentElement) {
+        if (card.querySelector('table,[role="table"],input')) break;
+        const headings = [...card.querySelectorAll('h2,h3,h4,div,span')].filter(node =>
+          !node.children.length && !node.closest('a,button,[hidden],[aria-hidden="true"]') &&
+          (!node.getClientRects || node.getClientRects().length) && planFromHeading(node.textContent));
+        if (!headings.length) continue;
+        for (const node of headings) found.set(planFromHeading(node.textContent), node.textContent.trim());
+        break;
+      }
+    }
+    return found.size === 1 ? [...found.values()][0] : null;
   }
   function identity(token) {
     try {
@@ -57,14 +86,20 @@
     const evidence = profile?.familyEvidence;
     // Scoped by the caller's salted user/account key. A later token-family
     // change supersedes this short-lived quota observation.
-    if (evidence?.source === 'usage' && evidence.tokenFamily === tokenFamily &&
+    if (['usage', 'billing'].includes(evidence?.source) && evidence.tokenFamily === tokenFamily &&
         Number.isFinite(evidence.at) && evidence.at <= now && now - evidence.at < 30 * 60000 &&
         family(evidence.family) !== 'unknown') return family(evidence.family);
     // An expired conflicting observation is not proof of a downgrade. Keep
     // the plan unconfirmed until a fresh quota response or changed claim.
-    if (evidence?.source === 'usage' && evidence.tokenFamily === tokenFamily &&
+    if (['usage', 'billing'].includes(evidence?.source) && evidence.tokenFamily === tokenFamily &&
         family(evidence.family) !== 'unknown' && evidence.family !== tokenFamily) return 'unknown';
     return tokenFamily === 'unknown' && !evidence ? profile?.family || 'unknown' : tokenFamily;
+  }
+  function preferredFamilyEvidence(profile, candidate, now = Date.now()) {
+    const old = profile?.familyEvidence;
+    // The current subscription card is more specific than a lagging quota claim.
+    return old?.source === 'billing' && old.tokenFamily === candidate.tokenFamily &&
+      old.at <= now && now - old.at < 30 * 60000 ? old : candidate;
   }
   function verifiedPlan(profile, accountFamily, now = Date.now()) {
     const id = currentPlan(profile?.plan);
@@ -219,6 +254,6 @@
       }
     };
   }
-  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, identity, currentPlan, accountFamily, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
+  root.RadarChatCounter = Object.freeze({ PLANS, MODELS, POLICY, family, planFromHeading, billingUrl, currentBillingHeading, identity, currentPlan, accountFamily, preferredFamilyEvidence, verifiedPlan, planEvidence, meters, model, modelCounts, chatUrl, record, summary, resetAfterCodex, view, tracker });
   if (typeof module !== 'undefined') module.exports = root.RadarChatCounter;
 })(globalThis);

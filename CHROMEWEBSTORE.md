@@ -1,9 +1,13 @@
 # Chrome Web Store Listing — Codex 리셋 레이더 · 한국어
 
-> Last Updated: 2026-11-08 · Version: 0.2.155 · Draft, Chrome Web Store 미제출
+> Last Updated: 2026-11-08 · Version: 0.2.156 · Draft, Chrome Web Store 미제출
 > GoogleChrome/modern-web-guidance의 chromewebstore-template.md 형식에 따라 작성. 실제 설정은 manifest.json, 데이터 처리 상세는 PRIVACY.md 기준.
 
 ## Store Listing
+
+### 0.2.156 현재 구독 카드 확인
+
+실제 ChatGPT의 /settings/billing 결제 화면과 현재 구독 카드 구조를 지원합니다. 자동 갱신 안내 옆의 현재 요금제만 확인하고 과거 결제 내역·업그레이드 광고는 제외합니다. 현재 구독 카드에서 확인한 Pro 등급이 오래된 로그인·잔여량 응답의 Plus 값으로 다시 바뀌지 않도록 보완했습니다. 기존 수동 선택은 유지하고 확인용 탭은 종료 후 정리합니다. 새 권한·외부 서비스는 추가하지 않습니다. 현재 요금제 이름만 기기에 저장하며 결제 내역·결제수단·주소·청구서 링크를 수집·전송하지 않습니다.
 
 ### 0.2.155 요금제 재확인 경로
 

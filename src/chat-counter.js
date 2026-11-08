@@ -42,8 +42,9 @@
     if (!timer) timer = setTimeout(() => { timer = null; scan(); }, 120);
   });
   function scan() {
-    if (!enabled || !RadarChatCounter.chatUrl(location.href)) return;
+    if (!enabled) return;
     observePlan();
+    if (!RadarChatCounter.chatUrl(location.href)) return;
     for (const entry of tracker.scan(rows(), location.pathname, Date.now(), planFamily)) {
       pruneRecords();
       if (pendingRecords.size >= 200) pendingRecords.delete(pendingRecords.keys().next().value);
@@ -53,16 +54,17 @@
     deliverRecords();
   }
   async function observePlan() {
-    if (location.hash !== '#settings/Billing' || planBusy) return;
+    if (!RadarChatCounter.billingUrl(location.href) || planBusy) return;
     // Read current subscription headings only, never prices from an upgrade
     // offer or text from a conversation. The worker also requires its fresh tab.
-    const panel = document.querySelector('[role="tabpanel"][id$="-content-Billing"]:not([hidden])');
+    const modern = /^\/settings\/billing\/?$/.test(location.pathname);
+    const panel = !modern && document.querySelector('[role="tabpanel"][id$="-content-Billing"]:not([hidden])');
     const headings = panel ? Array.from(panel.querySelectorAll('h3'), node => node.textContent.trim()).filter(text => RadarChatCounter.planFromHeading(text)) : [];
-    const heading = new Set(headings.map(RadarChatCounter.planFromHeading)).size === 1 ? headings[0] : null;
+    const heading = modern ? RadarChatCounter.currentBillingHeading(document) : new Set(headings.map(RadarChatCounter.planFromHeading)).size === 1 ? headings[0] : null;
     if (!heading || heading === lastPlanSent || Date.now() - lastPlanAttempt < 30000) return;
     planBusy = true; lastPlanAttempt = Date.now();
     try {
-      const result = await chrome.runtime.sendMessage({ type: 'CHAT_PLAN_OBSERVED', scope, heading });
+      const result = await chrome.runtime.sendMessage({ type: 'CHAT_PLAN_OBSERVED', scope, heading, ...(modern ? { currentPlan: true } : {}) });
       if (result?.ok) lastPlanSent = heading;
     } catch { /* A new explicit connection can retry after a worker reload. */ }
     finally { planBusy = false; }
@@ -72,7 +74,7 @@
     checking = true;
     try {
       const result = await chrome.runtime.sendMessage({ type: 'CHAT_COUNT_STATUS' });
-      const next = Boolean(result?.enabled && result.scope && RadarChatCounter.chatUrl(location.href));
+      const next = Boolean(result?.enabled && result.scope && (RadarChatCounter.chatUrl(location.href) || RadarChatCounter.billingUrl(location.href)));
       if (next && (!enabled || scope !== result.scope)) {
         tracker.reset(rows(), location.pathname);
         lastPlanSent = ''; lastPlanAttempt = 0;

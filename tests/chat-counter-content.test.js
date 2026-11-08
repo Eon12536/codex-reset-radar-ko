@@ -12,7 +12,7 @@ function page({ billing = false, heading = null, deliver = null } = {}) {
   class Clock extends Date { static now() { return now; } }
   const intervals = new Map();
   class Element { closest(selector) { return selector === '[data-testid="send-button"]' ? this : null; } }
-  const context = vm.createContext({ URL, Date: Clock, Element, location: { href: 'https://chatgpt.com/', pathname: '/', hash: billing ? '#settings/Billing' : '' },
+  const context = vm.createContext({ URL, Date: Clock, Element, location: { href: 'https://chatgpt.com/' + (billing ? '#settings/Billing' : ''), pathname: '/', hash: billing ? '#settings/Billing' : '' },
     document: { documentElement: {}, querySelectorAll: () => nodes,
       querySelector: selector => { assert.equal(selector, '[role="tabpanel"][id$="-content-Billing"]:not([hidden])'); return heading ? { querySelectorAll: () => (Array.isArray(heading) ? heading : [heading]).map(textContent => ({ textContent })) } : null; },
       addEventListener: (type, fn) => { listeners[type] = fn; } },
