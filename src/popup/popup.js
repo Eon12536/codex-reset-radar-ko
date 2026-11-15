@@ -320,6 +320,7 @@ async function openNews(id, button) {
 function renderChat(data, settings) {
   const view = RadarChatCounter.view({ ...data, settings });
   const count = view.count;
+  const needsTier = ['pro', 'business', 'unknown'].includes(view.family);
   $("chatCountValue").hidden = !view.connected || !view.meters.length;
   $("chatCountValue").textContent = "추정";
   renderChatMeters(view);

@@ -2,11 +2,17 @@
 
 Codex 사용량과 리셋 소식을 한곳에서 확인하는 **Chrome·Edge 확장 프로그램**입니다. OpenAI·Tibo·VB의 공개 글에서 리셋 관련 소식을 찾아 보여주고, 선택적으로 연결한 계정의 사용량과 Banked reset 리셋권 상태를 확인합니다.
 
-**최신 버전: v0.2.157.** 요금제 자동 확인, 알림 중복 방지와 X 확인 탭 복구를 보완했습니다. 신모델 출시 분류와 리셋권 문맥 판별도 포함합니다.
+**최신 버전: v0.2.158.** 요금제 자동 확인, 알림 중복 방지와 X 확인 탭 복구를 보완했습니다. 신모델 출시 분류와 리셋권 문맥 판별도 포함합니다.
 
 **OpenAI 공식 제품이 아닌 커뮤니티 파생판입니다.** 공개 글 분류와 Chat 사용량은 추정이 포함될 수 있으며, 공지가 개인 계정에 반영됐는지는 계정 잔여량을 별도로 확인해야 합니다.
 
 [최신 버전 다운로드](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest) · [처음 사용하는 분을 위한 사용법](docs/USAGE.md) · [오류 신고](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=bug_report.yml) · [기능 제안](https://github.com/Eon12536/codex-reset-radar-ko/issues/new?template=feature_request.yml)
+
+## 소개 이미지
+
+![Codex Reset Radar 소개 이미지](docs/images/codex-reset-radar-promo-ai.png)
+
+사용자가 제공한 실제 화면을 참고해 AI가 재구성한 홍보 이미지입니다. 이미지 속 화면은 실제 스크린샷 그대로가 아닙니다.
 
 ## 실제 사용 화면
 
@@ -47,6 +53,11 @@ Codex 사용량과 리셋 소식을 한곳에서 확인하는 **Chrome·Edge 확
 | 과거 기록 | 저장한 소식을 누적하고 이번 달·지난달 또는 선택한 월 조회 |
 | 교차 확인 | Telegram 공개 채널의 링크를 후보로 받아 빠진 X 원문 재확인 |
 | Chat 집계 | 선택적으로 요금제를 확인하고 확인한 모델 사용 기록 집계 |
+
+## v0.2.158 주요 변경
+
+- **팝업 오류 수정:** 계정 미연결 또는 요금제 미확인 상태에서 `needsTier` 참조 오류로 화면 갱신이 중단되는 문제를 수정했습니다.
+- **검증:** 계정 상태별 팝업 렌더 회귀 검사를 추가하고 전체 1,138개 검사를 통과했습니다.
 
 ## v0.2.157 주요 변경
 
@@ -95,7 +106,7 @@ Codex 사용량과 리셋 소식을 한곳에서 확인하는 **Chrome·Edge 확
 
 ## 설치
 
-1. [최신 릴리스](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.157.zip`을 다운로드하고 압축을 풉니다.
+1. [최신 릴리스](https://github.com/Eon12536/codex-reset-radar-ko/releases/latest)에서 `CodexReset-Radar-KO-0.2.158.zip`을 다운로드하고 압축을 풉니다.
 2. Chrome에서 `chrome://extensions/`, Edge에서 `edge://extensions/`를 열고 **개발자 모드**를 켭니다.
 3. **압축해제된 확장 프로그램을 로드합니다**를 선택하고 `manifest.json`이 들어 있는 폴더를 지정합니다.
 4. 브라우저 도구 모음에 확장을 고정합니다. X 직접 확인은 설정에서 접근을 한 번 허용해야 하며, X 로그인 상태가 필요할 수 있습니다.

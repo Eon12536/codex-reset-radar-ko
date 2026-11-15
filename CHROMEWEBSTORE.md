@@ -1,9 +1,13 @@
 # Chrome Web Store Listing — Codex 리셋 레이더 · 한국어
 
-> Last Updated: 2026-11-08 · Version: 0.2.157 · Draft, Chrome Web Store 미제출
+> Last Updated: 2026-11-08 · Version: 0.2.158 · Draft, Chrome Web Store 미제출
 > GoogleChrome/modern-web-guidance의 chromewebstore-template.md 형식에 따라 작성. 실제 설정은 manifest.json, 데이터 처리 상세는 PRIVACY.md 기준.
 
 ## Store Listing
+
+### 0.2.158 팝업 오류 수정
+
+계정이 연결되지 않았거나 요금제 세부 정보가 미확인인 경우 팝업이 중단되는 오류를 수정합니다. 권한과 개인정보 처리는 변경되지 않습니다.
 
 ### 0.2.157 현재 구독 카드 확인
 
